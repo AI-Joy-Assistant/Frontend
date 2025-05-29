@@ -3,4 +3,5 @@ export type RootStackParamList = {
   Splash: undefined;
   Login: undefined;
   LoginDetailScreen: undefined;
+  Main: undefined;
 };

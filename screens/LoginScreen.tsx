@@ -1,17 +1,92 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import React, {useEffect} from 'react';
+import {View, Text, StyleSheet, TouchableOpacity, Image, Alert, Platform} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as AuthSession from 'expo-auth-session';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router } from 'expo-router';
+// import { useAuth } from '../context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
+import {makeRedirectUri, ResponseType} from "expo-auth-session";
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+// import { useAuth } from '../context/AuthContext';
 
-const LoginScreen = () => {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+WebBrowser.maybeCompleteAuthSession();
 
-  const handleLoginPress = () => {
-    console.log('🔐 로그인 링크 눌림!');
-    navigation.navigate('LoginDetailScreen');
+// const BACKEND_URL = Platform.OS === 'web'
+//     ? 'http://localhost:3000' // ← PC IP 주소로 변경
+
+const discovery = {
+  authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+  tokenEndpoint: 'https://oauth2.googleapis.com/token',
+  userInfoEndpoint: 'https://www.googleapis.com/oauth2/v3/userinfo',
+};
+
+const redirectUri = 'https://auth.expo.io/@whtndus/frontend';
+
+export default function LoginScreen() {
+  const [request, response, promptAsync] = Google.useAuthRequest(
+      {
+        clientId: '842065249237-52la75vprit1aqgoku97t8d76ps5ug0f.apps.googleusercontent.com', // 구글 클라이언트 ID
+        // iosClientId: '842065249237-14tunhbsetl55us6v7cnrsrgu6e3ijb6.apps.googleusercontent.com',
+        responseType: ResponseType.IdToken,
+        scopes: ['openid', 'profile', 'email'],
+        // usePKCE: false, // Google OAuth에서는 PKCE 비활성화
+        redirectUri : makeRedirectUri({useProxy:true}),
+
+      },
+      // discovery
+  );
+  console.log('✅ Redirect URI:',AuthSession.makeRedirectUri());
+
+  // const { setUserId } = useAuth();
+
+  useEffect(() => {
+    const handleLogin = async () => {
+      if (response?.type !== 'success') return;
+      const idToken = response.params.id_token ?? response.authentication?.idToken;
+      if (!idToken) return;
+
+      try {
+        const API_URL = process.env.EXPO_CLIENT_ID;
+        const res = await fetch(`${API_URL}/api/auth/google`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: idToken }),
+        });
+        const data = await res.json();
+        console.log('서버 응답:', data);
+
+        if (data.user && data.user.id) {
+          const userInfo = {
+            id: data.user.id,
+            email: data.user.email,
+            nickname: data.user.nickname ?? data.user.name ?? '사용자',
+          };
+          await AsyncStorage.setItem('user', JSON.stringify(userInfo));
+          await AsyncStorage.setItem('idToken', idToken);
+
+          console.log('✅ 로그인 성공. userId 저장:', userInfo.id);
+          // 페이지 이동
+          router.push('/select');
+        } else {
+          Alert.alert('로그인 실패', JSON.stringify(data));
+        }
+      } catch (err) {
+        console.log('서버 연결 실패:', err);
+        Alert.alert('서버 연결 실패', err.message);
+      }
+    };
+
+    handleLogin();
+  }, [response]);
+
+  const handleGoogleLogin = () => {
+    promptAsync();
   };
+
 
   return (
     <View style={styles.container}>
@@ -25,7 +100,7 @@ const LoginScreen = () => {
         <Text style={styles.emailText}>Sign Up With Email</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.socialButton}>
+      <TouchableOpacity style={styles.socialButton} onPress={handleGoogleLogin} disabled={!request}>
         <Image
           source={{ uri: 'https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg' }}
           style={styles.icon}
@@ -43,7 +118,7 @@ const LoginScreen = () => {
 
       <Text style={styles.footer}>
         가입된 계정이 있나요?{' '}
-        <Text style={styles.link} onPress={handleLoginPress}>
+        <Text style={styles.link}>
           로그인하기
         </Text>
       </Text>
@@ -51,7 +126,7 @@ const LoginScreen = () => {
   );
 };
 
-export default LoginScreen;
+// export default LoginScreen;
 
 const styles = StyleSheet.create({
   container: {
