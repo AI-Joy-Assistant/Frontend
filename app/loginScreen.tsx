@@ -5,14 +5,12 @@ import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 WebBrowser.maybeCompleteAuthSession();
 
 const redirectUri = makeRedirectUri({
-    scheme: 'frontend',
-    // useProxy: Platform.select({ web: false, default: true }), // 제거
-    // native: 'your.app://redirect' (필요시)
-  });
+  scheme: 'frontend',
+});
 
 console.log('redirectUri:', redirectUri);
 
@@ -36,7 +34,6 @@ export default function Login() {
       }
     }
   }, [response]);
-  
 
   const handleSignInWithGoogle = async (token: string) => {
     if (!token) return;
@@ -52,14 +49,9 @@ export default function Login() {
       const data = await response.json();
       
       if (data.success) {
-        // 토큰 저장
         await AsyncStorage.setItem('accessToken', data.data.tokens.accessToken);
         await AsyncStorage.setItem('refreshToken', data.data.tokens.refreshToken);
-        
-        // 사용자 정보 저장
         await AsyncStorage.setItem('user', JSON.stringify(data.data.user));
-        
-        // 메인 페이지로 이동
         router.replace('/main');
       } else {
         console.error('로그인 실패:', data.message);
@@ -69,19 +61,21 @@ export default function Login() {
     }
   };
 
-  const handleGoogleLogin = () => {
-    promptAsync();
-  };
-
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>AI Joy Assistant</Text>
+      <Text style={styles.title}>Welcome!</Text>
+      <Image
+        source={require('../assets/logo_ver4.png')}
+        style={styles.character}
+        resizeMode="contain"
+      />
       <TouchableOpacity
         style={styles.googleButton}
         onPress={() => promptAsync()}
         disabled={!request}
+        activeOpacity={0.8}
       >
-        <Text style={styles.buttonText}>Google로 로그인</Text>
+        <Text style={styles.googleButtonText}>Sign in with Google</Text>
       </TouchableOpacity>
     </View>
   );
@@ -90,24 +84,59 @@ export default function Login() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
+    backgroundColor: '#101522',
+    justifyContent: 'flex-start',
     alignItems: 'center',
-    backgroundColor: '#0F111A',
+    paddingHorizontal: 30,
+    paddingTop: 140,
   },
   title: {
-    fontSize: 24,
+    fontSize: 38,
     fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 30,
+    color: '#FFE082',
+    marginBottom: 18,
+    textShadowColor: 'rgba(0,0,0,0.25)',
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 6,
+  },
+  speechBubble: {
+    backgroundColor: '#284B63',
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    marginBottom: 24,
+    alignSelf: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+  },
+  speechText: {
+    color: '#FFE082',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  character: {
+    width: 300,
+    height: 300,
+    marginBottom: 32,
   },
   googleButton: {
-    backgroundColor: '#4285F4',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 5,
+    backgroundColor: '#F47C3C',
+    borderRadius: 18,
+    paddingHorizontal: 36,
+    paddingVertical: 16,
+    marginTop: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    elevation: 4,
   },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
+  googleButtonText: {
+    color: '#FFE082',
+    fontSize: 20,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
   },
 });
