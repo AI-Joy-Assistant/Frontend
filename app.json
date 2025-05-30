@@ -20,9 +20,16 @@
     },
     "web": {
       "bundler": "metro",
-      "favicon": "./assets/images/favicon.png"
+      "output": "static",
+      "favicon": "./assets/images/favicon.png",
+      "build": {
+        "babel": {
+          "include": ["@expo/vector-icons"]
+        }
+      }
     },
     "plugins": [
+      "expo-router",
       [
         "expo-splash-screen",
         {
@@ -32,7 +39,20 @@
           "backgroundColor": "#ffffff"
         }
       ]
-    ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "tsconfigPaths": true
+    },
+    "extra": {
+      "EXPO_CLIENT_ID": "842065249237-1rcd5t9j7oo950bvfkvbjvatai1lbqkj.apps.googleusercontent.com",
+      "webClientId": "842065249237-1rcd5t9j7oo950bvfkvbjvatai1lbqkj.apps.googleusercontent.com",
+      "API_URL": "http://localhost:3000",
+      "scheme": "frontend",
+      "eas": {
+        "projectId": "148a3c6b-fb02-4042-98e1-77c198d26c22"
+      }
+    }
   }
 }
 
