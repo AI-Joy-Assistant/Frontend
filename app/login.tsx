@@ -91,7 +91,7 @@ const styles = StyleSheet.create({
     paddingTop: 140,
   },
   title: {
-    fontSize: 38,
+    fontSize: 32,
     fontWeight: 'bold',
     color: '#FFE082',
     marginBottom: 18,
@@ -132,6 +132,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 6,
     elevation: 4,
+    boxShadow: '0px 2px 6px rgba(0,0,0,0.18)',
   },
   googleButtonText: {
     color: '#FFE082',
