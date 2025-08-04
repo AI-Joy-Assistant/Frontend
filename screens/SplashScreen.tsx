@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { View, Image, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 const SplashScreen = ({ navigation }: { navigation: any }) => {
   useEffect(() => {
@@ -11,11 +12,13 @@ const SplashScreen = ({ navigation }: { navigation: any }) => {
 
   return (
     <View style={styles.container}>
-      <Image
-        source={require('../assets/logo.png')} // ← 너의 로고 경로
-        style={styles.logo}
-        resizeMode="contain"
-      />
+      <View style={styles.logoContainer}>
+        <View style={styles.iconContainer}>
+          <Ionicons name="calendar" size={60} color="#4A90E2" />
+        </View>
+        <Text style={styles.logoText}>JOYNER</Text>
+        <Text style={styles.subtitle}>일상에 JOY를 더하는 AI ASSISTANT</Text>
+      </View>
     </View>
   );
 };
@@ -23,13 +26,27 @@ const SplashScreen = ({ navigation }: { navigation: any }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000', // 검은 배경
+    backgroundColor: '#2c3e50',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  logo: {
-    width: 200,
-    height: 200,
+  logoContainer: {
+    alignItems: 'center',
+  },
+  iconContainer: {
+    marginBottom: 20,
+  },
+  logoText: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 16,
+    letterSpacing: 2,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#bdc3c7',
+    textAlign: 'center',
   },
 });
 
