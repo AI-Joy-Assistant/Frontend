@@ -39,7 +39,11 @@ export default function HomeScreen() {
     try {
       await addEvent(event);
       Alert.alert('성공', '일정이 추가되었습니다.');
+      
+      // 일정 추가 후 선택된 날짜의 이벤트를 다시 가져오기
+      console.log('일정 추가 후 이벤트 목록 새로고침');
     } catch (error) {
+      console.error('일정 추가 실패:', error);
       Alert.alert('오류', '일정 추가에 실패했습니다.');
     }
   };

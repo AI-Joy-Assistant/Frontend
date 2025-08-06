@@ -13,6 +13,24 @@ export default function EventDetails({ selectedDate, events }: EventDetailsProps
   console.log('받은 events 개수:', events.length);
   console.log('받은 events:', events);
   
+  // 선택된 날짜의 이벤트만 필터링
+  const filteredEvents = events.filter(event => {
+    let eventDate: string;
+    
+    if (event.start.dateTime) {
+      const eventDateTime = new Date(event.start.dateTime);
+      eventDate = eventDateTime.toISOString().split('T')[0];
+    } else if (event.start.date) {
+      eventDate = event.start.date;
+    } else {
+      return false;
+    }
+    
+    return eventDate === selectedDate;
+  });
+  
+  console.log('필터링된 이벤트:', filteredEvents);
+  
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const year = date.getFullYear();
@@ -45,10 +63,10 @@ export default function EventDetails({ selectedDate, events }: EventDetailsProps
     <View style={styles.container}>
       <Text style={styles.title}>{formatSelectedDate(selectedDate)}</Text>
       
-      {events.length === 0 ? (
+      {filteredEvents.length === 0 ? (
         <Text style={styles.noEventsText}>해당 날짜에 일정이 없습니다.</Text>
       ) : (
-        events.map((event, index) => (
+        filteredEvents.map((event, index) => (
           <View key={event.id} style={styles.eventItem}>
             {event.attendees && event.attendees.length > 0 && (
               <Text style={styles.eventDetail}>

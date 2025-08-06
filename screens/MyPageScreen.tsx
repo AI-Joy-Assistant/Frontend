@@ -67,24 +67,33 @@ const MyPageScreen = () => {
         return;
       }
 
+      if (!newNickname.trim()) {
+        Alert.alert('오류', '닉네임을 입력해주세요.');
+        return;
+      }
+
       const response = await fetch('http://localhost:3000/auth/me', {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: newNickname }),
+        body: JSON.stringify({ name: newNickname.trim() }),
       });
 
       if (response.ok) {
-        setNickname(newNickname);
+        const updatedUser = await response.json();
+        setUserInfo(prev => prev ? { ...prev, name: newNickname.trim() } : null);
+        setNickname(newNickname.trim());
         setNicknameModalVisible(false);
         setNewNickname('');
         Alert.alert('성공', '닉네임이 업데이트되었습니다.');
       } else {
-        Alert.alert('오류', '닉네임 업데이트 실패');
+        const errorData = await response.json();
+        Alert.alert('오류', errorData.detail || '닉네임 업데이트 실패');
       }
     } catch (error) {
+      console.error('닉네임 업데이트 오류:', error);
       Alert.alert('오류', '닉네임 업데이트 실패');
     }
   };
@@ -123,9 +132,11 @@ const MyPageScreen = () => {
         setWithdrawModalVisible(false);
         navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
       } else {
-        Alert.alert('오류', '탈퇴 실패');
+        const errorData = await response.json();
+        Alert.alert('오류', errorData.detail || '탈퇴 실패');
       }
     } catch (error) {
+      console.error('탈퇴 오류:', error);
       Alert.alert('오류', '탈퇴 실패');
     }
   };
@@ -154,10 +165,18 @@ const MyPageScreen = () => {
 
         <View style={styles.profileSection}>
           <Image 
-            source={{ uri: userInfo.profile_image || 'https://via.placeholder.com/100' }} 
-            style={styles.profileImage} 
+            source={{ 
+              uri: userInfo.profile_image || 'https://via.placeholder.com/100',
+              headers: {
+                'Accept': 'image/webp,image/*,*/*;q=0.8',
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+              }
+            }} 
+            style={styles.profileImage}
+            resizeMode="cover"
+
           />
-          <Text style={styles.name}>{userInfo.name}</Text>
+         <Text style={styles.name}>{userInfo.name}</Text>
           <Text style={styles.email}>{userInfo.email}</Text>
           <Text style={styles.nickname}>챗봇이름: {nickname}님의 JOY</Text>
         </View>
@@ -355,6 +374,7 @@ const styles = StyleSheet.create({
   },
   menuSection: {
     width: '100%',
+    alignItems: 'center',
   },
   menuItem: {
     flexDirection: 'row',
@@ -365,6 +385,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 15,
     marginBottom: 10,
+    width: '40%',
   },
   menuText: {
     color: 'white',
@@ -467,5 +488,10 @@ const styles = StyleSheet.create({
   activeNavText: {
     color: '#3B82F6',
     fontWeight: '600',
+  },
+  debugText: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    marginTop: 5,
   },
 });
