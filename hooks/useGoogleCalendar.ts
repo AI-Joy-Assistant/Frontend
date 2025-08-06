@@ -1,64 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { CalendarEvent, CalendarDay, CalendarMonth } from '../types/calendar';
 
-// Mock data for development (8월 데이터로 변경)
-const mockEvents: CalendarEvent[] = [
-  {
-    id: '1',
-    summary: 'JOYNER 프로젝트 관련 미팅',
-    description: '프로젝트 진행 상황 논의',
-    start: {
-      dateTime: '2025-08-06T19:00:00+09:00',
-    },
-    end: {
-      dateTime: '2025-08-06T20:00:00+09:00',
-    },
-    attendees: [
-      { email: 'lee@example.com', displayName: '이○○' },
-      { email: 'jo1@example.com', displayName: '조○○' },
-      { email: 'jo2@example.com', displayName: '조○○' },
-    ],
-    location: '강남역 토즈컨퍼런스센터',
-    htmlLink: 'https://calendar.google.com/event?eid=...',
-  },
-  {
-    id: '2',
-    summary: '팀 빌딩 활동',
-    description: '팀원들과의 친목 도모',
-    start: {
-      dateTime: '2025-08-16T18:00:00+09:00',
-    },
-    end: {
-      dateTime: '2025-08-16T21:00:00+09:00',
-    },
-    attendees: [
-      { email: 'team1@example.com', displayName: '김○○' },
-      { email: 'team2@example.com', displayName: '박○○' },
-    ],
-    location: '홍대입구 맛집',
-    htmlLink: 'https://calendar.google.com/event?eid=...',
-  },
-  {
-    id: '3',
-    summary: '코드 리뷰',
-    description: '프론트엔드 코드 리뷰',
-    start: {
-      dateTime: '2025-08-19T14:00:00+09:00',
-    },
-    end: {
-      dateTime: '2025-08-19T15:00:00+09:00',
-    },
-    attendees: [
-      { email: 'dev1@example.com', displayName: '최○○' },
-      { email: 'dev2@example.com', displayName: '정○○' },
-    ],
-    location: '온라인 (Zoom)',
-    htmlLink: 'https://calendar.google.com/event?eid=...',
-  },
-];
-
 export function useGoogleCalendar() {
-  const [events, setEvents] = useState<CalendarEvent[]>(mockEvents);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [currentMonth, setCurrentMonth] = useState<CalendarMonth | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -81,15 +25,14 @@ export function useGoogleCalendar() {
       if (response.ok) {
         const data = await response.json();
         console.log('✅ 백엔드 API에서 이벤트 가져오기 성공:', data);
-        setEvents(data.events || mockEvents);
+        setEvents(data.events || []);
       } else {
-        console.log('⚠️ 백엔드 API 실패, Mock 데이터 사용');
-        setEvents(mockEvents);
+        console.log('❌ 백엔드 API 실패:', response.status);
+        setEvents([]);
       }
     } catch (error) {
       console.error('❌ 백엔드 API 호출 오류:', error);
-      console.log('🔄 Mock 데이터로 폴백');
-      setEvents(mockEvents);
+      setEvents([]);
     } finally {
       setLoading(false);
     }
@@ -141,8 +84,8 @@ export function useGoogleCalendar() {
   // 실제 Google Calendar API에서 이벤트 가져오기
   const fetchRealGoogleCalendarEvents = async () => {
     if (!accessToken) {
-      console.log('액세스 토큰이 없어 Mock 데이터 사용');
-      setEvents(mockEvents);
+      console.log('액세스 토큰이 없습니다.');
+      setEvents([]);
       return;
     }
 
@@ -162,12 +105,12 @@ export function useGoogleCalendar() {
         console.log('✅ 실제 Google Calendar 이벤트 가져오기 성공:', data);
         setEvents(data.events || []);
       } else {
-        console.log('⚠️ Google Calendar API 실패, Mock 데이터 사용');
-        setEvents(mockEvents);
+        console.log('❌ Google Calendar API 실패:', response.status);
+        setEvents([]);
       }
     } catch (error) {
       console.error('❌ Google Calendar API 호출 오류:', error);
-      setEvents(mockEvents);
+      setEvents([]);
     } finally {
       setLoading(false);
     }
@@ -356,21 +299,11 @@ export function useGoogleCalendar() {
           setEvents(prev => [...prev, newEvent]);
           console.log('✅ Google Calendar에 이벤트 추가 성공');
         } else {
-          console.error('Google Calendar 이벤트 추가 실패');
-          // Mock 데이터에 추가
-          const newEvent: CalendarEvent = {
-            ...event,
-            id: Date.now().toString(),
-          };
-          setEvents(prev => [...prev, newEvent]);
+          console.error('Google Calendar 이벤트 추가 실패:', response.status);
+          throw new Error('이벤트 추가에 실패했습니다.');
         }
       } else {
-        // Mock 데이터에 추가
-        const newEvent: CalendarEvent = {
-          ...event,
-          id: Date.now().toString(),
-        };
-        setEvents(prev => [...prev, newEvent]);
+        throw new Error('액세스 토큰이 필요합니다.');
       }
       
       // 캘린더 데이터 업데이트
@@ -380,6 +313,7 @@ export function useGoogleCalendar() {
       }
     } catch (error) {
       console.error('이벤트 추가 실패:', error);
+      throw error;
     } finally {
       setLoading(false);
     }

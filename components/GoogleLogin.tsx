@@ -46,10 +46,7 @@ export default function GoogleLogin({ onLoginSuccess, onLoginError }: GoogleLogi
         console.log('✅ 백엔드 서버 연결 성공');
       } catch (error) {
         console.log('❌ 백엔드 서버 연결 실패:', error);
-        // 백엔드 서버가 없을 때 임시 로그인 처리
-        const mockToken = 'mock-jwt-token-' + Date.now();
-        await AsyncStorage.setItem('access_token', mockToken);
-        onLoginSuccess(mockToken);
+        onLoginError('백엔드 서버에 연결할 수 없습니다.');
         return;
       }
       
