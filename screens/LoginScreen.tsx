@@ -63,9 +63,9 @@ const LoginScreen = () => {
           console.log('💾 Mock 토큰 저장 완료 (error fallback)');
         }
         
-        // 성공 시 채팅 화면으로 이동
-        console.log('🚀 채팅 화면으로 이동...');
-        navigation.navigate('Chat');
+        // 성공 시 홈 화면으로 이동
+        console.log('🚀 홈 화면으로 이동...');
+        navigation.navigate('Home');
       } else if (result.type === 'cancel') {
         console.log('❌ 사용자가 로그인을 취소했습니다.');
         Alert.alert('로그인 취소', '로그인이 취소되었습니다.');
@@ -84,8 +84,8 @@ const LoginScreen = () => {
           { 
             text: '확인', 
             onPress: () => {
-              console.log('🚀 개발 모드: 채팅 화면으로 이동...');
-              navigation.navigate('Chat');
+              console.log('🚀 개발 모드: 홈 화면으로 이동...');
+              navigation.navigate('Home');
             }
           }
         ]

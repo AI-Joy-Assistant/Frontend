@@ -190,27 +190,30 @@ const ChatScreen = () => {
 
       {/* 하단 네비게이션 */}
       <View style={styles.bottomNavigation}>
-        <TouchableOpacity style={styles.navItem}>
-          <Ionicons name="home" size={24} color="#666" />
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => navigation.navigate('Home')}
+        >
+          <Ionicons name="home" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>Home</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-          <Ionicons name="chatbubbles" size={24} color="#4A90E2" />
+          <Ionicons name="chatbubble" size={24} color="#3B82F6" />
           <Text style={[styles.navText, styles.activeNavText]}>Chat</Text>
         </TouchableOpacity>
         <TouchableOpacity 
           style={styles.navItem}
           onPress={() => navigation.navigate('Friends')}
         >
-          <Ionicons name="people" size={24} color="#666" />
+          <Ionicons name="people" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>Friends</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem}>
-          <Ionicons name="settings" size={24} color="#666" />
-          <Text style={styles.navText}>설정</Text>
+          <Ionicons name="person" size={24} color="#9CA3AF" />
+          <Text style={styles.navText}>A2A</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem}>
-          <Ionicons name="person" size={24} color="#666" />
+          <Ionicons name="person-circle" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>User</Text>
         </TouchableOpacity>
       </View>
@@ -356,9 +359,9 @@ const styles = StyleSheet.create({
   },
   bottomNavigation: {
     flexDirection: 'row',
-    backgroundColor: 'white',
+    backgroundColor: '#0F111A',
+    borderTopColor: '#374151',
     borderTopWidth: 1,
-    borderTopColor: '#e1e1e1',
     paddingVertical: 8,
   },
   navItem: {
@@ -371,11 +374,11 @@ const styles = StyleSheet.create({
   },
   navText: {
     fontSize: 12,
-    color: '#666',
+    color: '#9CA3AF',
     marginTop: 4,
   },
   activeNavText: {
-    color: '#4A90E2',
+    color: '#3B82F6',
     fontWeight: '600',
   },
 });

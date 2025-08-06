@@ -1,84 +1,29 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { makeRedirectUri, ResponseType } from "expo-auth-session";
-import * as Google from 'expo-auth-session/providers/google';
 import { router } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-
-WebBrowser.maybeCompleteAuthSession();
+import GoogleLogin from '../components/GoogleLogin';
 
 export default function Login() {
-  const [request, response, promptAsync] = Google.useAuthRequest(
-    {
-      clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
-      responseType: ResponseType.IdToken,
-      scopes: ['openid', 'profile', 'email'],
-      redirectUri: makeRedirectUri({
-        scheme: 'frontend'
-      }),
+  const handleLoginSuccess = async (token: string) => {
+    try {
+      // 토큰 저장
+      await AsyncStorage.setItem('access_token', token);
+      
+      console.log('✅ Google 로그인 성공');
+      
+      // 메인 화면으로 이동 (홈 탭)
+      router.replace('/(tabs) 2/');
+    } catch (error) {
+      console.error('로그인 성공 처리 오류:', error);
+      Alert.alert('오류', '로그인 처리 중 오류가 발생했습니다.');
     }
-  );
+  };
 
-  useEffect(() => {
-    const handleLogin = async () => {
-      if (response?.type !== 'success') return;
-      const idToken = response.params.id_token ?? response.authentication?.idToken;
-      if (!idToken) return;
-
-      try {
-        const res = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/auth/google`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          body: JSON.stringify({ token: idToken }),
-        });
-        
-        const data = await res.json();
-        
-        if (!res.ok) {
-          throw new Error(data.message || '인증 처리 중 오류가 발생했습니다.');
-        }
-
-        if (data.success && data.data) {
-          const { user, tokens } = data.data;
-          
-          const userInfo = {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            picture: user.picture
-          };
-
-          // 토큰 저장
-          await AsyncStorage.setItem('accessToken', tokens.accessToken);
-          await AsyncStorage.setItem('refreshToken', tokens.refreshToken);
-          await AsyncStorage.setItem('user', JSON.stringify(userInfo));
-
-          console.log('✅ 로그인 성공. 사용자 정보 저장:', userInfo);
-          
-          // 페이지 이동
-          router.replace('/(tabs)/main');
-        } else {
-          throw new Error('서버 응답 형식이 올바르지 않습니다.');
-        }
-      } catch (error: any) {
-        console.error('로그인 오류:', error);
-        Alert.alert(
-          '로그인 실패',
-          error.message || '인증 처리 중 오류가 발생했습니다. 다시 시도해주세요.'
-        );
-      }
-    };
-
-    handleLogin();
-  }, [response]);
-
-  const handleGoogleLogin = () => {
-    promptAsync();
+  const handleLoginError = (error: string) => {
+    console.error('Google 로그인 오류:', error);
+    Alert.alert('로그인 실패', error);
   };
 
   return (
@@ -88,22 +33,21 @@ export default function Login() {
         AI assistant가 여러분의{'\n'}편안한 일상을 위해 도와드릴게요
       </Text>
 
-      <TouchableOpacity style={styles.emailButton}>
+      <TouchableOpacity 
+        style={styles.emailButton}
+        onPress={() => {
+          // 테스트용: 로그인 없이 홈 화면으로 이동
+          router.replace('/(tabs) 2/');
+        }}
+      >
         <Ionicons name="mail-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-        <Text style={styles.emailText}>Sign Up With Email</Text>
+        <Text style={styles.emailText}>테스트: 홈 화면으로 이동</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity 
-        style={styles.socialButton} 
-        onPress={handleGoogleLogin} 
-        disabled={!request}
-      >
-        <Image
-          source={{ uri: 'https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg' }}
-          style={styles.icon}
-        />
-        <Text style={styles.socialText}>Sign with Google</Text>
-      </TouchableOpacity>
+      <GoogleLogin 
+        onLoginSuccess={handleLoginSuccess}
+        onLoginError={handleLoginError}
+      />
 
       <TouchableOpacity style={styles.socialButton}>
         <Image
