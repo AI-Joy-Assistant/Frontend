@@ -28,11 +28,6 @@ const LoginScreen = () => {
       if (result.type === 'success' || result.type === 'dismiss') {
         // 성공 또는 dismiss(자동 창 닫기) 모두 성공으로 처리
         console.log('✅ Google 로그인 성공!');
-        if (result.type === 'success') {
-          console.log('🔗 리다이렉트 URL:', result.url);
-        } else {
-          console.log('🔄 창이 자동으로 닫혔습니다 (로그인 성공)');
-        }
         
         // 백엔드에서 실제 토큰 받아오기
         try {
@@ -50,22 +45,19 @@ const LoginScreen = () => {
             console.log('✅ 실제 토큰 받아오기 성공!');
             await AsyncStorage.setItem('accessToken', tokenData.accessToken);
             console.log('💾 실제 토큰 저장 완료');
+            
+            // 성공 시 홈 화면으로 이동
+            console.log('🚀 홈 화면으로 이동...');
+            navigation.navigate('Home');
           } else {
-            console.log('⚠️ 토큰 받아오기 실패, Mock 토큰 사용');
-            const mockToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InRlc3QtdXNlci1pZCIsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSIsIm5hbWUiOiJNb2NrIFVzZXIiLCJpYXQiOjE3MzEwNjI0MDAsImV4cCI6MTczMTA2NjAwMH0.mockTokenSignature';
-            await AsyncStorage.setItem('accessToken', mockToken);
-            console.log('💾 Mock 토큰 저장 완료 (fallback)');
+            console.log('❌ 토큰 받아오기 실패:', tokenResponse.status);
+            throw new Error(`토큰 받아오기 실패: ${tokenResponse.status}`);
           }
         } catch (tokenError) {
           console.error('❌ 토큰 받아오기 오류:', tokenError);
-          const mockToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InRlc3QtdXNlci1pZCIsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSIsIm5hbWUiOiJNb2NrIFVzZXIiLCJpYXQiOjE3MzEwNjI0MDAsImV4cCI6MTczMTA2NjAwMH0.mockTokenSignature';
-          await AsyncStorage.setItem('accessToken', mockToken);
-          console.log('💾 Mock 토큰 저장 완료 (error fallback)');
+          Alert.alert('로그인 실패', '토큰을 받아오는데 실패했습니다. 다시 시도해 주세요.');
+          return;
         }
-        
-        // 성공 시 채팅 화면으로 이동
-        console.log('🚀 채팅 화면으로 이동...');
-        navigation.navigate('Chat');
       } else if (result.type === 'cancel') {
         console.log('❌ 사용자가 로그인을 취소했습니다.');
         Alert.alert('로그인 취소', '로그인이 취소되었습니다.');
@@ -75,21 +67,7 @@ const LoginScreen = () => {
       }
     } catch (error) {
       console.error('❌ Google 로그인 오류:', error);
-      
-      // 개발용: 에러 발생 시 임시로 채팅 화면 이동
-      Alert.alert(
-        '개발 모드', 
-        `로그인 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}\n\n채팅 화면으로 이동합니다.`,
-        [
-          { 
-            text: '확인', 
-            onPress: () => {
-              console.log('🚀 개발 모드: 채팅 화면으로 이동...');
-              navigation.navigate('Chat');
-            }
-          }
-        ]
-      );
+      Alert.alert('로그인 실패', '로그인 중 오류가 발생했습니다. 다시 시도해 주세요.');
     }
   };
 
