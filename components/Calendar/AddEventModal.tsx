@@ -32,6 +32,21 @@ export default function AddEventModal({ visible, onClose, onAddEvent, selectedDa
       return;
     }
 
+    // 시간 형식 검증
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+    if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
+      Alert.alert('오류', '시간 형식이 올바르지 않습니다. (HH:MM 형식)');
+      return;
+    }
+
+    // 시작 시간이 종료 시간보다 늦은지 확인
+    const startTimeObj = new Date(`${selectedDate}T${startTime}:00`);
+    const endTimeObj = new Date(`${selectedDate}T${endTime}:00`);
+    if (startTimeObj >= endTimeObj) {
+      Alert.alert('오류', '종료 시간은 시작 시간보다 늦어야 합니다.');
+      return;
+    }
+
     const event: Omit<CalendarEvent, 'id'> = {
       summary: summary.trim(),
       description: description.trim(),

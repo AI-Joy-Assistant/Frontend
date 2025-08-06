@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import CalendarHeader from '../../components/Calendar/CalendarHeader';
 import CalendarGrid from '../../components/Calendar/CalendarGrid';
 import EventDetails from '../../components/Calendar/EventDetails';
+import AddEventModal from '../../components/Calendar/AddEventModal';
 import { useGoogleCalendar } from '../../hooks/useGoogleCalendar';
 
 export default function Main() {
@@ -19,6 +20,7 @@ export default function Main() {
 
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [currentMonthNum, setCurrentMonthNum] = useState(new Date().getMonth() + 1);
+  const [isAddEventModalVisible, setIsAddEventModalVisible] = useState(false);
 
   const handleDayPress = (day: any) => {
     console.log('=== 메인 화면에서 날짜 클릭 ===');
@@ -29,23 +31,22 @@ export default function Main() {
   };
 
   const handleAddEvent = () => {
-    Alert.alert(
-      '일정 추가',
-      '새로운 일정을 추가하시겠습니까?',
-      [
-        {
-          text: '취소',
-          style: 'cancel',
-        },
-        {
-          text: '추가',
-          onPress: () => {
-            // 실제로는 일정 추가 모달을 띄우거나 네비게이션
-            Alert.alert('알림', '일정 추가 기능은 개발 중입니다.');
-          },
-        },
-      ]
-    );
+    setIsAddEventModalVisible(true);
+  };
+
+  const handleCloseAddEventModal = () => {
+    setIsAddEventModalVisible(false);
+  };
+
+  const handleAddEventSubmit = async (event: any) => {
+    try {
+      await addEvent(event);
+      Alert.alert('성공', '일정이 추가되었습니다.');
+      setIsAddEventModalVisible(false);
+    } catch (error) {
+      Alert.alert('오류', '일정 추가에 실패했습니다.');
+      console.error('일정 추가 실패:', error);
+    }
   };
 
   const handleMonthChange = (direction: 'prev' | 'next') => {
@@ -121,6 +122,14 @@ export default function Main() {
           events={selectedEvents}
         />
       </ScrollView>
+
+      {/* 일정 추가 모달 */}
+      <AddEventModal
+        visible={isAddEventModalVisible}
+        onClose={handleCloseAddEventModal}
+        onAddEvent={handleAddEventSubmit}
+        selectedDate={selectedDate}
+      />
     </SafeAreaView>
   );
 }
