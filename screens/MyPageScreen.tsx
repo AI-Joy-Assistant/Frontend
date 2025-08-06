@@ -2,155 +2,297 @@ import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, Modal, TextInput, Alert,
 } from 'react-native';
-import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
-import { supabase } from '../lib/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-type MyPageScreenRouteProp = RouteProp<RootStackParamList, 'MyPageScreen'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const MyPageScreen = () => {
-  const route = useRoute<MyPageScreenRouteProp>();
   const navigation = useNavigation<NavigationProp>();
-  const { name: googleName, email, picture } = route.params;
-
+  const [userInfo, setUserInfo] = useState<{
+    name: string;
+    email: string;
+    profile_image?: string;
+  } | null>(null);
   const [nickname, setNickname] = useState('');
   const [newNickname, setNewNickname] = useState('');
   const [nicknameModalVisible, setNicknameModalVisible] = useState(false);
   const [withdrawModalVisible, setWithdrawModalVisible] = useState(false);
 
-  // 닉네임 불러오기 또는 초기 설정
+  // 사용자 정보 불러오기
   useEffect(() => {
-    const fetchOrInitNickname = async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('name')
-        .eq('email', email)
-        .single();
-
-      if (error) {
-        console.error('닉네임 조회 오류:', error.message);
-        Alert.alert('오류', '닉네임을 불러오지 못했습니다.');
-        return;
-      }
-
-      if (data?.name) {
-        setNickname(data.name);
-      } else {
-        const { error: updateError } = await supabase
-          .from('users')
-          .update({ name: googleName })
-          .eq('email', email);
-        if (updateError) {
-          console.error('닉네임 초기화 실패:', updateError.message);
-        } else {
-          setNickname(googleName);
+    const fetchUserInfo = async () => {
+      try {
+        const token = await AsyncStorage.getItem('accessToken');
+        if (!token) {
+          Alert.alert('오류', '로그인이 필요합니다.');
+          navigation.navigate('Login');
+          return;
         }
+
+        // 백엔드에서 사용자 정보 가져오기
+        const response = await fetch('http://localhost:3000/auth/me', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          const userData = await response.json();
+          setUserInfo(userData);
+          setNickname(userData.name || '');
+        } else {
+          Alert.alert('오류', '사용자 정보를 불러오지 못했습니다.');
+        }
+      } catch (error) {
+        console.error('사용자 정보 조회 오류:', error);
+        Alert.alert('오류', '사용자 정보를 불러오지 못했습니다.');
       }
     };
 
-    fetchOrInitNickname();
-  }, [email, googleName]);
+    fetchUserInfo();
+  }, [navigation]);
 
   // 닉네임 수정
   const handleNicknameUpdate = async () => {
-    const { error } = await supabase
-      .from('users')
-      .update({ name: newNickname })
-      .eq('email', email);
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) {
+        Alert.alert('오류', '로그인이 필요합니다.');
+        return;
+      }
 
-    if (error) {
+      const response = await fetch('http://localhost:3000/auth/me', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: newNickname }),
+      });
+
+      if (response.ok) {
+        setNickname(newNickname);
+        setNicknameModalVisible(false);
+        setNewNickname('');
+        Alert.alert('성공', '닉네임이 업데이트되었습니다.');
+      } else {
+        Alert.alert('오류', '닉네임 업데이트 실패');
+      }
+    } catch (error) {
       Alert.alert('오류', '닉네임 업데이트 실패');
-    } else {
-      setNickname(newNickname);
-      setNicknameModalVisible(false);
-      setNewNickname('');
-      Alert.alert('성공', '닉네임이 업데이트되었습니다.');
     }
   };
 
   // 로그아웃
-  const handleLogout = () => {
-    navigation.reset({ index: 0, routes: [{ name: 'Login' }] }); // Login 또는 LoginScreen에 맞게
+  const handleLogout = async () => {
+    try {
+      await AsyncStorage.removeItem('accessToken');
+      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+    } catch (error) {
+      console.error('로그아웃 오류:', error);
+      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+    }
   };
 
   // 탈퇴
   const handleWithdraw = async () => {
-    const { error } = await supabase
-      .from('users')
-      .delete()
-      .eq('email', email);
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) {
+        Alert.alert('오류', '로그인이 필요합니다.');
+        return;
+      }
 
-    if (error) {
+      const response = await fetch('http://localhost:3000/auth/me', {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        await AsyncStorage.removeItem('accessToken');
+        Alert.alert('탈퇴 완료', '정상적으로 탈퇴되었습니다.');
+        setWithdrawModalVisible(false);
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+      } else {
+        Alert.alert('오류', '탈퇴 실패');
+      }
+    } catch (error) {
       Alert.alert('오류', '탈퇴 실패');
-    } else {
-      Alert.alert('탈퇴 완료', '정상적으로 탈퇴되었습니다.');
-      setWithdrawModalVisible(false);
-      navigation.reset({ index: 0, routes: [{ name: 'Login' }] }); // Login 또는 LoginScreen에 맞게
     }
   };
 
+  if (!userInfo) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.loadingText}>로딩 중...</Text>
+      </View>
+    );
+  }
+
   return (
-    <View style={styles.container}>
-      <Image source={{ uri: picture }} style={styles.profileImage} />
-      <Text style={styles.name}>{googleName}</Text>
-      <Text style={styles.email}>{email}</Text>
-      <Text style={styles.nickname}>챗봇이름: {nickname}님의 JOY</Text>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.content}>
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>마이페이지</Text>
+          <View style={styles.placeholder} />
+        </View>
 
-      <TouchableOpacity style={styles.button} onPress={() => setNicknameModalVisible(true)}>
-        <Text style={styles.buttonText}>닉네임 수정</Text>
-      </TouchableOpacity>
+        <View style={styles.profileSection}>
+          <Image 
+            source={{ uri: userInfo.profile_image || 'https://via.placeholder.com/100' }} 
+            style={styles.profileImage} 
+          />
+          <Text style={styles.name}>{userInfo.name}</Text>
+          <Text style={styles.email}>{userInfo.email}</Text>
+          <Text style={styles.nickname}>챗봇이름: {nickname}님의 JOY</Text>
+        </View>
 
-      <TouchableOpacity style={styles.button} onPress={handleLogout}>
-        <Text style={styles.buttonText}>로그아웃</Text>
-      </TouchableOpacity>
+        <View style={styles.menuSection}>
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={() => setNicknameModalVisible(true)}
+          >
+            <Ionicons name="person" size={24} color="white" />
+            <Text style={styles.menuText}>닉네임 변경</Text>
+            <Ionicons name="chevron-forward" size={24} color="#9CA3AF" />
+          </TouchableOpacity>
 
-      <TouchableOpacity style={[styles.button, styles.withdrawButton]} onPress={() => setWithdrawModalVisible(true)}>
-        <Text style={styles.buttonText}>탈퇴</Text>
-      </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={handleLogout}
+          >
+            <Ionicons name="log-out" size={24} color="white" />
+            <Text style={styles.menuText}>로그아웃</Text>
+            <Ionicons name="chevron-forward" size={24} color="#9CA3AF" />
+          </TouchableOpacity>
 
-      {/* 닉네임 수정 모달 */}
-      <Modal visible={nicknameModalVisible} transparent animationType="slide">
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={() => setWithdrawModalVisible(true)}
+          >
+            <Ionicons name="trash" size={24} color="#e74c3c" />
+            <Text style={[styles.menuText, styles.deleteText]}>회원탈퇴</Text>
+            <Ionicons name="chevron-forward" size={24} color="#9CA3AF" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* 닉네임 변경 모달 */}
+      <Modal
+        visible={nicknameModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setNicknameModalVisible(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>닉네임 수정</Text>
+            <Text style={styles.modalTitle}>닉네임 변경</Text>
             <TextInput
-              placeholder="새 닉네임 입력"
               style={styles.input}
+              placeholder="새 닉네임을 입력하세요"
               value={newNickname}
               onChangeText={setNewNickname}
-              placeholderTextColor="#999"
             />
-            <View style={styles.modalButtonRow}>
-              <TouchableOpacity onPress={handleNicknameUpdate}>
-                <Text style={styles.modalButton}>수정</Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => {
+                  setNicknameModalVisible(false);
+                  setNewNickname('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>취소</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setNicknameModalVisible(false)}>
-                <Text style={styles.modalButton}>취소</Text>
+              <TouchableOpacity
+                style={styles.confirmButton}
+                onPress={handleNicknameUpdate}
+              >
+                <Text style={styles.confirmButtonText}>확인</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* 탈퇴 모달 */}
-      <Modal visible={withdrawModalVisible} transparent animationType="slide">
+      {/* 탈퇴 확인 모달 */}
+      <Modal
+        visible={withdrawModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setWithdrawModalVisible(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>정말 탈퇴하시겠습니까?</Text>
-            <View style={styles.modalButtonRow}>
-              <TouchableOpacity onPress={handleWithdraw}>
-                <Text style={styles.modalButton}>확인</Text>
+            <Text style={styles.modalTitle}>회원탈퇴</Text>
+            <Text style={styles.modalMessage}>
+              정말로 탈퇴하시겠습니까? 탈퇴 시 모든 데이터가 삭제되며 복구할 수 없습니다.
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setWithdrawModalVisible(false)}
+              >
+                <Text style={styles.cancelButtonText}>취소</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setWithdrawModalVisible(false)}>
-                <Text style={styles.modalButton}>취소</Text>
+              <TouchableOpacity
+                style={styles.confirmButton}
+                onPress={handleWithdraw}
+              >
+                <Text style={styles.confirmButtonText}>탈퇴</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-    </View>
+
+      {/* 하단 탭바 */}
+      <View style={styles.bottomNavigation}>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => navigation.navigate('Home')}
+        >
+          <Ionicons name="home" size={24} color="#9CA3AF" />
+          <Text style={styles.navText}>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => navigation.navigate('Chat')}
+        >
+          <Ionicons name="chatbubble" size={24} color="#9CA3AF" />
+          <Text style={styles.navText}>Chat</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => navigation.navigate('Friends')}
+        >
+          <Ionicons name="people" size={24} color="#9CA3AF" />
+          <Text style={styles.navText}>Friends</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navItem}>
+          <Ionicons name="person" size={24} color="#9CA3AF" />
+          <Text style={styles.navText}>A2A</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
+          <Ionicons name="person-circle" size={24} color="#3B82F6" />
+          <Text style={[styles.navText, styles.activeNavText]}>User</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
   );
 };
 
@@ -159,15 +301,41 @@ export default MyPageScreen;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#222023',
+    backgroundColor: '#0F111A',
+  },
+  content: {
+    flex: 1,
+    width: '100%',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 80,
+    width: '100%',
+    marginBottom: 20,
+  },
+  backButton: {
+    padding: 10,
+  },
+  headerTitle: {
+    color: 'white',
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  placeholder: {
+    width: 40,
+  },
+  profileSection: {
+    alignItems: 'center',
+    marginBottom: 20,
   },
   profileImage: {
     width: 135,
     height: 135,
     borderRadius: 67.5,
-    marginBottom: 20,
+    marginBottom: 10,
   },
   name: {
     color: 'white',
@@ -185,19 +353,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 24,
   },
-  button: {
-    width: 279,
-    height: 53,
-    backgroundColor: '#9199C0',
-    borderRadius: 7,
-    justifyContent: 'center',
+  menuSection: {
+    width: '100%',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 7,
+    backgroundColor: '#1F2937',
+    borderRadius: 7,
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    marginBottom: 10,
   },
-  withdrawButton: {
-    backgroundColor: '#2D2D4D',
+  menuText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+    marginLeft: 10,
   },
-  buttonText: {
+  deleteText: {
+    color: '#e74c3c',
+  },
+  loadingText: {
     color: 'white',
     fontSize: 18,
     fontWeight: '600',
@@ -210,7 +389,7 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     width: 300,
-    backgroundColor: '#2D2D4D',
+    backgroundColor: '#1F2937',
     borderRadius: 10,
     padding: 20,
     alignItems: 'center',
@@ -228,23 +407,65 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     color: '#000',
   },
-  modalButtonRow: {
+  modalButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '90%', // ✅ 전체 너비를 조금 줄이면 내부 버튼 여백도 확보됨
-  marginHorizontal: '5%',
+    justifyContent: 'space-around',
+    width: '100%',
   },
-  modalButton: {
-    flex: 1,
+  cancelButton: {
+    backgroundColor: '#374151',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 7,
+    width: '40%',
+  },
+  cancelButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  confirmButton: {
+    backgroundColor: '#3B82F6',
     paddingVertical: 12,
-    backgroundColor: '#3C4A64',
+    paddingHorizontal: 20,
     borderRadius: 7,
-    marginHorizontal: 10,
-    paddingHorizontal: 12, // ✅ 가로 padding 추가로 텍스트 여유 공간 확보
-  minWidth: 100, 
+    width: '40%',
+  },
+  confirmButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  modalMessage: {
+    color: 'white',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  bottomNavigation: {
+    flexDirection: 'row',
+    backgroundColor: '#0F111A',
+    borderTopColor: '#374151',
+    borderTopWidth: 1,
+    paddingVertical: 8,
+  },
+  navItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  activeNavItem: {
+    // 활성 상태 스타일
+  },
+  navText: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 4,
+  },
+  activeNavText: {
+    color: '#3B82F6',
+    fontWeight: '600',
   },
 });

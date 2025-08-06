@@ -7,6 +7,7 @@ import FriendsScreen from './screens/FriendsScreen';
 import HomeScreen from './screens/HomeScreen';
 import LoginDetailScreen from './screens/LoginDetailScreen';
 import LoginScreen from './screens/LoginScreen';
+import MyPageScreen from './screens/MyPageScreen';
 import SplashScreen from './screens/SplashScreen';
 import TestScreen from './screens/TestScreen';
 import { RootStackParamList } from './types';
@@ -23,6 +24,7 @@ export default function App() {
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="Chat" component={ChatScreen} />
         <Stack.Screen name="Friends" component={FriendsScreen} />
+        <Stack.Screen name="MyPage" component={MyPageScreen} />
         <Stack.Screen name="Test" component={TestScreen} />
       </Stack.Navigator>
     </NavigationContainer>

@@ -380,7 +380,10 @@ const FriendsScreen = () => {
           <Ionicons name="person" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>A2A</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => navigation.navigate('MyPage')}
+        >
           <Ionicons name="person-circle" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>User</Text>
         </TouchableOpacity>
