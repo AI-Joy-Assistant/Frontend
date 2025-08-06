@@ -87,6 +87,7 @@ export default function HomeScreen() {
         changeMonth(currentMonth.year, currentMonth.month);
       }
     } catch (error) {
+      console.error('일정 추가 실패:', error);
       Alert.alert('오류', '일정 추가에 실패했습니다.');
     }
   };

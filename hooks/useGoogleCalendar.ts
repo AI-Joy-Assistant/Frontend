@@ -14,7 +14,7 @@ export function useGoogleCalendar() {
       setLoading(true);
       
       // 백엔드 API 호출
-      const response = await fetch('http://localhost:8000/calendar/events', {
+      const response = await fetch('http://localhost:3000/calendar/events', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -37,7 +37,7 @@ export function useGoogleCalendar() {
   // Google OAuth 인증 URL 가져오기
   const getGoogleAuthUrl = async () => {
     try {
-      const response = await fetch('http://localhost:8000/calendar/auth-url');
+      const response = await fetch('http://localhost:3000/calendar/auth-url');
       if (response.ok) {
         const data = await response.json();
         return data.auth_url;
@@ -51,14 +51,14 @@ export function useGoogleCalendar() {
   // Google OAuth 인증 처리
   const authenticateGoogle = async (code: string) => {
     try {
-      const response = await fetch('http://localhost:8000/calendar/auth', {
+      const response = await fetch('http://localhost:3000/calendar/auth', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           code: code,
-          redirect_uri: 'http://localhost:8000/auth/google/callback'
+          redirect_uri: 'http://localhost:3000/auth/google/callback'
         }),
       });
 
@@ -86,7 +86,7 @@ export function useGoogleCalendar() {
     try {
       setLoading(true);
       
-      const response = await fetch(`http://localhost:8000/calendar/events?access_token=${accessToken}`, {
+      const response = await fetch(`http://localhost:3000/calendar/events?access_token=${accessToken}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -260,7 +260,7 @@ export function useGoogleCalendar() {
 
       if (accessToken) {
         // 실제 Google Calendar API 호출
-        const response = await fetch(`http://localhost:8000/calendar/events?access_token=${accessToken}`, {
+        const response = await fetch(`http://localhost:3000/calendar/events?access_token=${accessToken}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
