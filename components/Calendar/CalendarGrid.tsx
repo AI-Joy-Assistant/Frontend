@@ -34,16 +34,16 @@ export default function CalendarGrid({ days, onDayPress }: CalendarGridProps) {
             key={day.date}
             style={[
               styles.dayCell,
-              day.isSelected && styles.selectedDay,
-              day.isToday && styles.todayCell
+              day.isToday && !day.isSelected && styles.todayCell
             ]}
             onPress={() => onDayPress(day)}
           >
+            {day.isSelected && <View style={styles.selectedDayOverlay} />}
             <Text style={[
               styles.dayText,
               day.isSelected && styles.selectedDayText,
-              day.isToday && styles.todayText,
-              day.isWeekend && styles.weekendText
+              day.isToday && !day.isSelected && styles.todayText,
+              day.isWeekend && !day.isSelected && styles.weekendText
             ]}>
               {day.dayOfMonth}
             </Text>
@@ -85,7 +85,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     width: '100%',
-    paddingHorizontal: 10,
   },
   dayCell: {
     width: '14.285%',
@@ -93,24 +92,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
-    paddingVertical: 5,
   },
   dayText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '500',
+    textAlign: 'center',
+    zIndex: 2,
   },
   selectedDay: {
     backgroundColor: '#EF4444',
     borderRadius: 20,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#3B82F6',
   },
   selectedDayText: {
     color: '#fff',
     fontWeight: 'bold',
+    zIndex: 2,
   },
   todayCell: {
     borderWidth: 2,
@@ -131,5 +130,17 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: '#60A5FA',
+  },
+  selectedDayOverlay: {
+    position: 'absolute',
+    top: 5,
+    left: '50%',
+    marginLeft: -20,
+    width: 40,
+    height: 40,
+    backgroundColor: '#EF4444',
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#3B82F6',
   },
 }); 

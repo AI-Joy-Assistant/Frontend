@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { StyleSheet, View, ScrollView, Alert, TouchableOpacity, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,21 +15,62 @@ import { useGoogleCalendar } from '../hooks/useGoogleCalendar';
 export default function HomeScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const {
+    events,
     currentMonth,
-    selectedDate,
+    selectedDate: hookSelectedDate,
+    selectedEvents: hookSelectedEvents,
+    loading,
+    accessToken,
     getEventsForDate,
     selectDate,
     changeMonth,
     addEvent,
+    fetchGoogleCalendarEvents,
+    fetchRealGoogleCalendarEvents,
+    getGoogleAuthUrl,
+    authenticateGoogle,
   } = useGoogleCalendar();
 
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [currentMonthNum, setCurrentMonthNum] = useState(new Date().getMonth() + 1);
   const [showAddEventModal, setShowAddEventModal] = useState(false);
+  
+  // 로컬 시간으로 오늘 날짜 문자열 생성
+  const now = new Date();
+  const todayYear = now.getFullYear();
+  const todayMonth = String(now.getMonth() + 1).padStart(2, '0');
+  const todayDay = String(now.getDate()).padStart(2, '0');
+  const todayString = `${todayYear}-${todayMonth}-${todayDay}`;
+  const [selectedDate, setSelectedDate] = useState(todayString);
 
   const handleDayPress = (day: any) => {
+    setSelectedDate(day.date);
     selectDate(day.date);
   };
+
+  // 선택된 날짜의 이벤트 계산
+  const selectedEvents = useMemo(() => {
+    if (!selectedDate) return [];
+    
+    return events.filter(event => {
+      let eventDate: string;
+      
+      if (event.start.dateTime) {
+        // 로컬 시간으로 날짜 파싱
+        const eventDateTime = new Date(event.start.dateTime);
+        const year = eventDateTime.getFullYear();
+        const month = String(eventDateTime.getMonth() + 1).padStart(2, '0');
+        const day = String(eventDateTime.getDate()).padStart(2, '0');
+        eventDate = `${year}-${month}-${day}`;
+      } else if (event.start.date) {
+        eventDate = event.start.date;
+      } else {
+        return false;
+      }
+      
+      return eventDate === selectedDate;
+    });
+  }, [selectedDate, events]);
 
   const handleAddEvent = () => {
     setShowAddEventModal(true);
@@ -38,7 +79,13 @@ export default function HomeScreen() {
   const handleAddEventSubmit = async (event: Omit<CalendarEvent, 'id'>) => {
     try {
       await addEvent(event);
+      setShowAddEventModal(false);
       Alert.alert('성공', '일정이 추가되었습니다.');
+      
+      // 캘린더 새로고침을 위해 현재 월 다시 로드
+      if (currentMonth) {
+        changeMonth(currentMonth.year, currentMonth.month);
+      }
     } catch (error) {
       Alert.alert('오류', '일정 추가에 실패했습니다.');
     }
@@ -115,9 +162,6 @@ export default function HomeScreen() {
       </SafeAreaView>
     );
   }
-
-  const selectedEvents = getEventsForDate(selectedDate);
-  console.log('홈 화면 - 선택된 날짜:', selectedDate, '이벤트 개수:', selectedEvents.length);
 
   return (
     <SafeAreaView style={styles.container}>
