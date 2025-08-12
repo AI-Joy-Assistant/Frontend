@@ -1,21 +1,13 @@
-import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    Dimensions,
-    FlatList,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  View, Text, StyleSheet, TouchableOpacity, FlatList, Alert,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
-
-const { width, height } = Dimensions.get('window');
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface ChatMessage {
   id: string;
@@ -137,13 +129,12 @@ const ChatScreen = () => {
     <SafeAreaView style={styles.container}>
       {/* 헤더 */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="white" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{currentChat}</Text>
-        <TouchableOpacity style={styles.menuButton}>
-          <Ionicons name="menu" size={24} color="white" />
-        </TouchableOpacity>
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerTitle}>{currentChat}</Text>
+        </View>
       </View>
 
       {/* 채팅 메시지 영역 */}
@@ -198,7 +189,7 @@ const ChatScreen = () => {
           <Text style={styles.navText}>Home</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-          <Ionicons name="chatbubble" size={24} color="#3B82F6" />
+          <Ionicons name="chatbubble" size={24} color="#4A90E2" />
           <Text style={[styles.navText, styles.activeNavText]}>Chat</Text>
         </TouchableOpacity>
         <TouchableOpacity 
@@ -227,26 +218,33 @@ const ChatScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#0F111A',
+    height: '100%',
   },
   header: {
-    backgroundColor: '#2c3e50',
+    backgroundColor: '#0F111A',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 15,
     borderBottomWidth: 2,
-    borderBottomColor: 'white',
+    borderBottomColor: '#374151',
+    height: 60,
   },
   backButton: {
     padding: 8,
   },
+  headerTitleContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerTitle: {
-    color: 'white',
-    fontSize: 18,
+    color: '#fff',
+    fontSize: 22,
     fontWeight: 'bold',
-    flex: 1,
     textAlign: 'center',
   },
   menuButton: {
@@ -254,62 +252,72 @@ const styles = StyleSheet.create({
   },
   chatArea: {
     flex: 1,
-    backgroundColor: '#2c3e50',
+    backgroundColor: '#0F111A',
     paddingHorizontal: 16,
     paddingTop: 8,
-    maxHeight: height * 0.35,
   },
   messagesList: {
     flex: 1,
   },
   messageContainer: {
     marginVertical: 4,
+    flexDirection: 'row',
   },
   myMessage: {
-    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
   },
   otherMessage: {
-    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
   },
   messageBubble: {
-    maxWidth: '80%',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 18,
+    maxWidth: '70%',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
   },
   myBubble: {
     backgroundColor: '#4A90E2',
   },
   otherBubble: {
-    backgroundColor: '#ecf0f1',
+    backgroundColor: '#6B7280',
   },
   messageText: {
     fontSize: 16,
+    lineHeight: 20,
   },
   myMessageText: {
-    color: 'white',
+    color: '#fff',
   },
   otherMessageText: {
-    color: '#2c3e50',
+    color: '#fff',
   },
   chatRoomsSection: {
     flex: 1,
-    backgroundColor: '#34495e',
+    backgroundColor: '#1F2937',
     paddingTop: 16,
+    borderTopWidth: 2,
+    borderTopColor: '#374151',
   },
   chatRoomsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingBottom: 12,
   },
   chatRoomsTitle: {
-    color: 'white',
-    fontSize: 18,
+    color: '#fff',
+    fontSize: 22,
     fontWeight: 'bold',
   },
   refreshButton: {
     padding: 8,
     borderRadius: 20,
     backgroundColor: 'rgba(74, 144, 226, 0.1)',
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   emptyStateContainer: {
     flex: 1,
@@ -318,14 +326,14 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
   },
   emptyStateText: {
-    color: '#bdc3c7',
+    color: '#9CA3AF',
     fontSize: 18,
     fontWeight: '600',
     marginTop: 16,
     marginBottom: 8,
   },
   emptyStateSubText: {
-    color: '#95a5a6',
+    color: '#9CA3AF',
     fontSize: 14,
     textAlign: 'center',
   },
@@ -338,7 +346,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#2c3e50',
+    borderBottomColor: '#374151',
   },
   chatRoomIcon: {
     marginRight: 12,
@@ -347,24 +355,24 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   chatRoomTitle: {
-    color: 'white',
+    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 4,
   },
   chatRoomLastMessage: {
-    color: '#bdc3c7',
+    color: '#9CA3AF',
     fontSize: 14,
   },
   chatRoomTime: {
-    color: '#95a5a6',
+    color: '#9CA3AF',
     fontSize: 12,
   },
   bottomNavigation: {
     flexDirection: 'row',
     backgroundColor: '#0F111A',
     borderTopColor: '#374151',
-    borderTopWidth: 1,
+    borderTopWidth: 2,
     paddingVertical: 8,
   },
   navItem: {
@@ -381,9 +389,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   activeNavText: {
-    color: '#3B82F6',
+    color: '#4A90E2',
     fontWeight: '600',
   },
 });
 
-export default ChatScreen; 
+export default ChatScreen;

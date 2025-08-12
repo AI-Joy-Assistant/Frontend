@@ -294,21 +294,27 @@ const FriendsScreen = () => {
     <SafeAreaView style={styles.container}>
       {/* 헤더 */}
       <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
+          <Ionicons name="search" size={20} color="#9CA3AF" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="친구 검색..."
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholderTextColor="#999"
+            placeholderTextColor="#9CA3AF"
           />
         </View>
         <TouchableOpacity
           style={styles.addButton}
           onPress={() => setShowAddFriendModal(true)}
         >
-          <Ionicons name="add" size={24} color="white" />
+          <Ionicons name="add" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
 
@@ -470,42 +476,54 @@ const FriendsScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#0F111A',
+    height: '100%',
   },
   header: {
-    backgroundColor: '#2c3e50',
+    backgroundColor: '#0F111A',
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 15,
+    borderBottomWidth: 2,
+    borderBottomColor: '#374151',
+    height: 60,
+  },
+  backButton: {
+    padding: 8,
   },
   searchContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'white',
+    backgroundColor: '#1F2937',
     borderRadius: 20,
     paddingHorizontal: 12,
-    marginRight: 12,
+    marginHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#374151',
   },
   searchIcon: {
     marginRight: 8,
+    color: '#9CA3AF',
   },
   searchInput: {
     flex: 1,
     height: 40,
     fontSize: 16,
+    color: '#fff',
   },
   addButton: {
-    backgroundColor: '#4A90E2',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    backgroundColor: '#374151',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
   },
   content: {
     flex: 1,
+    backgroundColor: '#0F111A',
   },
   section: {
     marginBottom: 20,
@@ -513,7 +531,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: '#fff',
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
@@ -522,26 +540,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: 'white',
+    backgroundColor: '#1F2937',
     marginHorizontal: 16,
     marginBottom: 8,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#374151',
   },
   friendItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: 'white',
+    backgroundColor: '#1F2937',
     marginHorizontal: 16,
     marginBottom: 8,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#374151',
   },
   profileImage: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#ecf0f1',
+    backgroundColor: '#374151',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -555,21 +577,21 @@ const styles = StyleSheet.create({
   friendRequestName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2c3e50',
+    color: '#fff',
   },
   friendRequestEmail: {
     fontSize: 14,
-    color: '#7f8c8d',
+    color: '#9CA3AF',
     marginTop: 2,
   },
   friendName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2c3e50',
+    color: '#fff',
   },
   friendEmail: {
     fontSize: 14,
-    color: '#7f8c8d',
+    color: '#9CA3AF',
     marginTop: 2,
   },
   friendRequestButtons: {
@@ -623,7 +645,7 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
   },
   loadingText: {
-    color: '#7f8c8d',
+    color: '#9CA3AF',
     fontSize: 16,
     marginTop: 12,
   },
@@ -632,13 +654,13 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
   },
   emptyText: {
-    color: '#7f8c8d',
+    color: '#9CA3AF',
     fontSize: 18,
     fontWeight: '600',
     marginTop: 12,
   },
   emptySubText: {
-    color: '#95a5a6',
+    color: '#9CA3AF',
     fontSize: 14,
     marginTop: 4,
   },
@@ -646,7 +668,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#0F111A',
     borderTopColor: '#374151',
-    borderTopWidth: 1,
+    borderTopWidth: 2,
     paddingVertical: 8,
   },
   navItem: {
@@ -668,69 +690,67 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 24,
-    width: '80%',
-    maxWidth: 400,
+    width: 350,
+    backgroundColor: '#1F2937',
+    borderRadius: 10,
+    padding: 20,
+    alignItems: 'center',
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 16,
-    textAlign: 'center',
+    color: '#fff',
+    marginBottom: 25,
   },
   modalMessage: {
     fontSize: 16,
-    color: '#2c3e50',
+    color: '#fff',
     marginBottom: 24,
     textAlign: 'center',
     lineHeight: 24,
   },
   emailInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 16,
-    marginBottom: 24,
+    width: '100%',
+    backgroundColor: '#fff',
+    padding: 10,
+    borderRadius: 5,
+    marginBottom: 30,
+    color: '#000',
   },
   modalButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
+    width: '100%',
   },
   cancelButton: {
-    flex: 1,
-    backgroundColor: '#95a5a6',
+    backgroundColor: '#6B7280',
     paddingVertical: 12,
-    borderRadius: 8,
-    marginRight: 8,
-    alignItems: 'center',
+    paddingHorizontal: 20,
+    borderRadius: 7,
+    width: '40%',
   },
   cancelButtonText: {
-    color: 'white',
+    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+    textAlign: 'center',
   },
   confirmButton: {
-    flex: 1,
     backgroundColor: '#4A90E2',
     paddingVertical: 12,
-    borderRadius: 8,
-    marginLeft: 8,
-    alignItems: 'center',
+    paddingHorizontal: 20,
+    borderRadius: 7,
+    width: '40%',
   },
   confirmButtonText: {
-    color: 'white',
+    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+    textAlign: 'center',
   },
 });
 

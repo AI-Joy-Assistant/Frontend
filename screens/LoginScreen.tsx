@@ -75,7 +75,7 @@ const LoginScreen = () => {
     <View style={styles.container}>
       {/* 상단 로고 */}
       <View style={styles.logoContainer}>
-        <Ionicons name="calendar" size={40} color="#4A90E2" />
+        <Ionicons name="calendar" size={60} color="#4A90E2" />
         <Text style={styles.logoText}>JOYNER</Text>
       </View>
 
@@ -85,7 +85,7 @@ const LoginScreen = () => {
         onPress={handleGoogleLogin}
         activeOpacity={0.8}
       >
-        <Ionicons name="logo-google" size={20} color="#4285F4" style={styles.googleIcon} />
+        <Ionicons name="logo-google" size={24} color="#4A90E2" style={styles.googleIcon} />
         <Text style={styles.googleText}>Sign with Google</Text>
       </TouchableOpacity>
     </View>
@@ -97,7 +97,7 @@ export default LoginScreen;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#2c3e50',
+    backgroundColor: '#0F111A',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 40,
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
     marginBottom: 100,
   },
   logoText: {
-    fontSize: 28,
+    fontSize: 36,
     fontWeight: 'bold',
     color: 'white',
     marginTop: 12,
@@ -117,10 +117,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'white',
-    paddingVertical: 18,
-    paddingHorizontal: 40,
+    paddingVertical: 14,
+    paddingHorizontal: 30,
     borderRadius: 25,
-    width: '85%',
+    width: '65%',
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: {
@@ -130,14 +130,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
-    minHeight: 56, // 최소 터치 영역 확보
+    minHeight: 48,
   },
   googleIcon: {
     marginRight: 12,
   },
   googleText: {
-    color: '#333',
-    fontSize: 16,
+    color: '#0F111A',
+    fontSize: 18,
     fontWeight: '500',
   },
 });

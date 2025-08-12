@@ -193,13 +193,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    borderBottomWidth: 1,
+    borderBottomWidth: 2,
     borderBottomColor: '#374151',
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#F9FAFB',
+    color: '#fff',
   },
   closeButton: {
     padding: 4,
@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
   },
   dateText: {
     fontSize: 16,
-    color: '#F9FAFB',
+    color: '#fff',
     fontWeight: '600',
   },
   inputSection: {
@@ -235,7 +235,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#F9FAFB',
+    color: '#fff',
     borderWidth: 1,
     borderColor: '#4B5563',
   },
@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    borderTopWidth: 1,
+    borderTopWidth: 2,
     borderTopColor: '#374151',
   },
   cancelButton: {
@@ -268,20 +268,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelButtonText: {
-    color: '#F9FAFB',
+    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },
   addButton: {
     flex: 1,
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#4A90E2',
     paddingVertical: 12,
     borderRadius: 8,
     marginLeft: 8,
     alignItems: 'center',
   },
   addButtonText: {
-    color: '#F9FAFB',
+    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },
