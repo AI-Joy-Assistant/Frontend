@@ -297,6 +297,7 @@ const FriendsScreen = () => {
         <TouchableOpacity 
           style={styles.backButton}
           onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
@@ -493,7 +494,11 @@ const styles = StyleSheet.create({
     height: 60,
   },
   backButton: {
-    padding: 8,
+    padding: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 32,
+    height: 32,
   },
   searchContainer: {
     flex: 1,

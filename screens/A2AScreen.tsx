@@ -124,22 +124,24 @@ const A2AScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* 헤더 */}
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        <View style={styles.searchContainer}>
+          <Text style={styles.headerTitle}>{userNickname}님의 JOY</Text>
+        </View>
+      </View>
+
       <KeyboardAvoidingView 
         style={styles.container} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        {/* 헤더 */}
-        <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="arrow-back" size={24} color="white" />
-          </TouchableOpacity>
-          <View style={styles.headerTitleContainer}>
-            <Text style={styles.headerTitle}>{userNickname}님의 JOY</Text>
-          </View>
-        </View>
 
         {/* 메시지 목록 */}
         <FlatList
@@ -181,8 +183,13 @@ const A2AScreen = () => {
           >
             <Ionicons 
               name="send" 
-              size={20} 
+              size={18} 
               color={(!inputText.trim() || isLoading) ? "#6B7280" : "white"} 
+              style={{ 
+                transform: [{ rotate: '-45deg' }],
+                marginLeft: 1,
+                marginTop: -1
+              }}
             />
           </TouchableOpacity>
         </View>
@@ -245,7 +252,18 @@ const styles = StyleSheet.create({
     height: 60,
   },
   backButton: {
-    padding: 10,
+    padding: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 32,
+    height: 32,
+  },
+  searchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 12,
   },
   headerTitleContainer: {
     position: 'absolute',
@@ -315,7 +333,7 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#0F111A',
@@ -327,11 +345,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#374151',
     borderRadius: 20,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 8,
     marginRight: 8,
     color: 'white',
     fontSize: 16,
-    maxHeight: 100,
+    maxHeight: 80,
+    minHeight: 36,
   },
   sendButton: {
     backgroundColor: '#3B82F6',

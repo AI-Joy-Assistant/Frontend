@@ -25,42 +25,42 @@ const MyPageScreen = () => {
   const [withdrawModalVisible, setWithdrawModalVisible] = useState(false);
 
   // 사용자 정보 불러오기
-  useEffect(() => {
-    const fetchUserInfo = async () => {
-      try {
-        const token = await AsyncStorage.getItem('accessToken');
-        if (!token) {
-          Alert.alert('오류', '로그인이 필요합니다.');
-          navigation.navigate('Login');
-          return;
-        }
+  const fetchUserInfo = async () => {
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) {
+        Alert.alert('오류', '로그인이 필요합니다.');
+        navigation.navigate('Login');
+        return;
+      }
 
-        // 백엔드에서 사용자 정보 가져오기
-        const response = await fetch('http://localhost:3000/auth/me', {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
+      // 백엔드에서 사용자 정보 가져오기
+      const response = await fetch('http://localhost:3000/auth/me', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
-        if (response.ok) {
-          const userData = await response.json();
-          console.log('=== MY_PAGE_DEBUG ===');
-          console.log('전체 사용자 데이터:', userData);
-          console.log('프로필 이미지 URL:', userData.profile_image);
-          console.log('이름:', userData.name);
-          console.log('이메일:', userData.email);
-          setUserInfo(userData);
-          setNickname(userData.name || '');
-        } else {
-          Alert.alert('오류', '사용자 정보를 불러오지 못했습니다.');
-        }
-      } catch (error) {
-        console.error('사용자 정보 조회 오류:', error);
+      if (response.ok) {
+        const userData = await response.json();
+        console.log('=== MY_PAGE_DEBUG ===');
+        console.log('전체 사용자 데이터:', userData);
+        console.log('프로필 이미지 URL:', userData.profile_image);
+        console.log('이름:', userData.name);
+        console.log('이메일:', userData.email);
+        setUserInfo(userData);
+        setNickname(userData.name || '');
+      } else {
         Alert.alert('오류', '사용자 정보를 불러오지 못했습니다.');
       }
-    };
+    } catch (error) {
+      console.error('사용자 정보 조회 오류:', error);
+      Alert.alert('오류', '사용자 정보를 불러오지 못했습니다.');
+    }
+  };
 
+  useEffect(() => {
     fetchUserInfo();
   }, [navigation]);
 
@@ -94,6 +94,9 @@ const MyPageScreen = () => {
         setNicknameModalVisible(false);
         setNewNickname('');
         Alert.alert('성공', '닉네임이 업데이트되었습니다.');
+        
+        // 사용자 정보 다시 불러오기
+        await fetchUserInfo();
       } else {
         const errorData = await response.json();
         Alert.alert('오류', errorData.detail || '닉네임 업데이트 실패');
@@ -162,10 +165,11 @@ const MyPageScreen = () => {
           <TouchableOpacity 
             style={styles.backButton}
             onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
           >
-            <Ionicons name="arrow-back" size={24} color="white" />
+            <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
-          <View style={styles.headerTitleContainer}>
+          <View style={styles.searchContainer}>
             <Text style={styles.headerTitle}>마이페이지</Text>
           </View>
         </View>
@@ -173,15 +177,15 @@ const MyPageScreen = () => {
         <View style={styles.profileSection}>
           <Image 
             source={{ 
-              uri: userInfo.profile_image ? `http://localhost:3000/auth/profile-image/${userInfo.id}` : undefined,
-              cache: 'force-cache'
+              uri: userInfo.profile_image ? `http://localhost:3000/auth/profile-image/${userInfo.id}?t=${Date.now()}` : undefined,
+              cache: 'reload'
             }} 
             style={styles.profileImage}
             resizeMode="cover"
             onLoad={() => console.log('=== IMAGE_SUCCESS === 프로필 이미지 로드 성공:', userInfo.profile_image)}
             onError={(error) => {
               console.log('=== IMAGE_ERROR === 프로필 이미지 로드 실패:', error.nativeEvent.error);
-              console.log('=== IMAGE_ERROR === 시도한 URL:', userInfo.profile_image);
+              console.log('=== IMAGE_ERROR === 시도한 URL:', `http://localhost:3000/auth/profile-image/${userInfo.id}`);
             }}
           />
           <Text style={styles.name}>{userInfo.name}</Text>
@@ -352,7 +356,18 @@ const styles = StyleSheet.create({
     height: 60,
   },
   backButton: {
-    padding: 10,
+    padding: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 32,
+    height: 32,
+  },
+  searchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 12,
   },
   headerTitleContainer: {
     position: 'absolute',

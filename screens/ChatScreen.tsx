@@ -129,10 +129,14 @@ const ChatScreen = () => {
     <SafeAreaView style={styles.container}>
       {/* 헤더 */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="white" />
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <View style={styles.headerTitleContainer}>
+        <View style={styles.searchContainer}>
           <Text style={styles.headerTitle}>{currentChat}</Text>
         </View>
       </View>
@@ -235,7 +239,18 @@ const styles = StyleSheet.create({
     height: 60,
   },
   backButton: {
-    padding: 8,
+    padding: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 32,
+    height: 32,
+  },
+  searchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 12,
   },
   headerTitleContainer: {
     position: 'absolute',
