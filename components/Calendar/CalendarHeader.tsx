@@ -19,9 +19,7 @@ export default function CalendarHeader({ year, month, onAddEvent, onMonthChange 
     <View style={styles.container}>
       <View style={styles.leftSection}>
         <View style={styles.logoContainer}>
-          <View style={styles.logoIcon}>
-            <Ionicons name="calendar" size={20} color="#fff" />
-          </View>
+          <Ionicons name="calendar" size={24} color="#4A90E2" />
           <Text style={styles.logoText}>JOYNER</Text>
         </View>
       </View>
@@ -64,9 +62,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 15,
     backgroundColor: '#0F111A',
+    height: 60,
+    borderBottomWidth: 2,
+    borderBottomColor: '#374151',
   },
   leftSection: {
     flex: 1,
@@ -88,20 +89,12 @@ const styles = StyleSheet.create({
   logoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  logoIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#3B82F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
+    gap: 8,
   },
   logoText: {
     color: '#fff',
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   monthYearText: {
     color: '#fff',
@@ -117,9 +110,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   addButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#374151',
     justifyContent: 'center',
     alignItems: 'center',

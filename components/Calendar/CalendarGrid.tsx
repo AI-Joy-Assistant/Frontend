@@ -71,7 +71,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dayHeaderText: {
-    color: '#9CA3AF',
+    color: '#fff',
     fontSize: 14,
     fontWeight: '500',
   },
@@ -79,12 +79,13 @@ const styles = StyleSheet.create({
     color: '#EF4444',
   },
   saturdayText: {
-    color: '#60A5FA',
+    color: '#4A90E2',
   },
   calendarGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     width: '100%',
+    justifyContent: 'space-between',
   },
   dayCell: {
     width: '14.285%',
@@ -114,7 +115,12 @@ const styles = StyleSheet.create({
   todayCell: {
     borderWidth: 2,
     borderColor: '#EF4444',
-    borderRadius: 20,
+    borderRadius: 25,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 'auto',
   },
   todayText: {
     color: '#EF4444',
@@ -142,5 +148,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 2,
     borderColor: '#3B82F6',
+    zIndex: 1,
   },
 }); 

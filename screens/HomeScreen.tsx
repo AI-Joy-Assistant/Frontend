@@ -131,7 +131,7 @@ export default function HomeScreen() {
         {/* 하단 탭바 */}
         <View style={styles.bottomNavigation}>
           <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-            <Ionicons name="home" size={24} color="#3B82F6" />
+            <Ionicons name="home" size={24} color="#4A90E2" />
             <Text style={[styles.navText, styles.activeNavText]}>Home</Text>
           </TouchableOpacity>
           <TouchableOpacity 
@@ -175,9 +175,6 @@ export default function HomeScreen() {
           onMonthChange={handleMonthChange}
         />
 
-        {/* 구분선 */}
-        <View style={styles.divider} />
-
         {/* 캘린더 그리드 */}
         <CalendarGrid
           days={currentMonth.days}
@@ -205,7 +202,7 @@ export default function HomeScreen() {
       {/* 하단 탭바 */}
       <View style={styles.bottomNavigation}>
         <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-          <Ionicons name="home" size={24} color="#3B82F6" />
+          <Ionicons name="home" size={24} color="#4A90E2" />
           <Text style={[styles.navText, styles.activeNavText]}>Home</Text>
         </TouchableOpacity>
         <TouchableOpacity 
@@ -242,6 +239,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0F111A',
+    height: '100%',
   },
   scrollView: {
     flex: 1,
@@ -260,7 +258,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#0F111A',
     borderTopColor: '#374151',
-    borderTopWidth: 1,
+    borderTopWidth: 2,
     paddingVertical: 8,
   },
   navItem: {
@@ -277,7 +275,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   activeNavText: {
-    color: '#3B82F6',
+    color: '#4A90E2',
     fontWeight: '600',
   },
 }); 

@@ -28,7 +28,7 @@ const MyPageScreen = () => {
     const fetchUserInfo = async () => {
       try {
         const result = await authApi.getMe();
-        
+
         if (result.success && result.data) {
           const userData = result.data as any;
           setUserInfo(userData);
@@ -125,24 +125,26 @@ const MyPageScreen = () => {
           >
             <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>마이페이지</Text>
-          <View style={styles.placeholder} />
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerTitle}>마이페이지</Text>
+          </View>
         </View>
 
         <View style={styles.profileSection}>
           <Image 
             source={{ 
-              uri: userInfo.profile_image || 'https://via.placeholder.com/100',
-              headers: {
-                'Accept': 'image/webp,image/*,*/*;q=0.8',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-              }
+              uri: userInfo.profile_image ? `http://localhost:3000/auth/profile-image/${userInfo.id}` : undefined,
+              cache: 'force-cache'
             }} 
             style={styles.profileImage}
             resizeMode="cover"
-
+            onLoad={() => console.log('=== IMAGE_SUCCESS === 프로필 이미지 로드 성공:', userInfo.profile_image)}
+            onError={(error) => {
+              console.log('=== IMAGE_ERROR === 프로필 이미지 로드 실패:', error.nativeEvent.error);
+              console.log('=== IMAGE_ERROR === 시도한 URL:', userInfo.profile_image);
+            }}
           />
-         <Text style={styles.name}>{userInfo.name}</Text>
+          <Text style={styles.name}>{userInfo.name}</Text>
           <Text style={styles.email}>{userInfo.email}</Text>
           <Text style={styles.nickname}>챗봇이름: {nickname}님의 JOY</Text>
         </View>
@@ -170,7 +172,7 @@ const MyPageScreen = () => {
             style={styles.menuItem}
             onPress={() => setWithdrawModalVisible(true)}
           >
-            <Ionicons name="trash" size={24} color="#e74c3c" />
+            <Ionicons name="trash" size={24} color="#EF4444" />
             <Text style={[styles.menuText, styles.deleteText]}>회원탈퇴</Text>
             <Ionicons name="chevron-forward" size={24} color="#9CA3AF" />
           </TouchableOpacity>
@@ -225,7 +227,10 @@ const MyPageScreen = () => {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>회원탈퇴</Text>
             <Text style={styles.modalMessage}>
-              정말로 탈퇴하시겠습니까? 탈퇴 시 모든 데이터가 삭제되며 복구할 수 없습니다.
+              탈퇴 시 데이터가 삭제되며 복구할 수 없습니다.
+            </Text>
+            <Text style={[styles.modalMessage, styles.secondMessage]}>
+              정말 탈퇴하시겠습니까?
             </Text>
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -287,34 +292,46 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0F111A',
+    height: '100%',
   },
   content: {
     flex: 1,
     width: '100%',
-    paddingHorizontal: 20,
-    paddingTop: 20,
   },
   header: {
+    backgroundColor: '#0F111A',
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    width: '100%',
-    marginBottom: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    borderBottomWidth: 2,
+    borderBottomColor: '#374151',
+    height: 60,
   },
   backButton: {
     padding: 10,
   },
+  headerTitleContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerTitle: {
-    color: 'white',
-    fontSize: 20,
-    fontWeight: '600',
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   placeholder: {
     width: 40,
   },
   profileSection: {
     alignItems: 'center',
+    marginTop: 50,
     marginBottom: 20,
+    paddingHorizontal: 20,
   },
   profileImage: {
     width: 135,
@@ -322,25 +339,36 @@ const styles = StyleSheet.create({
     borderRadius: 67.5,
     marginBottom: 10,
   },
-  name: {
+  defaultAvatar: {
+    backgroundColor: '#3B82F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  defaultAvatarText: {
     color: 'white',
+    fontSize: 50,
+    fontWeight: 'bold',
+  },
+  name: {
+    color: '#fff',
     fontSize: 20,
     fontWeight: '600',
     marginBottom: 4,
   },
   email: {
-    color: 'white',
+    color: '#fff',
     fontSize: 14,
     marginBottom: 4,
   },
   nickname: {
-    color: 'white',
+    color: '#fff',
     fontSize: 14,
-    marginBottom: 24,
+    marginBottom: 20,
   },
   menuSection: {
     width: '100%',
     alignItems: 'center',
+    paddingHorizontal: 20,
   },
   menuItem: {
     flexDirection: 'row',
@@ -350,21 +378,21 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     paddingVertical: 12,
     paddingHorizontal: 15,
-    marginBottom: 10,
+    marginBottom: 15,
     width: '40%',
   },
   menuText: {
-    color: 'white',
+    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
     flex: 1,
     marginLeft: 10,
   },
   deleteText: {
-    color: '#e74c3c',
+    color: '#EF4444',
   },
   loadingText: {
-    color: 'white',
+    color: '#fff',
     fontSize: 18,
     fontWeight: '600',
   },
@@ -375,7 +403,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    width: 300,
+    width: 350,
     backgroundColor: '#1F2937',
     borderRadius: 10,
     padding: 20,
@@ -383,15 +411,15 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 18,
-    color: 'white',
-    marginBottom: 15,
+    color: '#fff',
+    marginBottom: 25,
   },
   input: {
     width: '100%',
     backgroundColor: '#fff',
     padding: 10,
     borderRadius: 5,
-    marginBottom: 15,
+    marginBottom: 30,
     color: '#000',
   },
   modalButtons: {
@@ -400,42 +428,47 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   cancelButton: {
-    backgroundColor: '#374151',
+    backgroundColor: '#6B7280',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 7,
     width: '40%',
   },
   cancelButtonText: {
-    color: 'white',
+    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',
   },
   confirmButton: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#4A90E2',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 7,
     width: '40%',
   },
   confirmButtonText: {
-    color: 'white',
+    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',
   },
   modalMessage: {
-    color: 'white',
+    color: '#fff',
     fontSize: 14,
     textAlign: 'center',
     marginBottom: 20,
+    lineHeight: 5,
+  },
+  secondMessage: {
+    marginTop: -5,
+    marginBottom: 30,
   },
   bottomNavigation: {
     flexDirection: 'row',
     backgroundColor: '#0F111A',
     borderTopColor: '#374151',
-    borderTopWidth: 1,
+    borderTopWidth: 2,
     paddingVertical: 8,
   },
   navItem: {
