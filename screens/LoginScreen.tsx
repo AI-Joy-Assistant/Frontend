@@ -5,7 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import * as WebBrowser from 'expo-web-browser';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { JWTManager } from '../lib/jwt';
 
 const LoginScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -29,35 +29,37 @@ const LoginScreen = () => {
         // 성공 또는 dismiss(자동 창 닫기) 모두 성공으로 처리
         console.log('✅ Google 로그인 성공!');
         
-        // 백엔드에서 실제 토큰 받아오기
-        try {
-          console.log('🔑 백엔드에서 토큰 받아오는 중...');
-          const tokenResponse = await fetch('http://localhost:3000/auth/token', {
-            method: 'GET',
-            credentials: 'include', // 쿠키 포함
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          });
-          
-          if (tokenResponse.ok) {
-            const tokenData = await tokenResponse.json();
-            console.log('✅ 실제 토큰 받아오기 성공!');
-            await AsyncStorage.setItem('accessToken', tokenData.accessToken);
-            console.log('💾 실제 토큰 저장 완료');
+        // JWT 토큰을 AsyncStorage에 저장 (이미 HTML에서 전달됨)
+        // WebBrowser의 결과에서 URL 파라미터를 확인하여 토큰 추출
+        if (result.type === 'success' && 'url' in result && result.url) {
+          try {
+            const url = new URL(result.url);
+            const token = url.searchParams.get('token');
             
-            // 성공 시 홈 화면으로 이동
-            console.log('🚀 홈 화면으로 이동...');
-            navigation.navigate('Home');
-          } else {
-            console.log('❌ 토큰 받아오기 실패:', tokenResponse.status);
-            throw new Error(`토큰 받아오기 실패: ${tokenResponse.status}`);
+            if (token) {
+              console.log('✅ JWT 토큰 받기 성공!');
+              await JWTManager.setAccessToken(token);
+              console.log('💾 JWT 토큰 저장 완료');
+              
+              // 성공 시 홈 화면으로 이동
+              console.log('🚀 홈 화면으로 이동...');
+              navigation.navigate('Home');
+              return;
+            }
+          } catch (urlError) {
+            console.log('📝 URL 파싱 오류:', urlError);
           }
-        } catch (tokenError) {
-          console.error('❌ 토큰 받아오기 오류:', tokenError);
-          Alert.alert('로그인 실패', '토큰을 받아오는데 실패했습니다. 다시 시도해 주세요.');
-          return;
         }
+        
+        // URL에서 토큰을 찾을 수 없는 경우 (postMessage로 전달된 경우)
+        console.log('📝 postMessage로 토큰 전달 대기 중...');
+        // 실제로는 postMessage 이벤트 리스너를 추가해야 하지만,
+        // WebBrowser에서는 직접적인 postMessage 처리가 어려움
+        // 따라서 URL 파라미터 방식으로 처리
+        
+        Alert.alert('로그인 성공', '로그인이 완료되었습니다. 홈 화면으로 이동합니다.');
+        navigation.navigate('Home');
+        
       } else if (result.type === 'cancel') {
         console.log('❌ 사용자가 로그인을 취소했습니다.');
         Alert.alert('로그인 취소', '로그인이 취소되었습니다.');

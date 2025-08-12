@@ -5,7 +5,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { authApi } from '../lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -27,23 +27,10 @@ const MyPageScreen = () => {
   useEffect(() => {
     const fetchUserInfo = async () => {
       try {
-        const token = await AsyncStorage.getItem('accessToken');
-        if (!token) {
-          Alert.alert('오류', '로그인이 필요합니다.');
-          navigation.navigate('Login');
-          return;
-        }
-
-        // 백엔드에서 사용자 정보 가져오기
-        const response = await fetch('http://localhost:3000/auth/me', {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-
-        if (response.ok) {
-          const userData = await response.json();
+        const result = await authApi.getMe();
+        
+        if (result.success && result.data) {
+          const userData = result.data as any;
           setUserInfo(userData);
           setNickname(userData.name || '');
         } else {
@@ -61,36 +48,22 @@ const MyPageScreen = () => {
   // 닉네임 수정
   const handleNicknameUpdate = async () => {
     try {
-      const token = await AsyncStorage.getItem('accessToken');
-      if (!token) {
-        Alert.alert('오류', '로그인이 필요합니다.');
-        return;
-      }
-
       if (!newNickname.trim()) {
         Alert.alert('오류', '닉네임을 입력해주세요.');
         return;
       }
 
-      const response = await fetch('http://localhost:3000/auth/me', {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name: newNickname.trim() }),
-      });
+      const result = await authApi.updateMe({ name: newNickname.trim() });
 
-      if (response.ok) {
-        const updatedUser = await response.json();
+      if (result.success && result.data) {
+        const updatedUser = result.data;
         setUserInfo(prev => prev ? { ...prev, name: newNickname.trim() } : null);
         setNickname(newNickname.trim());
         setNicknameModalVisible(false);
         setNewNickname('');
         Alert.alert('성공', '닉네임이 업데이트되었습니다.');
       } else {
-        const errorData = await response.json();
-        Alert.alert('오류', errorData.detail || '닉네임 업데이트 실패');
+        Alert.alert('오류', result.error || '닉네임 업데이트 실패');
       }
     } catch (error) {
       console.error('닉네임 업데이트 오류:', error);
@@ -101,39 +74,32 @@ const MyPageScreen = () => {
   // 로그아웃
   const handleLogout = async () => {
     try {
-      await AsyncStorage.removeItem('accessToken');
+      // JWTManager.clearTokens(); // This line is removed as per the new_code
       navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
     } catch (error) {
       console.error('로그아웃 오류:', error);
-      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+      Alert.alert('오류', '로그아웃 중 오류가 발생했습니다.');
     }
   };
 
   // 탈퇴
   const handleWithdraw = async () => {
     try {
-      const token = await AsyncStorage.getItem('accessToken');
-      if (!token) {
-        Alert.alert('오류', '로그인이 필요합니다.');
-        return;
-      }
+      // const token = await JWTManager.getAccessToken(); // This line is removed as per the new_code
+      // if (!token) { // This line is removed as per the new_code
+      //   Alert.alert('오류', '로그인이 필요합니다.'); // This line is removed as per the new_code
+      //   return; // This line is removed as per the new_code
+      // } // This line is removed as per the new_code
 
-      const response = await fetch('http://localhost:3000/auth/me', {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      const result = await authApi.deleteMe();
 
-      if (response.ok) {
-        await AsyncStorage.removeItem('accessToken');
+      if (result.success) {
+        // await JWTManager.clearTokens(); // This line is removed as per the new_code
         Alert.alert('탈퇴 완료', '정상적으로 탈퇴되었습니다.');
         setWithdrawModalVisible(false);
         navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
       } else {
-        const errorData = await response.json();
-        Alert.alert('오류', errorData.detail || '탈퇴 실패');
+        Alert.alert('오류', result.error || '탈퇴 실패');
       }
     } catch (error) {
       console.error('탈퇴 오류:', error);

@@ -42,7 +42,7 @@ export default function GoogleLogin({ onLoginSuccess, onLoginError }: GoogleLogi
       
       // 백엔드 서버 상태 확인
       try {
-        const response = await fetch('http://localhost:8000/');
+        const response = await fetch('http://localhost:3000/');
         console.log('✅ 백엔드 서버 연결 성공');
       } catch (error) {
         console.log('❌ 백엔드 서버 연결 실패:', error);
@@ -51,7 +51,7 @@ export default function GoogleLogin({ onLoginSuccess, onLoginError }: GoogleLogi
       }
       
       // 백엔드의 Google OAuth URL로 리다이렉트
-      const authUrl = 'http://localhost:8000/auth/google';
+      const authUrl = 'http://localhost:3000/auth/google';
       
       console.log('🔗 Google OAuth URL:', authUrl);
       

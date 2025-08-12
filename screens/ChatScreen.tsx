@@ -1,7 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useEffect, useState } from 'react';
 import {
     Alert,
@@ -11,9 +7,14 @@ import {
     StyleSheet,
     Text,
     TouchableOpacity,
-    View
+    View,
+    ActivityIndicator
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
+import { chatApi } from '../lib/api';
 
 const { width, height } = Dimensions.get('window');
 
@@ -43,28 +44,15 @@ const ChatScreen = () => {
     try {
       setLoading(true);
       
-      // AsyncStorage에서 토큰 가져오기
-      const token = await AsyncStorage.getItem('accessToken');
-      if (!token) {
-        Alert.alert('오류', '로그인이 필요합니다.');
-        return;
-      }
-
       console.log('🔍 채팅방 목록 요청 중...');
-      const response = await fetch('http://localhost:3000/chat/rooms', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ 채팅방 목록 가져오기 성공:', data);
+      const result = await chatApi.getRooms();
+      
+      if (result.success && result.data) {
+        console.log('✅ 채팅방 목록 가져오기 성공:', result.data);
         
         // 백엔드 응답을 프론트엔드 형식으로 변환
-        const formattedRooms = data.chat_rooms?.map((room: any, index: number) => ({
+        const chatRoomsData = result.data as any;
+        const formattedRooms = chatRoomsData.chat_rooms?.map((room: any, index: number) => ({
           id: `room_${index}`,
           participants: room.participant_names || room.participants,
           lastMessage: room.last_message || '메시지가 없습니다',
@@ -77,7 +65,7 @@ const ChatScreen = () => {
         
         setChatRooms(formattedRooms);
       } else {
-        console.log('❌ 채팅방 목록 가져오기 실패:', response.status);
+        console.log('❌ 채팅방 목록 가져오기 실패:', result.error);
         setChatRooms([]);
       }
     } catch (error) {

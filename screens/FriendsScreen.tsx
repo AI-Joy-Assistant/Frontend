@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useEffect, useState } from 'react';
@@ -16,6 +15,7 @@ import {
     View,
 } from 'react-native';
 import { RootStackParamList } from '../types';
+import { friendsApi } from '../lib/api';
 
 interface FriendRequest {
   id: string;
@@ -54,25 +54,13 @@ const FriendsScreen = () => {
   // 친구 요청 목록 가져오기
   const fetchFriendRequests = async () => {
     try {
-      const token = await AsyncStorage.getItem('accessToken');
-      if (!token) {
-        Alert.alert('오류', '로그인이 필요합니다.');
-        return;
-      }
-
-      const response = await fetch('http://localhost:3000/friends/requests', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setFriendRequests(data.requests || []);
+      const result = await friendsApi.getRequests();
+      
+      if (result.success && result.data) {
+        const requestsData = result.data as any;
+        setFriendRequests(requestsData.requests || []);
       } else {
-        console.log('친구 요청 목록 가져오기 실패:', response.status);
+        console.log('친구 요청 목록 가져오기 실패:', result.error);
         setFriendRequests([]);
       }
     } catch (error) {
@@ -84,32 +72,18 @@ const FriendsScreen = () => {
   // 친구 목록 가져오기
   const fetchFriends = async () => {
     try {
-      const token = await AsyncStorage.getItem('accessToken');
-      if (!token) {
-        Alert.alert('오류', '로그인이 필요합니다.');
-        return;
-      }
-
-      const response = await fetch('http://localhost:3000/friends/list', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setFriends(data.friends || []);
+      const result = await friendsApi.getFriends();
+      
+      if (result.success && result.data) {
+        const friendsData = result.data as any;
+        setFriends(friendsData.friends || []);
       } else {
-        console.log('친구 목록 가져오기 실패:', response.status);
+        console.log('친구 목록 가져오기 실패:', result.error);
         setFriends([]);
       }
     } catch (error) {
       console.error('친구 목록 가져오기 오류:', error);
       setFriends([]);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -121,21 +95,9 @@ const FriendsScreen = () => {
   // 친구 요청 수락
   const acceptFriendRequest = async (requestId: string) => {
     try {
-      const token = await AsyncStorage.getItem('accessToken');
-      if (!token) {
-        Alert.alert('오류', '로그인이 필요합니다.');
-        return;
-      }
-
-      const response = await fetch(`http://localhost:3000/friends/requests/${requestId}/accept`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
+      const result = await friendsApi.acceptRequest(requestId);
+      
+      if (result.success) {
         Alert.alert('성공', '친구 요청을 수락했습니다.');
         fetchFriendRequests();
         fetchFriends();
@@ -151,21 +113,9 @@ const FriendsScreen = () => {
   // 친구 요청 거절
   const rejectFriendRequest = async (requestId: string) => {
     try {
-      const token = await AsyncStorage.getItem('accessToken');
-      if (!token) {
-        Alert.alert('오류', '로그인이 필요합니다.');
-        return;
-      }
-
-      const response = await fetch(`http://localhost:3000/friends/requests/${requestId}/reject`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
+      const result = await friendsApi.rejectRequest(requestId);
+      
+      if (result.success) {
         Alert.alert('성공', '친구 요청을 거절했습니다.');
         fetchFriendRequests();
       } else {
@@ -180,21 +130,9 @@ const FriendsScreen = () => {
   // 친구 삭제
   const deleteFriend = async (friendId: string) => {
     try {
-      const token = await AsyncStorage.getItem('accessToken');
-      if (!token) {
-        Alert.alert('오류', '로그인이 필요합니다.');
-        return;
-      }
-
-      const response = await fetch(`http://localhost:3000/friends/${friendId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
+      const result = await friendsApi.deleteFriend(friendId);
+      
+      if (result.success) {
         Alert.alert('성공', '친구를 삭제했습니다.');
         fetchFriends();
       } else {
@@ -214,28 +152,14 @@ const FriendsScreen = () => {
     }
 
     try {
-      const token = await AsyncStorage.getItem('accessToken');
-      if (!token) {
-        Alert.alert('오류', '로그인이 필요합니다.');
-        return;
-      }
-
-      const response = await fetch('http://localhost:3000/friends/add', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email: emailInput.trim() }),
-      });
-
-      if (response.ok) {
+      const result = await friendsApi.addFriend(emailInput.trim());
+      
+      if (result.success) {
         Alert.alert('성공', '친구 요청을 보냈습니다.');
         setShowAddFriendModal(false);
         setEmailInput('');
       } else {
-        const errorData = await response.json();
-        Alert.alert('오류', errorData.detail || '친구 추가에 실패했습니다.');
+        Alert.alert('오류', result.error || '친구 추가에 실패했습니다.');
       }
     } catch (error) {
       console.error('친구 추가 오류:', error);
