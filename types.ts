@@ -6,6 +6,8 @@ export type RootStackParamList = {
   Home: undefined;
   Chat: undefined;
   Friends: undefined;
+  A2A: undefined;
+  User: undefined;
   MyPage: undefined;
   Test: undefined;
 };

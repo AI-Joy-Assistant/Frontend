@@ -2,6 +2,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
 
+import A2AScreen from './screens/A2AScreen';
 import ChatScreen from './screens/ChatScreen';
 import FriendsScreen from './screens/FriendsScreen';
 import HomeScreen from './screens/HomeScreen';
@@ -24,6 +25,8 @@ export default function App() {
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="Chat" component={ChatScreen} />
         <Stack.Screen name="Friends" component={FriendsScreen} />
+        <Stack.Screen name="A2A" component={A2AScreen} />
+        <Stack.Screen name="User" component={MyPageScreen} />
         <Stack.Screen name="MyPage" component={MyPageScreen} />
         <Stack.Screen name="Test" component={TestScreen} />
       </Stack.Navigator>

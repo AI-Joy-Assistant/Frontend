@@ -199,13 +199,16 @@ const ChatScreen = () => {
           <Ionicons name="people" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>Friends</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => navigation.navigate('A2A')}
+        >
           <Ionicons name="person" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>A2A</Text>
         </TouchableOpacity>
         <TouchableOpacity 
           style={styles.navItem}
-          onPress={() => navigation.navigate('MyPage')}
+          onPress={() => navigation.navigate('User')}
         >
           <Ionicons name="person-circle" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>User</Text>
