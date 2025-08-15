@@ -6,7 +6,7 @@ const API_BASE_URL = 'http://localhost:3000';
 class CalendarService {
   private async getStoredAccessToken(): Promise<string | null> {
     try {
-      return await AsyncStorage.getItem('google_access_token');
+      return await AsyncStorage.getItem('access_token');
     } catch (error) {
       console.error('액세스 토큰 조회 실패:', error);
       return null;
@@ -15,7 +15,7 @@ class CalendarService {
 
   private async storeAccessToken(token: string): Promise<void> {
     try {
-      await AsyncStorage.setItem('google_access_token', token);
+      await AsyncStorage.setItem('access_token', token);
     } catch (error) {
       console.error('액세스 토큰 저장 실패:', error);
     }
@@ -166,7 +166,7 @@ class CalendarService {
 
   async logout(): Promise<void> {
     try {
-      await AsyncStorage.removeItem('google_access_token');
+      await AsyncStorage.removeItem('access_token');
     } catch (error) {
       console.error('로그아웃 실패:', error);
     }
