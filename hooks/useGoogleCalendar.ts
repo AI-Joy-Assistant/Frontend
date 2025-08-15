@@ -108,6 +108,27 @@ export function useGoogleCalendar() {
     }
   };
 
+  // 웹훅 구독 갱신
+  const renewWebhookSubscription = async () => {
+    try {
+      const jwt = await getAppJwt();
+      const res = await fetch(`${API_BASE}/calendar/renew-subscription`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      if (!res.ok) {
+        console.error('웹훅 갱신 실패:', res.status, await res.text());
+        return false;
+      }
+      const data = await res.json();
+      console.log('웹훅 갱신 성공:', data);
+      return true;
+    } catch (error) {
+      console.error('웹훅 갱신 오류:', error);
+      return false;
+    }
+  };
+
   const fetchRealGoogleCalendarEvents = async () => {
     await fetchGoogleCalendarEvents(selectedDate || toLocalYmd(new Date()));
   };
@@ -238,5 +259,6 @@ export function useGoogleCalendar() {
     getGoogleAuthUrl,
     authenticateGoogle,
     subscribeToWebhook,
+    renewWebhookSubscription,
   };
 }
