@@ -87,6 +87,27 @@ export function useGoogleCalendar() {
     } catch { return null; }
   };
 
+  // 실시간 동기화를 위한 웹훅 구독
+  const subscribeToWebhook = async () => {
+    try {
+      const jwt = await getAppJwt();
+      const res = await fetch(`${API_BASE}/calendar/subscribe`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      if (!res.ok) {
+        console.error('웹훅 구독 실패:', res.status, await res.text());
+        return false;
+      }
+      const data = await res.json();
+      console.log('웹훅 구독 성공:', data);
+      return true;
+    } catch (error) {
+      console.error('웹훅 구독 오류:', error);
+      return false;
+    }
+  };
+
   const fetchRealGoogleCalendarEvents = async () => {
     await fetchGoogleCalendarEvents(selectedDate || toLocalYmd(new Date()));
   };
@@ -216,5 +237,6 @@ export function useGoogleCalendar() {
     fetchRealGoogleCalendarEvents,
     getGoogleAuthUrl,
     authenticateGoogle,
+    subscribeToWebhook,
   };
 }
