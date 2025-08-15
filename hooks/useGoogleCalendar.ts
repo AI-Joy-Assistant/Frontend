@@ -2,9 +2,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { CalendarEvent, CalendarDay, CalendarMonth } from '../types/calendar';
 
-const API_BASE = 'http://localhost:3000'; // 필요 시 env
+const API_BASE = 'http://localhost:3000';
 
-// 앱 JWT 얻기: localStorage → 없으면 /auth/token (세션 쿠키)
+// 앱 JWT 얻기
 async function getAppJwt(): Promise<string> {
   const cached = typeof window !== 'undefined' ? localStorage.getItem('app_jwt') : null;
   if (cached) return cached;
@@ -18,22 +18,33 @@ async function getAppJwt(): Promise<string> {
 }
 
 export function useGoogleCalendar() {
+  // 월 전체 이벤트
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  // ★ 선택일 전용 이벤트(일일 조회 결과)
+  const [dayEvents, setDayEvents] = useState<CalendarEvent[]>([]);
   const [currentMonth, setCurrentMonth] = useState<CalendarMonth | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [loading, setLoading] = useState(false);
 
-  // 로컬 YYYY-MM-DD
   const toLocalYmd = (d: Date) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
   };
-  const kstRange = (dateISO: string) => ({
-    from: `${dateISO}T00:00:00+09:00`,
-    to:   `${dateISO}T23:59:59+09:00`,
-  });
+
+  // 일 조회 범위: [00:00, 다음날 00:00) (배타)
+  const kstRange = (dateISO: string) => {
+    const d = new Date(`${dateISO}T00:00:00+09:00`);
+    const next = new Date(d);
+    next.setDate(d.getDate() + 1);
+    const toYmd = (x: Date) =>
+        `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+    return {
+      from: `${dateISO}T00:00:00+09:00`,
+      to:   `${toYmd(next)}T00:00:00+09:00`,
+    };
+  };
 
   async function tryRefreshToken(oldJwt: string) {
     const res = await fetch(`${API_BASE}/auth/refresh`, {
@@ -49,13 +60,12 @@ export function useGoogleCalendar() {
     return newToken;
   }
 
-  // 공통 범위 조회(Authorization: Bearer <앱JWT> 만 사용)
-  const fetchEventsRange = async (fromISO: string, toISO: string) => {
+  // 공통 호출 + 정규화
+  const fetchEventsRangeInternal = async (fromISO: string, toISO: string) => {
     const jwt = await getAppJwt();
     const qs = new URLSearchParams({ time_min: fromISO, time_max: toISO }).toString();
     let res = await fetch(`${API_BASE}/calendar/events?${qs}`, {
-      headers: { Authorization: `Bearer ${jwt}`,
-      'Content-Type': 'application/json',},
+      headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
     });
 
     if (res.status === 401) {
@@ -70,30 +80,52 @@ export function useGoogleCalendar() {
         }
       }
     }
+
     if (!res.ok) {
       console.error('캘린더 조회 실패:', res.status, await res.text());
-      setEvents([]);
-      return;
+      return [] as CalendarEvent[];
     }
     const data = await res.json();
-    setEvents(data.events ?? []);
+    const normalized = (data.events ?? []).map((ev: any) => ({
+      ...ev,
+      title: ev.title ?? ev.summary ?? '제목 없음',
+      summary: ev.summary ?? ev.title ?? '제목 없음',
+      description: ev.description ?? '',
+      location: ev.location ?? '',
+    }));
+    setEvents(normalized);
+    return normalized as CalendarEvent[];
   };
 
+  // 월 범위 전용 (다른 날짜의 점 상태 유지)
+  const fetchEventsRangeForMonth = async (fromISO: string, toISO: string) => {
+    const list = await fetchEventsRangeInternal(fromISO, toISO);
+    setEvents(list);            // 월 상태만 갱신
+  };
+
+  // 일 범위 전용 (선택일 상세)
+  const fetchEventsRangeForDay = async (fromISO: string, toISO: string) => {
+    const list = await fetchEventsRangeInternal(fromISO, toISO);
+    setDayEvents(list);         // 선택일 상태만 갱신
+  };
+
+  // 월 전체
   const fetchMonthEvents = async (year: number, month: number) => {
-    const mm = String(month).padStart(2, '0');
-    const first = `${year}-${mm}-01T00:00:00+09:00`;
-    const lastDate = new Date(year, month, 0).getDate();
-    const last = `${year}-${mm}-${String(lastDate).padStart(2, '0')}T23:59:59+09:00`;
-    await fetchEventsRange(first, last);
+    const first = `${year}-${String(month).padStart(2,'0')}-01T00:00:00+09:00`;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear  = month === 12 ? year + 1 : year;
+    const nextFirst = `${nextYear}-${String(nextMonth).padStart(2,'0')}-01T00:00:00+09:00`;
+    await fetchEventsRangeForMonth(first, nextFirst);
   };
 
+  // 일자
   const fetchGoogleCalendarEvents = async (dateISO?: string) => {
     const target = dateISO || selectedDate || toLocalYmd(new Date());
     const { from, to } = kstRange(target);
-    await fetchEventsRange(from, to);
+    await fetchEventsRangeForDay(from, to);
   };
 
-  // (옵션) OAuth 도우미들 – 필요하면 그대로 사용
+  // (옵션) OAuth 도우미들
   const getGoogleAuthUrl = async () => {
     try {
       const res = await fetch(`${API_BASE}/calendar/auth-url`);
@@ -106,9 +138,7 @@ export function useGoogleCalendar() {
     try {
       const res = await fetch(`${API_BASE}/calendar/auth`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code, redirect_uri: 'http://localhost:3000/auth/google/callback' }),
       });
       if (!res.ok) return null;
@@ -117,7 +147,7 @@ export function useGoogleCalendar() {
     } catch { return null; }
   };
 
-  // 실시간 동기화를 위한 웹훅 구독
+  // 웹훅
   const subscribeToWebhook = async () => {
     try {
       const jwt = await getAppJwt();
@@ -138,7 +168,6 @@ export function useGoogleCalendar() {
     }
   };
 
-  // 웹훅 구독 갱신
   const renewWebhookSubscription = async () => {
     try {
       const jwt = await getAppJwt();
@@ -163,7 +192,36 @@ export function useGoogleCalendar() {
     await fetchGoogleCalendarEvents(selectedDate || toLocalYmd(new Date()));
   };
 
-  // 월 격자
+  // ---- 시간/겹침 유틸 ----
+  const eventInterval = (ev: CalendarEvent) => {
+    const s = ev.start?.dateTime
+        ? new Date(ev.start.dateTime)
+        : ev.start?.date
+            ? new Date(`${ev.start.date}T00:00:00+09:00`)
+            : null;
+
+    const e = ev.end?.dateTime
+        ? new Date(ev.end.dateTime)
+        : ev.end?.date
+            ? new Date(`${ev.end.date}T00:00:00+09:00`) // 구글 종일 종료일은 배타
+            : null;
+
+    return { start: s, end: e };
+  };
+
+  const dayWindow = (dateString: string) => {
+    const start = new Date(`${dateString}T00:00:00+09:00`);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return { start, end };
+  };
+
+  const overlaps = (aStart: Date | null, aEnd: Date | null, bStart: Date, bEnd: Date) => {
+    if (!aStart || !aEnd) return false;
+    return aStart < bEnd && aEnd > bStart;
+  };
+
+  // 월 격자(점은 월 데이터만 사용)
   const generateCalendarMonth = useCallback((year: number, month: number, selectedDateParam?: string): CalendarMonth => {
     const firstDay = new Date(year, month - 1, 1);
     const startDate = new Date(firstDay);
@@ -177,9 +235,10 @@ export function useGoogleCalendar() {
       const currentDate = new Date(startDate);
       currentDate.setDate(startDate.getDate() + i);
       const dateString = toLocalYmd(currentDate);
+      const { start: dayStart, end: dayEnd } = dayWindow(dateString);
       const hasEvents = events.some(ev => {
-        const eventDate = ev.start.dateTime ? toLocalYmd(new Date(ev.start.dateTime)) : ev.start.date || '';
-        return eventDate === dateString;
+        const { start, end } = eventInterval(ev);
+        return overlaps(start, end, dayStart, dayEnd);
       });
       days.push({
         date: dateString,
@@ -187,30 +246,35 @@ export function useGoogleCalendar() {
         isToday: dateString === todayString,
         isSelected: currentSelectedDate === dateString,
         hasEvents,
-        isWeekend: [0,6].includes(currentDate.getDay()),
+        isWeekend: [0, 6].includes(currentDate.getDay()),
       });
     }
     return { year, month, days };
   }, [selectedDate, events]);
 
+  // 선택일 상세는 dayEvents 우선, 없으면 월 데이터에서 필터
   const selectedEvents = useMemo(() => {
+    if (dayEvents.length) return dayEvents;
     if (!selectedDate) return [];
+    const { start: dayStart, end: dayEnd } = dayWindow(selectedDate);
     return events.filter(ev => {
-      const eventDate = ev.start.dateTime ? toLocalYmd(new Date(ev.start.dateTime)) : ev.start.date || '';
-      return eventDate === selectedDate;
+      const { start, end } = eventInterval(ev);
+      return overlaps(start, end, dayStart, dayEnd);
     });
-  }, [selectedDate, events]);
+  }, [selectedDate, events, dayEvents]);
 
   const getEventsForDate = useCallback((date: string): CalendarEvent[] => {
     if (!date) return [];
+    const { start: dayStart, end: dayEnd } = dayWindow(date);
     return events.filter(ev => {
-      const eventDate = ev.start.dateTime ? toLocalYmd(new Date(ev.start.dateTime)) : ev.start.date || '';
-      return eventDate === date;
+      const { start, end } = eventInterval(ev);
+      return overlaps(start, end, dayStart, dayEnd);
     });
   }, [events]);
 
   const selectDate = useCallback((date: string) => {
     setSelectedDate(date);
+    setDayEvents([]); // 선택 바꿀 때 이전 일자 캐시 초기화(선택)
     if (currentMonth) setCurrentMonth(generateCalendarMonth(currentMonth.year, currentMonth.month, date));
   }, [currentMonth, generateCalendarMonth]);
 
@@ -219,7 +283,7 @@ export function useGoogleCalendar() {
     fetchMonthEvents(year, month);
   };
 
-  // 이벤트 추가: 앱 JWT만 사용(백엔드가 구글 토큰 갱신)
+  // 이벤트 추가
   const addEvent = async (event: Omit<CalendarEvent, 'id'>) => {
     setLoading(true);
     try {
@@ -234,10 +298,7 @@ export function useGoogleCalendar() {
       };
       const res = await fetch(`${API_BASE}/calendar/events?calendar_id=primary`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${jwt}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -260,7 +321,7 @@ export function useGoogleCalendar() {
     setSelectedDate(today);
   }, []);
 
-  // currentMonth 준비되면 월 전체 조회(로그인 상태면)
+  // currentMonth 준비되면 월 전체 조회
   useEffect(() => {
     (async () => {
       if (!currentMonth) return;

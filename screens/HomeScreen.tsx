@@ -22,6 +22,7 @@ export default function HomeScreen() {
     selectDate,
     changeMonth,
     addEvent,
+    getEventsForDate,
   } = useGoogleCalendar();
 
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
@@ -41,29 +42,35 @@ export default function HomeScreen() {
     selectDate(day.date);
   };
 
+  // 🔁 기존의 selectedEvents useMemo 블록 전부 삭제하고 아래 한 줄로 교체
+  const selectedEvents = useMemo(
+      () => getEventsForDate(selectedDate),
+      [selectedDate, events, getEventsForDate]
+  );
+
   // 선택된 날짜의 이벤트 계산
-  const selectedEvents = useMemo(() => {
-    if (!selectedDate) return [];
-
-    return events.filter(event => {
-      let eventDate: string;
-
-      if (event.start.dateTime) {
-        // 로컬 시간으로 날짜 파싱
-        const eventDateTime = new Date(event.start.dateTime);
-        const year = eventDateTime.getFullYear();
-        const month = String(eventDateTime.getMonth() + 1).padStart(2, '0');
-        const day = String(eventDateTime.getDate()).padStart(2, '0');
-        eventDate = `${year}-${month}-${day}`;
-      } else if (event.start.date) {
-        eventDate = event.start.date;
-      } else {
-        return false;
-      }
-
-      return eventDate === selectedDate;
-    });
-  }, [selectedDate, events]);
+  // const selectedEvents = useMemo(() => {
+  //   if (!selectedDate) return [];
+  //
+  //   return events.filter(event => {
+  //     let eventDate: string;
+  //
+  //     if (event.start.dateTime) {
+  //       // 로컬 시간으로 날짜 파싱
+  //       const eventDateTime = new Date(event.start.dateTime);
+  //       const year = eventDateTime.getFullYear();
+  //       const month = String(eventDateTime.getMonth() + 1).padStart(2, '0');
+  //       const day = String(eventDateTime.getDate()).padStart(2, '0');
+  //       eventDate = `${year}-${month}-${day}`;
+  //     } else if (event.start.date) {
+  //       eventDate = event.start.date;
+  //     } else {
+  //       return false;
+  //     }
+  //
+  //     return eventDate === selectedDate;
+  //   });
+  // }, [selectedDate, events]);
 
   const handleAddEvent = () => {
     setShowAddEventModal(true);

@@ -9,20 +9,21 @@ interface EventDetailsProps {
 
 export default function EventDetails({ selectedDate, events }: EventDetailsProps) {
   // 선택된 날짜의 이벤트만 필터링
-  const filteredEvents = events.filter(event => {
-    let eventDate: string;
-    
-    if (event.start.dateTime) {
-      const eventDateTime = new Date(event.start.dateTime);
-      eventDate = eventDateTime.toISOString().split('T')[0];
-    } else if (event.start.date) {
-      eventDate = event.start.date;
-    } else {
-      return false;
-    }
-    
-    return eventDate === selectedDate;
-  });
+  // const filteredEvents = events.filter(event => {
+  //   let eventDate: string;
+  //
+  //   if (event.start.dateTime) {
+  //     const eventDateTime = new Date(event.start.dateTime);
+  //     eventDate = eventDateTime.toISOString().split('T')[0];
+  //   } else if (event.start.date) {
+  //     eventDate = event.start.date;
+  //   } else {
+  //     return false;
+  //   }
+  //
+  //   return eventDate === selectedDate;
+  // });
+  const filteredEvents = events;
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString);
@@ -31,7 +32,8 @@ export default function EventDetails({ selectedDate, events }: EventDetailsProps
       const day = date.getDate();
       const hour = date.getHours();
       const minute = date.getMinutes();
-      
+      const ampm = hour >= 12 ? '오후' : '오전';
+      const h12 = hour % 12 === 0 ? 12 : hour % 12;
       const timeString = `${hour > 12 ? '오후' : '오전'} ${hour > 12 ? hour - 12 : hour}시${minute > 0 ? ` ${minute}분` : ''}`;
       return `${month}월 ${day}일 ${timeString}`;
     } catch (error) {
@@ -41,45 +43,34 @@ export default function EventDetails({ selectedDate, events }: EventDetailsProps
 
   const formatTimeRange = (startDateTime: string, endDateTime: string) => {
     try {
-      const startDate = new Date(startDateTime);
-      const endDate = new Date(endDateTime);
-      
-      const startHour = startDate.getHours();
-      const startMinute = startDate.getMinutes();
-      const endHour = endDate.getHours();
-      const endMinute = endDate.getMinutes();
-      
-      const startTimeString = `${startHour > 12 ? '오후' : '오전'} ${startHour > 12 ? startHour - 12 : startHour}시${startMinute > 0 ? ` ${startMinute}분` : ''}`;
-      const endTimeString = `${endHour > 12 ? '오후' : '오전'} ${endHour > 12 ? endHour - 12 : endHour}시${endMinute > 0 ? ` ${endMinute}분` : ''}`;
-      
-      return `${startTimeString} - ${endTimeString}`;
-    } catch (error) {
+      const s = new Date(startDateTime);
+      const e = new Date(endDateTime);
+      const fmt = (d: Date) => {
+        const ampm = d.getHours() >= 12 ? '오후' : '오전';
+        const h12 = d.getHours() % 12 === 0 ? 12 : d.getHours() % 12;
+        const mm = d.getMinutes();
+        return `${ampm} ${h12}시${mm ? ` ${mm}분` : ''}`;
+      };
+      return `${fmt(s)} - ${fmt(e)}`;
+    } catch {
       return `${startDateTime} - ${endDateTime}`;
     }
   };
 
   const formatAttendees = (attendees?: CalendarEvent['attendees']) => {
-    if (!attendees || attendees.length === 0) return '';
-    
-    return attendees.map(attendee => {
-      const name = attendee.displayName || attendee.email.split('@')[0];
-      return name.replace(/(.{1}).*/, '$1○○');
-    }).join(', ');
+    if (!attendees?.length) return '';
+    return attendees
+        .map(a => (a.displayName || a.email.split('@')[0]).replace(/(.{1}).*/, '$1○○'))
+        .join(', ');
   };
 
   const formatSelectedDate = (dateString: string) => {
     if (!dateString) return '오늘 일정';
-    
     try {
-      // YYYY-MM-DD 형식을 직접 파싱하여 로컬 시간으로 처리
-      const [year, month, day] = dateString.split('-').map(Number);
-      
-      if (isNaN(year) || isNaN(month) || isNaN(day)) {
-        return '오늘 일정';
-      }
-      
-      return `${month}월 ${day}일 일정`;
-    } catch (error) {
+      const [y, m, d] = dateString.split('-').map(Number);
+      if (isNaN(y) || isNaN(m) || isNaN(d)) return '오늘 일정';
+      return `${m}월 ${d}일 일정`;
+    } catch {
       return '오늘 일정';
     }
   };

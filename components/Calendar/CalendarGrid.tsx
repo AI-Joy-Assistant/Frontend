@@ -85,7 +85,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     width: '100%',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
   },
   dayCell: {
     width: '14.285%',
@@ -120,7 +120,7 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: 'center',
     alignItems: 'center',
-    marginHorizontal: 'auto',
+    // marginHorizontal: 'auto',
   },
   todayText: {
     color: '#EF4444',
@@ -136,6 +136,7 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: '#60A5FA',
+    zIndex: 2,
   },
   selectedDayOverlay: {
     position: 'absolute',
@@ -149,5 +150,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#3B82F6',
     zIndex: 1,
+    pointerEvents: 'none',
   },
 }); 
