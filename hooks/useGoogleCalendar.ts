@@ -35,13 +35,41 @@ export function useGoogleCalendar() {
     to:   `${dateISO}T23:59:59+09:00`,
   });
 
+  async function tryRefreshToken(oldJwt: string) {
+    const res = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${oldJwt}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const newToken = data?.accessToken;
+    if (newToken) {
+      try { localStorage.setItem('app_jwt', newToken); } catch {}
+    }
+    return newToken;
+  }
+
   // 공통 범위 조회(Authorization: Bearer <앱JWT> 만 사용)
   const fetchEventsRange = async (fromISO: string, toISO: string) => {
     const jwt = await getAppJwt();
     const qs = new URLSearchParams({ time_min: fromISO, time_max: toISO }).toString();
-    const res = await fetch(`${API_BASE}/calendar/events?${qs}`, {
-      headers: { Authorization: `Bearer ${jwt}` },
+    let res = await fetch(`${API_BASE}/calendar/events?${qs}`, {
+      headers: { Authorization: `Bearer ${jwt}`,
+      'Content-Type': 'application/json',},
     });
+
+    if (res.status === 401) {
+      let body: any = {};
+      try { body = await res.clone().json(); } catch {}
+      if (body?.detail === 'token_expired') {
+        const newJwt = await tryRefreshToken(jwt);
+        if (newJwt) {
+          res = await fetch(`${API_BASE}/calendar/events?${qs}`, {
+            headers: { Authorization: `Bearer ${newJwt}`, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+    }
     if (!res.ok) {
       console.error('캘린더 조회 실패:', res.status, await res.text());
       setEvents([]);
@@ -78,7 +106,9 @@ export function useGoogleCalendar() {
     try {
       const res = await fetch(`${API_BASE}/calendar/auth`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ code, redirect_uri: 'http://localhost:3000/auth/google/callback' }),
       });
       if (!res.ok) return null;
@@ -161,7 +191,7 @@ export function useGoogleCalendar() {
       });
     }
     return { year, month, days };
-  }, [selectedDate, events.length]);
+  }, [selectedDate, events]);
 
   const selectedEvents = useMemo(() => {
     if (!selectedDate) return [];
@@ -182,7 +212,6 @@ export function useGoogleCalendar() {
   const selectDate = useCallback((date: string) => {
     setSelectedDate(date);
     if (currentMonth) setCurrentMonth(generateCalendarMonth(currentMonth.year, currentMonth.month, date));
-    fetchGoogleCalendarEvents(date);
   }, [currentMonth, generateCalendarMonth]);
 
   const changeMonth = (year: number, month: number) => {
