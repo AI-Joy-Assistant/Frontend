@@ -1,13 +1,14 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { CalendarEvent } from '../../types/calendar';
 
 interface EventDetailsProps {
   selectedDate: string;
   events: CalendarEvent[];
+  onDeleteEvent?: (eventId: string) => void;
 }
 
-export default function EventDetails({ selectedDate, events }: EventDetailsProps) {
+export default function EventDetails({ selectedDate, events, onDeleteEvent }: EventDetailsProps) {
   // 선택된 날짜의 이벤트만 필터링
   // const filteredEvents = events.filter(event => {
   //   let eventDate: string;
@@ -85,7 +86,11 @@ export default function EventDetails({ selectedDate, events }: EventDetailsProps
         filteredEvents.map((event, index) => (
           <View key={event.id} style={styles.eventItem}>
             <Text style={styles.eventTitle}>{event.summary}</Text>
-            
+            {!!onDeleteEvent && (
+                <TouchableOpacity style={styles.deleteButton} onPress={() => onDeleteEvent(event.id)}>
+                  <Text style={styles.deleteButtonText}>삭제</Text>
+                </TouchableOpacity>
+            )}
             {event.start.dateTime && event.end.dateTime && (
               <Text style={styles.eventDetail}>
                 시간: {formatTimeRange(event.start.dateTime, event.end.dateTime)}
@@ -141,6 +146,7 @@ const styles = StyleSheet.create({
     paddingBottom: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#374151',
+    position: 'relative',
   },
   eventTitle: {
     color: '#fff',
@@ -153,5 +159,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 5,
     lineHeight: 20,
+  },
+  deleteButton: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  deleteButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
   },
 }); 
