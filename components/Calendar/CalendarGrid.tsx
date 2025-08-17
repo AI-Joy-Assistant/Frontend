@@ -9,47 +9,52 @@ interface CalendarGridProps {
 
 export default function CalendarGrid({ days, onDayPress }: CalendarGridProps) {
   const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+  const CELL_PERCENT = `${100 / 7}%`; // 정확히 1/7
 
   return (
-    <View style={styles.container}>
-      {/* 요일 헤더 */}
-      <View style={styles.dayHeader}>
-        {dayNames.map((dayName, index) => (
-          <View key={dayName} style={styles.dayHeaderCell}>
-            <Text style={[
-              styles.dayHeaderText,
-              index === 0 && styles.sundayText,
-              index === 6 && styles.saturdayText
-            ]}>
-              {dayName}
-            </Text>
-          </View>
-        ))}
-      </View>
+      <View style={styles.container}>
+        {/* 요일 헤더 */}
+        <View style={styles.dayHeader}>
+          {dayNames.map((dayName, index) => (
+              <View key={dayName} style={styles.dayHeaderCell}>
+                <Text style={[
+                  styles.dayHeaderText,
+                  index === 0 && styles.sundayText,
+                  index === 6 && styles.saturdayText
+                ]}>
+                  {dayName}
+                </Text>
+              </View>
+          ))}
+        </View>
 
-      {/* 날짜 그리드 */}
-      <View style={styles.calendarGrid}>
-        {days.map((day, index) => (
-          <TouchableOpacity
-            key={day.date}
-            style={styles.dayCell}
-            onPress={() => onDayPress(day)}
-          >
-            {day.isSelected && <View style={styles.selectedDayOverlay} />}
-            {day.isToday && !day.isSelected && <View style={styles.todayOutline} />}
-            <Text style={[
-              styles.dayText,
-              day.isSelected && styles.selectedDayText,
-              day.isToday && !day.isSelected && styles.todayText,
-              day.isWeekend && !day.isSelected && styles.weekendText
-            ]}>
-              {day.dayOfMonth}
-            </Text>
-            {day.hasEvents && <View style={styles.eventDot} />}
-          </TouchableOpacity>
-        ))}
+        {/* 날짜 그리드 */}
+        <View style={styles.calendarGrid}>
+          {days.map((day, index) => (
+              <TouchableOpacity
+                  key={day.date}
+                  style={styles.dayCell}
+                  onPress={() => onDayPress(day)}
+              >
+                {day.isSelected && <View style={styles.selectedDayOverlay} />}
+                {day.isToday && !day.isSelected && <View style={styles.todayOutline} />}  {/* ✅ 오늘 오버레이 */}
+                <View style={styles.numberWrap}>
+                  <Text
+                      style={[
+                        styles.dayText,
+                        day.isSelected && styles.selectedDayText,
+                        day.isToday && !day.isSelected && styles.todayText,
+                        day.isWeekend && !day.isSelected && styles.weekendText,
+                      ]}
+                  >
+                    {day.dayOfMonth}
+                  </Text>
+                </View>
+                {day.hasEvents && <View style={styles.eventDot} />}
+              </TouchableOpacity>
+          ))}
+        </View>
       </View>
-    </View>
   );
 }
 
@@ -86,17 +91,31 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   dayCell: {
-    width: '14.285%',
+    flexBasis: `${100 / 7}%`,
+    maxWidth: `${100 / 7}%`,
     height: 50,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
+  },
+  numberWrap: {
+    position: 'absolute',
+    top: 5,
+    left: '50%',
+    width: 40,
+    height: 40,
+    transform: [{ translateX: -20 }], // 가로 중앙
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2,
+    pointerEvents: 'none',
   },
   dayText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '500',
     textAlign: 'center',
+    includeFontPadding: false as any,
     zIndex: 2,
   },
   selectedDay: {
@@ -111,16 +130,26 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   // 오늘 날짜를 표시하는 아웃라인 (셀 크기를 변경하지 않도록 절대 위치 사용)
+  // todayCell: {
+  //   borderWidth: 2,
+  //   borderColor: '#EF4444',
+  //   borderRadius: 25,
+  //   width: 40,
+  //   height: 40,
+  //   justifyContent: 'center',
+  //   alignItems: 'center',
+  //   marginHorizontal: 'auto',
+  // },
   todayOutline: {
     position: 'absolute',
     top: 5,
     left: '50%',
-    marginLeft: -19,
     width: 38,
     height: 38,
     borderRadius: 19,
     borderWidth: 2,
     borderColor: '#EF4444',
+    transform: [{ translateX: -19 }],
     zIndex: 1,
     pointerEvents: 'none',
   },
@@ -134,17 +163,19 @@ const styles = StyleSheet.create({
   eventDot: {
     position: 'absolute',
     bottom: 4,
+    left: '50%',
+    transform: [{ translateX: -2 }],
     width: 4,
     height: 4,
     borderRadius: 2,
     backgroundColor: '#60A5FA',
-    zIndex: 2,
+    zIndex: 3,
   },
   selectedDayOverlay: {
     position: 'absolute',
     top: 5,
     left: '50%',
-    marginLeft: -20,
+    // marginLeft: -20,
     width: 40,
     height: 40,
     backgroundColor: '#EF4444',
@@ -153,5 +184,6 @@ const styles = StyleSheet.create({
     borderColor: '#3B82F6',
     zIndex: 1,
     pointerEvents: 'none',
+    transform: [{ translateX: -20 }],
   },
 }); 
