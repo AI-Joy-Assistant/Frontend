@@ -52,6 +52,12 @@ export default function EventDetails({ selectedDate, events, onDeleteEvent }: Ev
         const mm = d.getMinutes();
         return `${ampm} ${h12}시${mm ? ` ${mm}분` : ''}`;
       };
+      
+      // 시작시간과 종료시간이 같으면 시작시간만 표시
+      if (s.getTime() === e.getTime()) {
+        return fmt(s);
+      }
+      
       return `${fmt(s)} - ${fmt(e)}`;
     } catch {
       return `${startDateTime} - ${endDateTime}`;
