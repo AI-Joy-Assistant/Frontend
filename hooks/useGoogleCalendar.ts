@@ -313,6 +313,26 @@ export function useGoogleCalendar() {
     }
   };
 
+  // 이벤트 삭제
+  const deleteEvent = async (eventId: string) => {
+    setLoading(true);
+    try {
+      const jwt = await getAppJwt();
+      const res = await fetch(`${API_BASE}/calendar/events/${eventId}?calendar_id=primary`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      if (!res.ok) throw new Error(await res.text());
+
+      // 선택된 날짜와 현재 월 데이터 동기화
+      await fetchGoogleCalendarEvents(selectedDate || toLocalYmd(new Date()));
+      if (currentMonth) await fetchMonthEvents(currentMonth.year, currentMonth.month);
+      return true;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // 초기 세팅
   useEffect(() => {
     const now = new Date();
@@ -344,6 +364,7 @@ export function useGoogleCalendar() {
     selectDate,
     changeMonth,
     addEvent,
+    deleteEvent,
     fetchGoogleCalendarEvents,
     fetchRealGoogleCalendarEvents,
     getGoogleAuthUrl,
