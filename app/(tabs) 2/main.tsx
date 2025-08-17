@@ -16,6 +16,7 @@ export default function Main() {
     selectDate,
     changeMonth,
     addEvent,
+    deleteEvent,
   } = useGoogleCalendar();
 
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
@@ -46,6 +47,15 @@ export default function Main() {
     } catch (error) {
       Alert.alert('오류', '일정 추가에 실패했습니다.');
       console.error('일정 추가 실패:', error);
+    }
+  };
+  const handleDeleteEvent = async (eventId: string) => {
+    try {
+      await deleteEvent(eventId);
+      Alert.alert('삭제됨', '일정이 삭제되었습니다.');
+    } catch (e) {
+      Alert.alert('오류', '일정 삭제에 실패했습니다.');
+      console.error('일정 삭제 실패:', e);
     }
   };
 
@@ -120,6 +130,7 @@ export default function Main() {
         <EventDetails
           selectedDate={selectedDate}
           events={selectedEvents}
+          onDeleteEvent={handleDeleteEvent}
         />
       </ScrollView>
 

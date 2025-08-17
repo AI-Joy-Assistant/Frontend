@@ -23,6 +23,7 @@ export default function HomeScreen() {
     changeMonth,
     addEvent,
     getEventsForDate,
+    deleteEvent,
   } = useGoogleCalendar();
 
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
@@ -89,6 +90,16 @@ export default function HomeScreen() {
     } catch (error) {
       console.error('일정 추가 실패:', error);
       Alert.alert('오류', '일정 추가에 실패했습니다.');
+    }
+  };
+
+  const handleDeleteEvent = async (eventId: string) => {
+    try {
+      await deleteEvent(eventId);
+      Alert.alert('삭제됨', '일정이 삭제되었습니다.');
+    } catch (e) {
+      console.error('일정 삭제 실패:', e);
+      Alert.alert('오류', '일정 삭제에 실패했습니다.');
     }
   };
 
@@ -188,6 +199,7 @@ export default function HomeScreen() {
         <EventDetails
           selectedDate={selectedDate}
           events={selectedEvents}
+          onDeleteEvent={handleDeleteEvent}
         />
       </ScrollView>
 
@@ -207,7 +219,7 @@ export default function HomeScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.navItem}
-          onPress={() => navigation.navigate('Chat')}
+          onPress={() => navigation.navigate('A2A')}
         >
           <Ionicons name="chatbubble" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>Chat</Text>
@@ -221,7 +233,7 @@ export default function HomeScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.navItem}
-          onPress={() => navigation.navigate('A2A')}
+          onPress={() => navigation.navigate('Chat')}
         >
           <Ionicons name="person" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>A2A</Text>
