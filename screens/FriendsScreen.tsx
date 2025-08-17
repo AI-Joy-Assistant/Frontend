@@ -374,7 +374,7 @@ const FriendsScreen = () => {
         </TouchableOpacity>
         <TouchableOpacity 
           style={styles.navItem}
-          onPress={() => navigation.navigate('Chat')}
+          onPress={() => navigation.navigate('A2A')}
         >
           <Ionicons name="chatbubble" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>Chat</Text>
@@ -385,7 +385,7 @@ const FriendsScreen = () => {
         </TouchableOpacity>
         <TouchableOpacity 
           style={styles.navItem}
-          onPress={() => navigation.navigate('A2A')}
+          onPress={() => navigation.navigate('Chat')}
         >
           <Ionicons name="person" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>A2A</Text>

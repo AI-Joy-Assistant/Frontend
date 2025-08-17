@@ -8,6 +8,7 @@ import { RootStackParamList } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -291,13 +292,13 @@ const A2AScreen = () => {
             <Ionicons name="home" size={24} color="#9CA3AF" />
             <Text style={styles.navText}>Home</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.navItem}
-            onPress={() => navigation.navigate('Chat')}
+          <TouchableOpacity
+              style={[styles.navItem, styles.activeNavItem]}
+              onPress={() => navigation.navigate('A2A')}
           >
-            <Ionicons name="chatbubble" size={24} color="#9CA3AF" />
-            <Text style={styles.navText}>Chat</Text>
-          </TouchableOpacity>
+          <Ionicons name="chatbubble" size={24} color="#3B82F6" />
+            <Text style={[styles.navText, styles.activeNavText]}>Chat</Text>
+            </TouchableOpacity>
           <TouchableOpacity 
             style={styles.navItem}
             onPress={() => navigation.navigate('Friends')}
@@ -305,9 +306,12 @@ const A2AScreen = () => {
             <Ionicons name="people" size={24} color="#9CA3AF" />
             <Text style={styles.navText}>Friends</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-            <Ionicons name="person" size={24} color="#3B82F6" />
-            <Text style={[styles.navText, styles.activeNavText]}>A2A</Text>
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => navigation.navigate('Chat')}
+          >
+          <Ionicons name="person" size={24} color="#9CA3AF" />
+            <Text style={styles.navText}>A2A</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.navItem}

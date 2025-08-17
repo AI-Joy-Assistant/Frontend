@@ -192,9 +192,12 @@ const ChatScreen = () => {
           <Ionicons name="home" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>Home</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-          <Ionicons name="chatbubble" size={24} color="#4A90E2" />
-          <Text style={[styles.navText, styles.activeNavText]}>Chat</Text>
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => navigation.navigate('A2A')}
+        >
+          <Ionicons name="chatbubble" size={24} color="#9CA3AF" />
+          <Text style={styles.navText}>Chat</Text>
         </TouchableOpacity>
         <TouchableOpacity 
           style={styles.navItem}
@@ -203,12 +206,12 @@ const ChatScreen = () => {
           <Ionicons name="people" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>Friends</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => navigation.navigate('A2A')}
+        <TouchableOpacity
+          style={[styles.navItem, styles.activeNavItem]}
+          onPress={() => navigation.navigate('Chat')}
         >
-          <Ionicons name="person" size={24} color="#9CA3AF" />
-          <Text style={styles.navText}>A2A</Text>
+          <Ionicons name="person" size={24} color="#4A90E2" />
+          <Text style={[styles.navText, styles.activeNavText]}>A2A</Text>
         </TouchableOpacity>
         <TouchableOpacity 
           style={styles.navItem}
