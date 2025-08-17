@@ -19,22 +19,16 @@ export default function HomeScreen() {
     currentMonth,
     selectedDate: hookSelectedDate,
     selectedEvents: hookSelectedEvents,
-    loading,
-    accessToken,
-    getEventsForDate,
     selectDate,
     changeMonth,
     addEvent,
-    fetchGoogleCalendarEvents,
-    fetchRealGoogleCalendarEvents,
-    getGoogleAuthUrl,
-    authenticateGoogle,
+    getEventsForDate,
   } = useGoogleCalendar();
 
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [currentMonthNum, setCurrentMonthNum] = useState(new Date().getMonth() + 1);
   const [showAddEventModal, setShowAddEventModal] = useState(false);
-  
+
   // 로컬 시간으로 오늘 날짜 문자열 생성
   const now = new Date();
   const todayYear = now.getFullYear();
@@ -48,29 +42,35 @@ export default function HomeScreen() {
     selectDate(day.date);
   };
 
+  // 🔁 기존의 selectedEvents useMemo 블록 전부 삭제하고 아래 한 줄로 교체
+  const selectedEvents = useMemo(
+      () => getEventsForDate(selectedDate),
+      [selectedDate, events, getEventsForDate]
+  );
+
   // 선택된 날짜의 이벤트 계산
-  const selectedEvents = useMemo(() => {
-    if (!selectedDate) return [];
-    
-    return events.filter(event => {
-      let eventDate: string;
-      
-      if (event.start.dateTime) {
-        // 로컬 시간으로 날짜 파싱
-        const eventDateTime = new Date(event.start.dateTime);
-        const year = eventDateTime.getFullYear();
-        const month = String(eventDateTime.getMonth() + 1).padStart(2, '0');
-        const day = String(eventDateTime.getDate()).padStart(2, '0');
-        eventDate = `${year}-${month}-${day}`;
-      } else if (event.start.date) {
-        eventDate = event.start.date;
-      } else {
-        return false;
-      }
-      
-      return eventDate === selectedDate;
-    });
-  }, [selectedDate, events]);
+  // const selectedEvents = useMemo(() => {
+  //   if (!selectedDate) return [];
+  //
+  //   return events.filter(event => {
+  //     let eventDate: string;
+  //
+  //     if (event.start.dateTime) {
+  //       // 로컬 시간으로 날짜 파싱
+  //       const eventDateTime = new Date(event.start.dateTime);
+  //       const year = eventDateTime.getFullYear();
+  //       const month = String(eventDateTime.getMonth() + 1).padStart(2, '0');
+  //       const day = String(eventDateTime.getDate()).padStart(2, '0');
+  //       eventDate = `${year}-${month}-${day}`;
+  //     } else if (event.start.date) {
+  //       eventDate = event.start.date;
+  //     } else {
+  //       return false;
+  //     }
+  //
+  //     return eventDate === selectedDate;
+  //   });
+  // }, [selectedDate, events]);
 
   const handleAddEvent = () => {
     setShowAddEventModal(true);
@@ -81,7 +81,7 @@ export default function HomeScreen() {
       await addEvent(event);
       setShowAddEventModal(false);
       Alert.alert('성공', '일정이 추가되었습니다.');
-      
+
       // 캘린더 새로고침을 위해 현재 월 다시 로드
       if (currentMonth) {
         changeMonth(currentMonth.year, currentMonth.month);
@@ -134,14 +134,14 @@ export default function HomeScreen() {
             <Ionicons name="home" size={24} color="#4A90E2" />
             <Text style={[styles.navText, styles.activeNavText]}>Home</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.navItem}
             onPress={() => navigation.navigate('Chat')}
           >
             <Ionicons name="chatbubble" size={24} color="#9CA3AF" />
             <Text style={styles.navText}>Chat</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.navItem}
             onPress={() => navigation.navigate('Friends')}
           >
@@ -152,7 +152,7 @@ export default function HomeScreen() {
             <Ionicons name="person" size={24} color="#9CA3AF" />
             <Text style={styles.navText}>A2A</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.navItem}
             onPress={() => navigation.navigate('MyPage')}
           >
@@ -205,28 +205,28 @@ export default function HomeScreen() {
           <Ionicons name="home" size={24} color="#4A90E2" />
           <Text style={[styles.navText, styles.activeNavText]}>Home</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.navItem}
           onPress={() => navigation.navigate('Chat')}
         >
           <Ionicons name="chatbubble" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>Chat</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.navItem}
           onPress={() => navigation.navigate('Friends')}
         >
           <Ionicons name="people" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>Friends</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.navItem}
           onPress={() => navigation.navigate('A2A')}
         >
           <Ionicons name="person" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>A2A</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.navItem}
           onPress={() => navigation.navigate('User')}
         >
@@ -281,4 +281,4 @@ const styles = StyleSheet.create({
     color: '#4A90E2',
     fontWeight: '600',
   },
-}); 
+});

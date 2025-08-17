@@ -1,63 +1,31 @@
 // hooks/useGoogleCalendar.ts
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { CalendarEvent, CalendarDay, CalendarMonth } from '../types/calendar';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_BASE = 'http://localhost:3000'; // 백엔드 서버 포트로 변경
+const API_BASE = 'http://localhost:3000';
+
+// 앱 JWT 얻기
+async function getAppJwt(): Promise<string> {
+  const cached = typeof window !== 'undefined' ? localStorage.getItem('app_jwt') : null;
+  if (cached) return cached;
+  const res = await fetch(`${API_BASE}/auth/token`, { credentials: 'include' });
+  if (!res.ok) throw new Error('앱 로그인 필요');
+  const data = await res.json();
+  const token = data?.accessToken;
+  if (!token) throw new Error('앱 로그인 필요');
+  try { localStorage.setItem('app_jwt', token); } catch {}
+  return token;
+}
 
 export function useGoogleCalendar() {
+  // 월 전체 이벤트
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  // ★ 선택일 전용 이벤트(일일 조회 결과)
+  const [dayEvents, setDayEvents] = useState<CalendarEvent[]>([]);
   const [currentMonth, setCurrentMonth] = useState<CalendarMonth | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [loading, setLoading] = useState(false);
 
-  // 구글 OAuth access_token (백엔드에 쿼리로 전달)
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-
-  // AsyncStorage에서 토큰 불러오기
-  useEffect(() => {
-    const loadAccessToken = async () => {
-      try {
-        // 먼저 AsyncStorage에서 확인
-        const token = await AsyncStorage.getItem('access_token');
-        if (token) {
-          console.log('✅ AsyncStorage에서 토큰 불러오기 성공');
-          setAccessToken(token);
-        } else {
-          console.log('⚠️ AsyncStorage에 토큰이 없습니다');
-          // 백엔드에서 Google OAuth access_token 가져오기 시도
-          try {
-            const response = await fetch('http://localhost:3000/auth/google-token', {
-              method: 'GET',
-              credentials: 'include', // 쿠키 포함
-              headers: {
-                'Content-Type': 'application/json',
-              },
-            });
-            
-            if (response.ok) {
-              const data = await response.json();
-              if (data.access_token) {
-                console.log('✅ 백엔드에서 Google OAuth 토큰 가져오기 성공');
-                await AsyncStorage.setItem('access_token', data.access_token);
-                setAccessToken(data.access_token);
-              }
-            } else {
-              console.log('❌ 백엔드에서 Google OAuth 토큰 가져오기 실패:', response.status);
-            }
-          } catch (error) {
-            console.error('❌ 백엔드에서 Google OAuth 토큰 가져오기 오류:', error);
-          }
-        }
-      } catch (error) {
-        console.error('❌ AsyncStorage에서 토큰 불러오기 실패:', error);
-      }
-    };
-    
-    loadAccessToken();
-  }, []);
-
-  /** 로컬 YYYY-MM-DD */
   const toLocalYmd = (d: Date) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -65,229 +33,306 @@ export function useGoogleCalendar() {
     return `${y}-${m}-${day}`;
   };
 
-  /** 선택 날짜의 KST 하루 범위 */
-  const kstRange = (dateISO: string) => ({
-    from: `${dateISO}T00:00:00+09:00`,
-    to:   `${dateISO}T23:59:59+09:00`,
-  });
+  // 일 조회 범위: [00:00, 다음날 00:00) (배타)
+  const kstRange = (dateISO: string) => {
+    const d = new Date(`${dateISO}T00:00:00+09:00`);
+    const next = new Date(d);
+    next.setDate(d.getDate() + 1);
+    const toYmd = (x: Date) =>
+        `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+    return {
+      from: `${dateISO}T00:00:00+09:00`,
+      to:   `${toYmd(next)}T00:00:00+09:00`,
+    };
+  };
 
-  /** 공통 범위 조회 (from/to는 RFC3339, +09:00 포함) */
-  const fetchEventsRange = async (fromISO: string, toISO: string) => {
-    if (!accessToken) { setEvents([]); return; }
+  async function tryRefreshToken(oldJwt: string) {
+    const res = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${oldJwt}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const newToken = data?.accessToken;
+    if (newToken) {
+      try { localStorage.setItem('app_jwt', newToken); } catch {}
+    }
+    return newToken;
+  }
 
-    const qs = new URLSearchParams({
-      access_token: accessToken,      // 백엔드가 쿼리로 받음
-      time_min: fromISO,              // URLSearchParams가 +를 %2B로 인코딩
-      time_max: toISO,
-    }).toString();
+  // 공통 호출 + 정규화
+  const fetchEventsRangeInternal = async (fromISO: string, toISO: string) => {
+    const jwt = await getAppJwt();
+    const qs = new URLSearchParams({ time_min: fromISO, time_max: toISO }).toString();
+    let res = await fetch(`${API_BASE}/calendar/events?${qs}`, {
+      headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+    });
 
-    const res = await fetch(`${API_BASE}/calendar/events?${qs}`);
+    if (res.status === 401) {
+      let body: any = {};
+      try { body = await res.clone().json(); } catch {}
+      if (body?.detail === 'token_expired') {
+        const newJwt = await tryRefreshToken(jwt);
+        if (newJwt) {
+          res = await fetch(`${API_BASE}/calendar/events?${qs}`, {
+            headers: { Authorization: `Bearer ${newJwt}`, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+    }
+
     if (!res.ok) {
       console.error('캘린더 조회 실패:', res.status, await res.text());
-      setEvents([]);
-      return;
+      return [] as CalendarEvent[];
     }
-    const data = await res.json();    // { events: [...] }
-    setEvents(data.events ?? []);
+    const data = await res.json();
+    const normalized = (data.events ?? []).map((ev: any) => ({
+      ...ev,
+      title: ev.title ?? ev.summary ?? '제목 없음',
+      summary: ev.summary ?? ev.title ?? '제목 없음',
+      description: ev.description ?? '',
+      location: ev.location ?? '',
+    }));
+    setEvents(normalized);
+    return normalized as CalendarEvent[];
   };
 
-  /** 월 전체 조회 (해당 월 1일 00:00 ~ 말일 23:59:59 KST) */
+  // 월 범위 전용 (다른 날짜의 점 상태 유지)
+  const fetchEventsRangeForMonth = async (fromISO: string, toISO: string) => {
+    const list = await fetchEventsRangeInternal(fromISO, toISO);
+    setEvents(list);            // 월 상태만 갱신
+  };
+
+  // 일 범위 전용 (선택일 상세)
+  const fetchEventsRangeForDay = async (fromISO: string, toISO: string) => {
+    const list = await fetchEventsRangeInternal(fromISO, toISO);
+    setDayEvents(list);         // 선택일 상태만 갱신
+  };
+
+  // 월 전체
   const fetchMonthEvents = async (year: number, month: number) => {
-    const mm = String(month).padStart(2, '0');
-    const first = `${year}-${mm}-01T00:00:00+09:00`;
-    const lastDate = new Date(year, month, 0).getDate();
-    const last = `${year}-${mm}-${String(lastDate).padStart(2, '0')}T23:59:59+09:00`;
-    await fetchEventsRange(first, last);
+    const first = `${year}-${String(month).padStart(2,'0')}-01T00:00:00+09:00`;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear  = month === 12 ? year + 1 : year;
+    const nextFirst = `${nextYear}-${String(nextMonth).padStart(2,'0')}-01T00:00:00+09:00`;
+    await fetchEventsRangeForMonth(first, nextFirst);
   };
 
-  /** 하루 범위 조회 (선택일 / 인자로 받은 날짜) */
+  // 일자
   const fetchGoogleCalendarEvents = async (dateISO?: string) => {
-    if (!accessToken) { setEvents([]); return; }
-
     const target = dateISO || selectedDate || toLocalYmd(new Date());
     const { from, to } = kstRange(target);
-    await fetchEventsRange(from, to);
+    await fetchEventsRangeForDay(from, to);
   };
 
-  /** OAuth 동의 URL */
+  // (옵션) OAuth 도우미들
   const getGoogleAuthUrl = async () => {
     try {
       const res = await fetch(`${API_BASE}/calendar/auth-url`);
       if (!res.ok) return null;
       const data = await res.json();
       return data.auth_url as string;
-    } catch (e) {
-      console.error('Google OAuth URL 가져오기 실패:', e);
-      return null;
-    }
+    } catch { return null; }
   };
-
-  /** OAuth 코드로 토큰 교환 */
   const authenticateGoogle = async (code: string) => {
     try {
       const res = await fetch(`${API_BASE}/calendar/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code,
-          redirect_uri: 'http://localhost:3000/auth/google/callback',
-        }),
+        body: JSON.stringify({ code, redirect_uri: 'http://localhost:3000/auth/google/callback' }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.access_token as string;
+    } catch { return null; }
+  };
+
+  // 웹훅
+  const subscribeToWebhook = async () => {
+    try {
+      const jwt = await getAppJwt();
+      const res = await fetch(`${API_BASE}/calendar/subscribe`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${jwt}` },
       });
       if (!res.ok) {
-        console.error('Google OAuth 인증 실패', await res.text());
-        return null;
+        console.error('웹훅 구독 실패:', res.status, await res.text());
+        return false;
       }
       const data = await res.json();
-      setAccessToken(data.access_token);
-      return data.access_token as string;
-    } catch (e) {
-      console.error('Google OAuth 인증 중 오류:', e);
-      return null;
+      console.log('웹훅 구독 성공:', data);
+      return true;
+    } catch (error) {
+      console.error('웹훅 구독 오류:', error);
+      return false;
     }
   };
 
-  /** 실구글 조회(래퍼) */
+  const renewWebhookSubscription = async () => {
+    try {
+      const jwt = await getAppJwt();
+      const res = await fetch(`${API_BASE}/calendar/renew-subscription`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      if (!res.ok) {
+        console.error('웹훅 갱신 실패:', res.status, await res.text());
+        return false;
+      }
+      const data = await res.json();
+      console.log('웹훅 갱신 성공:', data);
+      return true;
+    } catch (error) {
+      console.error('웹훅 갱신 오류:', error);
+      return false;
+    }
+  };
+
   const fetchRealGoogleCalendarEvents = async () => {
     await fetchGoogleCalendarEvents(selectedDate || toLocalYmd(new Date()));
   };
 
-  /** 월 격자 생성 (표시용) */
+  // ---- 시간/겹침 유틸 ----
+  const eventInterval = (ev: CalendarEvent) => {
+    const s = ev.start?.dateTime
+        ? new Date(ev.start.dateTime)
+        : ev.start?.date
+            ? new Date(`${ev.start.date}T00:00:00+09:00`)
+            : null;
+
+    const e = ev.end?.dateTime
+        ? new Date(ev.end.dateTime)
+        : ev.end?.date
+            ? new Date(`${ev.end.date}T00:00:00+09:00`) // 구글 종일 종료일은 배타
+            : null;
+
+    return { start: s, end: e };
+  };
+
+  const dayWindow = (dateString: string) => {
+    const start = new Date(`${dateString}T00:00:00+09:00`);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return { start, end };
+  };
+
+  const overlaps = (aStart: Date | null, aEnd: Date | null, bStart: Date, bEnd: Date) => {
+    if (!aStart || !aEnd) return false;
+    return aStart < bEnd && aEnd > bStart;
+  };
+
+  // 월 격자(점은 월 데이터만 사용)
   const generateCalendarMonth = useCallback((year: number, month: number, selectedDateParam?: string): CalendarMonth => {
     const firstDay = new Date(year, month - 1, 1);
-    const lastDay = new Date(year, month, 0);
     const startDate = new Date(firstDay);
     startDate.setDate(startDate.getDate() - firstDay.getDay());
 
     const days: CalendarDay[] = [];
-    const today = new Date();
-    const todayString = toLocalYmd(today);
+    const todayString = toLocalYmd(new Date());
     const currentSelectedDate = selectedDateParam || selectedDate;
 
     for (let i = 0; i < 42; i++) {
       const currentDate = new Date(startDate);
       currentDate.setDate(startDate.getDate() + i);
-
       const dateString = toLocalYmd(currentDate);
-      const dayOfMonth = currentDate.getDate();
-      const isToday = dateString === todayString;
-      const isSelected = currentSelectedDate === dateString;
-      const isWeekend = currentDate.getDay() === 0 || currentDate.getDay() === 6;
-
-      const hasEvents = events.some(event => {
-        let eventDate: string;
-        if (event.start.dateTime) eventDate = toLocalYmd(new Date(event.start.dateTime));
-        else if (event.start.date) eventDate = event.start.date;
-        else return false;
-        return eventDate === dateString;
+      const { start: dayStart, end: dayEnd } = dayWindow(dateString);
+      const hasEvents = events.some(ev => {
+        const { start, end } = eventInterval(ev);
+        return overlaps(start, end, dayStart, dayEnd);
       });
-
-      days.push({ date: dateString, dayOfMonth, isToday, isSelected, hasEvents, isWeekend });
+      days.push({
+        date: dateString,
+        dayOfMonth: currentDate.getDate(),
+        isToday: dateString === todayString,
+        isSelected: currentSelectedDate === dateString,
+        hasEvents,
+        isWeekend: [0, 6].includes(currentDate.getDay()),
+      });
     }
-
     return { year, month, days };
-  }, [selectedDate, events.length]);
-
-  /** 선택된 날짜의 이벤트 */
-  const selectedEvents = useMemo(() => {
-    if (!selectedDate) return [];
-    return events.filter(event => {
-      let eventDate: string;
-      if (event.start.dateTime) eventDate = toLocalYmd(new Date(event.start.dateTime));
-      else if (event.start.date) eventDate = event.start.date;
-      else return false;
-      return eventDate === selectedDate;
-    });
   }, [selectedDate, events]);
 
-  /** 특정 날짜의 이벤트 */
+  // 선택일 상세는 dayEvents 우선, 없으면 월 데이터에서 필터
+  const selectedEvents = useMemo(() => {
+    if (dayEvents.length) return dayEvents;
+    if (!selectedDate) return [];
+    const { start: dayStart, end: dayEnd } = dayWindow(selectedDate);
+    return events.filter(ev => {
+      const { start, end } = eventInterval(ev);
+      return overlaps(start, end, dayStart, dayEnd);
+    });
+  }, [selectedDate, events, dayEvents]);
+
   const getEventsForDate = useCallback((date: string): CalendarEvent[] => {
     if (!date) return [];
-    return events.filter(event => {
-      let eventDate: string;
-      if (event.start.dateTime) eventDate = toLocalYmd(new Date(event.start.dateTime));
-      else if (event.start.date) eventDate = event.start.date;
-      else return false;
-      return eventDate === date;
+    const { start: dayStart, end: dayEnd } = dayWindow(date);
+    return events.filter(ev => {
+      const { start, end } = eventInterval(ev);
+      return overlaps(start, end, dayStart, dayEnd);
     });
   }, [events]);
 
-  /** 날짜 선택 시: 격자 갱신 + 그 날짜 범위 조회 */
   const selectDate = useCallback((date: string) => {
     setSelectedDate(date);
-    if (currentMonth) {
-      const updated = generateCalendarMonth(currentMonth.year, currentMonth.month, date);
-      setCurrentMonth(updated);
-    }
-    fetchGoogleCalendarEvents(date);
+    setDayEvents([]); // 선택 바꿀 때 이전 일자 캐시 초기화(선택)
+    if (currentMonth) setCurrentMonth(generateCalendarMonth(currentMonth.year, currentMonth.month, date));
   }, [currentMonth, generateCalendarMonth]);
 
-  /** 월 변경 시: 격자 갱신 + 월 전체 조회 */
   const changeMonth = (year: number, month: number) => {
-    const newMonth = generateCalendarMonth(year, month, selectedDate);
-    setCurrentMonth(newMonth);
-    fetchMonthEvents(year, month); // 월 전체 범위 조회
+    setCurrentMonth(generateCalendarMonth(year, month, selectedDate));
+    fetchMonthEvents(year, month);
   };
 
-  /** 이벤트 추가 → 평평한 필드로 전송 → 재조회 */
+  // 이벤트 추가
   const addEvent = async (event: Omit<CalendarEvent, 'id'>) => {
     setLoading(true);
     try {
-      if (!accessToken) throw new Error('구글 인증이 필요합니다.');
-
+      const jwt = await getAppJwt();
       const payload = {
         summary: event.summary,
         description: event.description,
-        start_time: event.start.dateTime,  // 백엔드가 평평한 필드 기대
+        start_time: event.start.dateTime,
         end_time: event.end.dateTime,
         location: event.location,
         attendees: event.attendees?.map(a => a.email) ?? [],
       };
-
-      const url = `${API_BASE}/calendar/events?` + new URLSearchParams({
-        access_token: accessToken,
-        calendar_id: 'primary',
-      }).toString();
-
-      const res = await fetch(url, {
+      const res = await fetch(`${API_BASE}/calendar/events?calendar_id=primary`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(await res.text());
-
       const created = await res.json();
 
-      // 생성된 날짜만 빠르게 재조회
       const dateISO = (event.start.dateTime ?? '').slice(0, 10);
       await fetchGoogleCalendarEvents(dateISO || selectedDate);
-
-      // (옵션) 월 전체도 갱신하고 싶으면 주석 해제
       if (currentMonth) await fetchMonthEvents(currentMonth.year, currentMonth.month);
-
       return created;
-    } catch (e) {
-      console.error('이벤트 추가 실패:', e);
-      throw e;
     } finally {
       setLoading(false);
     }
   };
 
-  /** 최초 로딩: 오늘 달 격자 & 선택일 설정 */
+  // 초기 세팅
   useEffect(() => {
     const now = new Date();
     const today = toLocalYmd(now);
-    const initial = generateCalendarMonth(now.getFullYear(), now.getMonth() + 1, today);
-    setCurrentMonth(initial);
+    setCurrentMonth(generateCalendarMonth(now.getFullYear(), now.getMonth() + 1, today));
     setSelectedDate(today);
   }, []);
 
-  /** accessToken 또는 currentMonth 준비되면 월 전체 조회 */
+  // currentMonth 준비되면 월 전체 조회
   useEffect(() => {
-    if (accessToken && currentMonth) {
-      fetchMonthEvents(currentMonth.year, currentMonth.month);
-    }
-  }, [accessToken, currentMonth]);
+    (async () => {
+      if (!currentMonth) return;
+      try {
+        await getAppJwt();
+        await fetchMonthEvents(currentMonth.year, currentMonth.month);
+      } catch {
+        /* 아직 로그인 안 됨 */
+      }
+    })();
+  }, [currentMonth]);
 
   return {
     events,
@@ -295,18 +340,15 @@ export function useGoogleCalendar() {
     selectedDate,
     selectedEvents,
     loading,
-    accessToken,
-
-    // actions
     getEventsForDate,
     selectDate,
     changeMonth,
     addEvent,
-
-    // fetchers
-    fetchGoogleCalendarEvents,     // 하루 범위
-    fetchRealGoogleCalendarEvents, // wrapper
+    fetchGoogleCalendarEvents,
+    fetchRealGoogleCalendarEvents,
     getGoogleAuthUrl,
     authenticateGoogle,
+    subscribeToWebhook,
+    renewWebhookSubscription,
   };
 }
