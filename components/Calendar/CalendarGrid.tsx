@@ -32,13 +32,11 @@ export default function CalendarGrid({ days, onDayPress }: CalendarGridProps) {
         {days.map((day, index) => (
           <TouchableOpacity
             key={day.date}
-            style={[
-              styles.dayCell,
-              day.isToday && !day.isSelected && styles.todayCell
-            ]}
+            style={styles.dayCell}
             onPress={() => onDayPress(day)}
           >
             {day.isSelected && <View style={styles.selectedDayOverlay} />}
+            {day.isToday && !day.isSelected && <View style={styles.todayOutline} />}
             <Text style={[
               styles.dayText,
               day.isSelected && styles.selectedDayText,
@@ -112,15 +110,19 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     zIndex: 2,
   },
-  todayCell: {
+  // 오늘 날짜를 표시하는 아웃라인 (셀 크기를 변경하지 않도록 절대 위치 사용)
+  todayOutline: {
+    position: 'absolute',
+    top: 5,
+    left: '50%',
+    marginLeft: -19,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     borderWidth: 2,
     borderColor: '#EF4444',
-    borderRadius: 25,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    // marginHorizontal: 'auto',
+    zIndex: 1,
+    pointerEvents: 'none',
   },
   todayText: {
     color: '#EF4444',
