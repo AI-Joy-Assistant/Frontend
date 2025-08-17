@@ -53,6 +53,11 @@ const A2AScreen = () => {
     loadChatHistory();
   }, []);
 
+  // 한국 시간으로 Date 객체 생성하는 함수
+  const getKoreanTime = () => {
+    return new Date(); // 이미 한국 시간이므로 그대로 사용
+  };
+
   // 채팅 기록 로드 함수
   const loadChatHistory = async () => {
     try {
@@ -81,7 +86,7 @@ const A2AScreen = () => {
               id: `user_${log.id}`,
               text: log.request_text,
               isUser: true,
-              timestamp: new Date(log.created_at),
+              timestamp: new Date(log.created_at), // UTC 시간을 자동으로 로컬 시간으로 변환
             });
           }
           if (log.response_text) {
@@ -89,7 +94,7 @@ const A2AScreen = () => {
               id: `ai_${log.id}`,
               text: log.response_text,
               isUser: false,
-              timestamp: new Date(log.created_at),
+              timestamp: new Date(log.created_at), // UTC 시간을 자동으로 로컬 시간으로 변환
             });
           }
         });
@@ -132,7 +137,7 @@ const A2AScreen = () => {
         id: Date.now().toString() + '_ai',
         text: data.ai_response || '죄송합니다. 응답을 생성할 수 없습니다.',
         isUser: false,
-        timestamp: new Date(),
+        timestamp: new Date(), // 현재 시간
       };
       
       setMessages(prev => [...prev, aiMessage]);
@@ -145,7 +150,7 @@ const A2AScreen = () => {
         id: Date.now().toString() + '_ai',
         text: '죄송합니다. 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
         isUser: false,
-        timestamp: new Date(),
+        timestamp: new Date(), // 현재 시간
       };
       
       setMessages(prev => [...prev, errorMessage]);
@@ -161,7 +166,7 @@ const A2AScreen = () => {
       id: Date.now().toString() + '_user',
       text: inputText.trim(),
       isUser: true,
-      timestamp: new Date(),
+      timestamp: new Date(), // 현재 시간
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -171,25 +176,46 @@ const A2AScreen = () => {
     await callChatGPTAPI(userMessage.text);
   };
 
-  const renderMessage = ({ item }: { item: Message }) => (
-    <View style={[
-      styles.messageContainer,
-      item.isUser ? styles.userMessage : styles.aiMessage
-    ]}>
-      <Text style={[
-        styles.messageText,
-        item.isUser ? styles.userMessageText : styles.aiMessageText
+  const renderMessage = ({ item }: { item: Message }) => {
+    // 시간 포맷팅 개선 (한국 시간 기준)
+    const formatTime = (date: Date) => {
+      const now = new Date();
+      const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
+      
+      if (diffInMinutes < 1) {
+        return '방금 전';
+      } else if (diffInMinutes < 60) {
+        return `${diffInMinutes}분 전`;
+      } else if (diffInMinutes < 1440) { // 24시간
+        const hours = Math.floor(diffInMinutes / 60);
+        return `${hours}시간 전`;
+      } else {
+        return date.toLocaleString('ko-KR', {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      }
+    };
+
+    return (
+      <View style={[
+        styles.messageContainer,
+        item.isUser ? styles.userMessage : styles.aiMessage
       ]}>
-        {item.text}
-      </Text>
-      <Text style={styles.timestamp}>
-        {item.timestamp.toLocaleTimeString('ko-KR', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        })}
-      </Text>
-    </View>
-  );
+        <Text style={[
+          styles.messageText,
+          item.isUser ? styles.userMessageText : styles.aiMessageText
+        ]}>
+          {item.text}
+        </Text>
+        <Text style={styles.timestamp}>
+          {formatTime(item.timestamp)}
+        </Text>
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
