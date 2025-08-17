@@ -178,25 +178,19 @@ const A2AScreen = () => {
 
   const renderMessage = ({ item }: { item: Message }) => {
     // 시간 포맷팅 개선 (한국 시간 기준)
+    const fmtKST = new Intl.DateTimeFormat('ko-KR', {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+      hour12: false, timeZone: 'Asia/Seoul'
+    });
+
     const formatTime = (date: Date) => {
-      const now = new Date();
-      const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
-      
-      if (diffInMinutes < 1) {
-        return '방금 전';
-      } else if (diffInMinutes < 60) {
-        return `${diffInMinutes}분 전`;
-      } else if (diffInMinutes < 1440) { // 24시간
-        const hours = Math.floor(diffInMinutes / 60);
-        return `${hours}시간 전`;
-      } else {
-        return date.toLocaleString('ko-KR', {
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        });
-      }
+      const now = new Date();                 // UTC 기준 timestamp
+      const diffMs = now.getTime() - date.getTime();
+      const diffMin = Math.floor(diffMs / (1000 * 60));
+      if (diffMin < 1) return '방금 전';
+      if (diffMin < 60) return `${diffMin}분 전`;
+      if (diffMin < 1440) return `${Math.floor(diffMin/60)}시간 전`;
+      return fmtKST.format(date);             // 출력은 KST로
     };
 
     return (
