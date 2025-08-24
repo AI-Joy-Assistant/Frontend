@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, FlatList, Alert,
+  View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -8,42 +8,67 @@ import { RootStackParamList } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 
-interface ChatMessage {
-  id: string;
-  message: string;
-  isFromMe: boolean;
-  timestamp: string;
-}
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-interface ChatRoom {
+interface Message {
   id: string;
-  participants: string[];
-  lastMessage: string;
-  lastMessageTime: string;
+  text: string;
+  isUser: boolean;
+  timestamp: Date;
 }
 
 const ChatScreen = () => {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const [currentChat, setCurrentChat] = useState<string>('채팅을 선택하세요');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const navigation = useNavigation<NavigationProp>();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputText, setInputText] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [userNickname, setUserNickname] = useState('');
+  const flatListRef = useRef<FlatList>(null);
 
-  // 채팅방 목록 가져오기
-  const fetchChatRooms = async () => {
+  // 사용자 닉네임 가져오기 및 채팅 기록 로드
+  useEffect(() => {
+    const fetchUserInfo = async () => {
+      try {
+        const token = await AsyncStorage.getItem('accessToken');
+        if (token) {
+          const response = await fetch('http://localhost:3000/auth/me', {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          if (response.ok) {
+            const userData = await response.json();
+            setUserNickname(userData.name || '사용자');
+          }
+        }
+      } catch (error) {
+        console.error('사용자 정보 조회 오류:', error);
+        setUserNickname('사용자');
+      }
+    };
+
+    fetchUserInfo();
+    loadChatHistory();
+  }, []);
+
+  // 한국 시간으로 Date 객체 생성하는 함수
+  const getKoreanTime = () => {
+    return new Date(); // 이미 한국 시간이므로 그대로 사용
+  };
+
+  // 채팅 기록 로드 함수
+  const loadChatHistory = async () => {
     try {
-      setLoading(true);
-      
-      // AsyncStorage에서 토큰 가져오기
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) {
-        Alert.alert('오류', '로그인이 필요합니다.');
+        console.log('인증 토큰이 없습니다.');
         return;
       }
 
-      console.log('🔍 채팅방 목록 요청 중...');
-      const response = await fetch('http://localhost:3000/chat/rooms', {
+      const response = await fetch('http://localhost:3000/chat/history', {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -53,77 +78,139 @@ const ChatScreen = () => {
 
       if (response.ok) {
         const data = await response.json();
-        console.log('✅ 채팅방 목록 가져오기 성공:', data);
+        const chatHistory: Message[] = [];
         
-        // 백엔드 응답을 프론트엔드 형식으로 변환
-        const formattedRooms = data.chat_rooms?.map((room: any, index: number) => ({
-          id: `room_${index}`,
-          participants: room.participant_names || room.participants,
-          lastMessage: room.last_message || '메시지가 없습니다',
-          lastMessageTime: room.last_message_time ? 
-            new Date(room.last_message_time).toLocaleTimeString('ko-KR', { 
-              hour: '2-digit', 
-              minute: '2-digit' 
-            }) : '시간 없음'
-        })) || [];
-        
-        setChatRooms(formattedRooms);
-      } else {
-        console.log('❌ 채팅방 목록 가져오기 실패:', response.status);
-        setChatRooms([]);
+        // 대화 기록을 시간순으로 정렬하여 메시지 배열 생성
+        data.forEach((log: any) => {
+          if (log.request_text) {
+            chatHistory.push({
+              id: `user_${log.id}`,
+              text: log.request_text,
+              isUser: true,
+              timestamp: new Date(log.created_at), // UTC 시간을 자동으로 로컬 시간으로 변환
+            });
+          }
+          if (log.response_text) {
+            chatHistory.push({
+              id: `ai_${log.id}`,
+              text: log.response_text,
+              isUser: false,
+              timestamp: new Date(log.created_at), // UTC 시간을 자동으로 로컬 시간으로 변환
+            });
+          }
+        });
+
+        // 시간순으로 정렬
+        chatHistory.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        setMessages(chatHistory);
       }
     } catch (error) {
-      console.error('❌ 채팅방 목록 가져오기 오류:', error);
-      setChatRooms([]);
-    } finally {
-      setLoading(false);
+      console.error('채팅 기록 로드 오류:', error);
     }
   };
 
-  useEffect(() => {
-    fetchChatRooms();
-  }, []);
+  // ChatGPT API 호출
+  const callChatGPTAPI = async (userMessage: string) => {
+    setIsLoading(true);
+    
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) {
+        throw new Error('인증 토큰이 없습니다.');
+      }
 
-  const renderMessage = ({ item }: { item: ChatMessage }) => (
-    <View style={[
-      styles.messageContainer,
-      item.isFromMe ? styles.myMessage : styles.otherMessage
-    ]}>
+      const response = await fetch('http://localhost:3000/chat/chat', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: userMessage }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API 호출 실패: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      const aiMessage: Message = {
+        id: Date.now().toString() + '_ai',
+        text: data.ai_response || '죄송합니다. 응답을 생성할 수 없습니다.',
+        isUser: false,
+        timestamp: new Date(), // 현재 시간
+      };
+      
+      setMessages(prev => [...prev, aiMessage]);
+      
+    } catch (error) {
+      console.error('ChatGPT API 호출 오류:', error);
+      
+      // 에러 발생 시 기본 응답
+      const errorMessage: Message = {
+        id: Date.now().toString() + '_ai',
+        text: '죄송합니다. 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
+        isUser: false,
+        timestamp: new Date(), // 현재 시간
+      };
+      
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!inputText.trim() || isLoading) return;
+
+    const userMessage: Message = {
+      id: Date.now().toString() + '_user',
+      text: inputText.trim(),
+      isUser: true,
+      timestamp: new Date(), // 현재 시간
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInputText('');
+    
+    // ChatGPT API 호출
+    await callChatGPTAPI(userMessage.text);
+  };
+
+  const renderMessage = ({ item }: { item: Message }) => {
+    // 시간 포맷팅 개선 (한국 시간 기준)
+    const fmtKST = new Intl.DateTimeFormat('ko-KR', {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+      hour12: false, timeZone: 'Asia/Seoul'
+    });
+
+    const formatTime = (date: Date) => {
+      const now = new Date();                 // UTC 기준 timestamp
+      const diffMs = now.getTime() - date.getTime();
+      const diffMin = Math.floor(diffMs / (1000 * 60));
+      if (diffMin < 1) return '방금 전';
+      if (diffMin < 60) return `${diffMin}분 전`;
+      if (diffMin < 1440) return `${Math.floor(diffMin/60)}시간 전`;
+      return fmtKST.format(date);             // 출력은 KST로
+    };
+
+    return (
       <View style={[
-        styles.messageBubble,
-        item.isFromMe ? styles.myBubble : styles.otherBubble
+        styles.messageContainer,
+        item.isUser ? styles.userMessage : styles.aiMessage
       ]}>
         <Text style={[
           styles.messageText,
-          item.isFromMe ? styles.myMessageText : styles.otherMessageText
+          item.isUser ? styles.userMessageText : styles.aiMessageText
         ]}>
-          {item.message}
+          {item.text}
+        </Text>
+        <Text style={styles.timestamp}>
+          {formatTime(item.timestamp)}
         </Text>
       </View>
-    </View>
-  );
-
-  const renderChatRoom = ({ item }: { item: ChatRoom }) => (
-    <TouchableOpacity 
-      style={styles.chatRoomItem}
-      onPress={() => setCurrentChat(item.participants.join(', '))}
-    >
-      <View style={styles.chatRoomIcon}>
-        <Ionicons name="chatbubbles" size={24} color="#4A90E2" />
-      </View>
-      <View style={styles.chatRoomContent}>
-        <Text style={styles.chatRoomTitle}>
-          {item.participants.join(', ')}
-        </Text>
-        <Text style={styles.chatRoomLastMessage} numberOfLines={1}>
-          {item.lastMessage}
-        </Text>
-      </View>
-      <Text style={styles.chatRoomTime}>
-        {item.lastMessageTime}
-      </Text>
-    </TouchableOpacity>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -137,99 +224,114 @@ const ChatScreen = () => {
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <View style={styles.searchContainer}>
-          <Text style={styles.headerTitle}>{currentChat}</Text>
+          <Text style={styles.headerTitle}>{userNickname}님의 JOY</Text>
         </View>
       </View>
 
-      {/* 채팅 메시지 영역 */}
-      <View style={styles.chatArea}>
+      <KeyboardAvoidingView 
+        style={styles.container} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        {/* 메시지 목록 */}
         <FlatList
+          ref={flatListRef}
           data={messages}
           renderItem={renderMessage}
           keyExtractor={(item) => item.id}
           style={styles.messagesList}
-          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.messagesContainer}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
-      </View>
 
-      {/* 채팅방 목록 */}
-      <View style={styles.chatRoomsSection}>
-        <View style={styles.chatRoomsHeader}>
-          <Text style={styles.chatRoomsTitle}>채팅방</Text>
-          <TouchableOpacity onPress={fetchChatRooms} style={styles.refreshButton}>
-            <Ionicons name="refresh" size={20} color="#4A90E2" />
+        {/* 로딩 인디케이터 */}
+        {isLoading && (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>ChatGPT가 응답을 생성하고 있습니다...</Text>
+          </View>
+        )}
+
+        {/* 입력 영역 */}
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.textInput}
+            value={inputText}
+            onChangeText={setInputText}
+            placeholder="메시지를 입력하세요..."
+            placeholderTextColor="#9CA3AF"
+            multiline
+            maxLength={500}
+          />
+          <TouchableOpacity 
+            style={[
+              styles.sendButton,
+              (!inputText.trim() || isLoading) && styles.sendButtonDisabled
+            ]}
+            onPress={sendMessage}
+            disabled={!inputText.trim() || isLoading}
+          >
+            <Ionicons 
+              name="send" 
+              size={18} 
+              color={(!inputText.trim() || isLoading) ? "#6B7280" : "white"} 
+              style={{ 
+                transform: [{ rotate: '-45deg' }],
+                marginLeft: 1,
+                marginTop: -1
+              }}
+            />
           </TouchableOpacity>
         </View>
-        
-        {loading ? (
-          <View style={styles.emptyStateContainer}>
-            <Ionicons name="hourglass" size={40} color="#ccc" />
-            <Text style={styles.emptyStateText}>채팅방을 불러오는 중...</Text>
-          </View>
-        ) : chatRooms.length === 0 ? (
-          <View style={styles.emptyStateContainer}>
-            <Ionicons name="chatbubble-outline" size={60} color="#ccc" />
-            <Text style={styles.emptyStateText}>채팅이 없습니다.</Text>
-            <Text style={styles.emptyStateSubText}>친구들과 대화를 시작해보세요!</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={chatRooms}
-            renderItem={renderChatRoom}
-            keyExtractor={(item) => item.id}
-            style={styles.chatRoomsList}
-            showsVerticalScrollIndicator={false}
-          />
-        )}
-      </View>
 
-      {/* 하단 네비게이션 */}
-      <View style={styles.bottomNavigation}>
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => navigation.navigate('Home')}
-        >
-          <Ionicons name="home" size={24} color="#9CA3AF" />
-          <Text style={styles.navText}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigation.navigate('A2A')}
-        >
-          <Ionicons name="chatbubble" size={24} color="#9CA3AF" />
-          <Text style={styles.navText}>Chat</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => navigation.navigate('Friends')}
-        >
-          <Ionicons name="people" size={24} color="#9CA3AF" />
-          <Text style={styles.navText}>Friends</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.navItem, styles.activeNavItem]}
-          onPress={() => navigation.navigate('Chat')}
-        >
-          <Ionicons name="person" size={24} color="#4A90E2" />
-          <Text style={[styles.navText, styles.activeNavText]}>A2A</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => navigation.navigate('User')}
-        >
-          <Ionicons name="person-circle" size={24} color="#9CA3AF" />
-          <Text style={styles.navText}>User</Text>
-        </TouchableOpacity>
-      </View>
+        {/* 하단 탭바 */}
+        <View style={styles.bottomNavigation}>
+          <TouchableOpacity 
+            style={styles.navItem}
+            onPress={() => navigation.navigate('Home')}
+          >
+            <Ionicons name="home" size={24} color="#9CA3AF" />
+            <Text style={styles.navText}>Home</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+              style={[styles.navItem, styles.activeNavItem]}
+              onPress={() => navigation.navigate('A2A')}
+          >
+          <Ionicons name="chatbubble" size={24} color="#3B82F6" />
+            <Text style={[styles.navText, styles.activeNavText]}>Chat</Text>
+            </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.navItem}
+            onPress={() => navigation.navigate('Friends')}
+          >
+            <Ionicons name="people" size={24} color="#9CA3AF" />
+            <Text style={styles.navText}>Friends</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => navigation.navigate('Chat')}
+          >
+          <Ionicons name="person" size={24} color="#9CA3AF" />
+            <Text style={styles.navText}>A2A</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.navItem}
+            onPress={() => navigation.navigate('User')}
+          >
+            <Ionicons name="person-circle" size={24} color="#9CA3AF" />
+            <Text style={styles.navText}>User</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
+
+export default ChatScreen;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0F111A',
-    height: '100%',
   },
   header: {
     backgroundColor: '#0F111A',
@@ -268,126 +370,90 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
-  menuButton: {
-    padding: 8,
-  },
-  chatArea: {
-    flex: 1,
-    backgroundColor: '#0F111A',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
   messagesList: {
     flex: 1,
+    backgroundColor: '#0F111A',
+  },
+  messagesContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 20,
   },
   messageContainer: {
-    marginVertical: 4,
-    flexDirection: 'row',
+    marginBottom: 16,
+    maxWidth: '80%',
   },
-  myMessage: {
-    justifyContent: 'flex-end',
-  },
-  otherMessage: {
-    justifyContent: 'flex-start',
-  },
-  messageBubble: {
-    maxWidth: '70%',
+  userMessage: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#3B82F6',
+    borderRadius: 18,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingVertical: 12,
+    borderBottomRightRadius: 4,
   },
-  myBubble: {
-    backgroundColor: '#4A90E2',
-  },
-  otherBubble: {
-    backgroundColor: '#6B7280',
+  aiMessage: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#374151',
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomLeftRadius: 4,
   },
   messageText: {
     fontSize: 16,
-    lineHeight: 20,
+    lineHeight: 22,
   },
-  myMessageText: {
-    color: '#fff',
+  userMessageText: {
+    color: 'white',
   },
-  otherMessageText: {
-    color: '#fff',
+  aiMessageText: {
+    color: 'white',
   },
-  chatRoomsSection: {
-    flex: 1,
-    backgroundColor: '#1F2937',
-    paddingTop: 16,
-    borderTopWidth: 2,
+  timestamp: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 4,
+    alignSelf: 'flex-end',
+  },
+  loadingContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  loadingText: {
+    color: '#9CA3AF',
+    fontSize: 14,
+    fontStyle: 'italic',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#0F111A',
+    borderTopWidth: 1,
     borderTopColor: '#374151',
   },
-  chatRoomsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  chatRoomsTitle: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: 'bold',
-  },
-  refreshButton: {
-    padding: 8,
+  textInput: {
+    flex: 1,
+    backgroundColor: '#374151',
     borderRadius: 20,
-    backgroundColor: 'rgba(74, 144, 226, 0.1)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginRight: 8,
+    color: 'white',
+    fontSize: 16,
+    maxHeight: 80,
+    minHeight: 36,
+  },
+  sendButton: {
+    backgroundColor: '#3B82F6',
     width: 40,
     height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  emptyStateContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  emptyStateText: {
-    color: '#9CA3AF',
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyStateSubText: {
-    color: '#9CA3AF',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  chatRoomsList: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  chatRoomItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#374151',
-  },
-  chatRoomIcon: {
-    marginRight: 12,
-  },
-  chatRoomContent: {
-    flex: 1,
-  },
-  chatRoomTitle: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  chatRoomLastMessage: {
-    color: '#9CA3AF',
-    fontSize: 14,
-  },
-  chatRoomTime: {
-    color: '#9CA3AF',
-    fontSize: 12,
+  sendButtonDisabled: {
+    backgroundColor: '#374151',
   },
   bottomNavigation: {
     flexDirection: 'row',
@@ -410,9 +476,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   activeNavText: {
-    color: '#4A90E2',
+    color: '#3B82F6',
     fontWeight: '600',
   },
 });
-
-export default ChatScreen;

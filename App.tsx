@@ -2,8 +2,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
 
-import A2AScreen from './screens/A2AScreen';
-import ChatScreen from './screens/ChatScreen';
+import A2AScreen from './screens/ChatScreen';
+import ChatScreen from './screens/A2AScreen';
 import FriendsScreen from './screens/FriendsScreen';
 import HomeScreen from './screens/HomeScreen';
 import LoginDetailScreen from './screens/LoginDetailScreen';
