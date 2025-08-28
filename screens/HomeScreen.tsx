@@ -159,7 +159,10 @@ export default function HomeScreen() {
             <Ionicons name="people" size={24} color="#9CA3AF" />
             <Text style={styles.navText}>Friends</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem}>
+          <TouchableOpacity 
+            style={styles.navItem}
+            onPress={() => navigation.navigate('A2A')}
+          >
             <Ionicons name="person" size={24} color="#9CA3AF" />
             <Text style={styles.navText}>A2A</Text>
           </TouchableOpacity>
@@ -219,7 +222,7 @@ export default function HomeScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.navItem}
-          onPress={() => navigation.navigate('A2A')}
+          onPress={() => navigation.navigate('Chat')}
         >
           <Ionicons name="chatbubble" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>Chat</Text>
@@ -233,7 +236,7 @@ export default function HomeScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.navItem}
-          onPress={() => navigation.navigate('Chat')}
+          onPress={() => navigation.navigate('A2A')}
         >
           <Ionicons name="person" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>A2A</Text>
