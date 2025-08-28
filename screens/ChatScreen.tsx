@@ -119,44 +119,198 @@ const ChatScreen = () => {
         throw new Error('인증 토큰이 없습니다.');
       }
 
-      const response = await fetch('http://localhost:3000/chat/chat', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ message: userMessage }),
-      });
+      // Agent 간 협업이 필요한지 확인
+      const isAgentCollaborationRequest = checkAgentCollaborationRequest(userMessage);
+      
+      if (isAgentCollaborationRequest) {
+        // Agent 간 협업 시작
+        await startAgentCollaboration(userMessage, token);
+      } else {
+        // 일반 ChatGPT 응답
+        const response = await fetch('http://localhost:3000/chat/chat', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ message: userMessage }),
+        });
 
-      if (!response.ok) {
-        throw new Error(`API 호출 실패: ${response.status}`);
+        if (!response.ok) {
+          throw new Error(`API 호출 실패: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        const aiMessage: Message = {
+          id: Date.now().toString() + '_ai',
+          text: data.ai_response || '죄송합니다. 응답을 생성할 수 없습니다.',
+          isUser: false,
+          timestamp: new Date(),
+        };
+        
+        setMessages(prev => [...prev, aiMessage]);
       }
-
-      const data = await response.json();
-      
-      const aiMessage: Message = {
-        id: Date.now().toString() + '_ai',
-        text: data.ai_response || '죄송합니다. 응답을 생성할 수 없습니다.',
-        isUser: false,
-        timestamp: new Date(), // 현재 시간
-      };
-      
-      setMessages(prev => [...prev, aiMessage]);
       
     } catch (error) {
       console.error('ChatGPT API 호출 오류:', error);
       
-      // 에러 발생 시 기본 응답
       const errorMessage: Message = {
         id: Date.now().toString() + '_ai',
         text: '죄송합니다. 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
         isUser: false,
-        timestamp: new Date(), // 현재 시간
+        timestamp: new Date(),
       };
       
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Agent 간 협업 요청인지 확인
+  const checkAgentCollaborationRequest = (message: string): boolean => {
+    const collaborationKeywords = ['와', '과', '랑', '이랑'];
+    const scheduleKeywords = ['약속', '일정', '만나', '미팅', '회의', '점심', '저녁', '오후', '오전'];
+    
+    // 다른 사용자와의 협업 요청인지 확인
+    const hasCollaborationKeyword = collaborationKeywords.some(keyword => message.includes(keyword));
+    const hasScheduleKeyword = scheduleKeywords.some(keyword => message.includes(keyword));
+    
+    return hasCollaborationKeyword && hasScheduleKeyword;
+  };
+
+  // Agent 간 협업 시작
+  const startAgentCollaboration = async (userMessage: string, token: string) => {
+    try {
+      // 사용자 이름과 작업 분리
+      const parts = userMessage.split('와');
+      if (parts.length >= 2) {
+        const targetUserName = parts[0].trim();
+        const task = parts.slice(1).join('와').trim();
+        
+        // Agent 간 협업 시작
+        const response = await fetch('http://localhost:3000/chat/start-agent-task', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            target_user_name: targetUserName,
+            task_description: task
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          
+          // 협업 시작 메시지
+          const startMessage: Message = {
+            id: Date.now().toString() + '_ai_start',
+            text: `🤖 ${targetUserName}의 Agent와 협업을 시작합니다...`,
+            isUser: false,
+            timestamp: new Date(),
+          };
+          
+          setMessages(prev => [...prev, startMessage]);
+          
+          // 잠시 후 협업 결과 표시
+          setTimeout(() => {
+            const resultMessage: Message = {
+              id: Date.now().toString() + '_ai_result',
+              text: data.message || 'Agent 간 협업이 완료되었습니다.',
+              isUser: false,
+              timestamp: new Date(),
+            };
+            
+            setMessages(prev => [...prev, resultMessage]);
+            
+            // Agent 간 대화 내용 표시
+            if (data.agent_messages) {
+              const agentAMessage: Message = {
+                id: Date.now().toString() + '_agent_a',
+                text: `👤 ${userNickname}의 Agent: ${data.agent_messages.agent_a}`,
+                isUser: false,
+                timestamp: new Date(),
+              };
+              
+              const agentBMessage: Message = {
+                id: Date.now().toString() + '_agent_b',
+                text: `👤 ${targetUserName}의 Agent: ${data.agent_messages.agent_b}`,
+                isUser: false,
+                timestamp: new Date(),
+              };
+              
+              const finalResultMessage: Message = {
+                id: Date.now().toString() + '_final_result',
+                text: `📋 최종 결과: ${data.agent_messages.final_result}`,
+                isUser: false,
+                timestamp: new Date(),
+              };
+              
+              setMessages(prev => [...prev, agentAMessage, agentBMessage, finalResultMessage]);
+            }
+            
+            // 일정이 추가된 경우 알림
+            if (data.schedule_info && data.schedule_info.schedule_created) {
+              const scheduleMessage: Message = {
+                id: Date.now().toString() + '_schedule',
+                text: `📅 일정이 Google Calendar에 추가되었습니다!`,
+                isUser: false,
+                timestamp: new Date(),
+              };
+              
+              setMessages(prev => [...prev, scheduleMessage]);
+            }
+          }, 2000);
+          
+        } else {
+          const errorData = await response.json();
+          const errorMessage: Message = {
+            id: Date.now().toString() + '_ai_error',
+            text: errorData.error || 'Agent 간 협업 시작에 실패했습니다.',
+            isUser: false,
+            timestamp: new Date(),
+          };
+          
+          setMessages(prev => [...prev, errorMessage]);
+        }
+      } else {
+        // 형식이 맞지 않는 경우 일반 응답
+        const response = await fetch('http://localhost:3000/chat/chat', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ message: userMessage }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          
+          const aiMessage: Message = {
+            id: Date.now().toString() + '_ai',
+            text: data.ai_response || '죄송합니다. 응답을 생성할 수 없습니다.',
+            isUser: false,
+            timestamp: new Date(),
+          };
+          
+          setMessages(prev => [...prev, aiMessage]);
+        }
+      }
+    } catch (error) {
+      console.error('Agent 협업 오류:', error);
+      
+      const errorMessage: Message = {
+        id: Date.now().toString() + '_ai_error',
+        text: 'Agent 간 협업 중 오류가 발생했습니다.',
+        isUser: false,
+        timestamp: new Date(),
+      };
+      
+      setMessages(prev => [...prev, errorMessage]);
     }
   };
 

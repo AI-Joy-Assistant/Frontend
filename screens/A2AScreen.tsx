@@ -9,29 +9,32 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-interface ChatMessage {
+interface AgentMessage {
   id: string;
   message: string;
-  isFromMe: boolean;
+  agentName: string;
   timestamp: string;
+  isMyAgent: boolean;
 }
 
-interface ChatRoom {
+interface AgentChatRoom {
   id: string;
-  participants: string[];
+  agentNames: string[];
   lastMessage: string;
   lastMessageTime: string;
+  status: 'pending' | 'completed' | 'in_progress';
 }
 
 const A2AScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const [currentChat, setCurrentChat] = useState<string>('채팅을 선택하세요');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
+  const [currentChat, setCurrentChat] = useState<string>('Agent 대화를 선택하세요');
+  const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [chatRooms, setChatRooms] = useState<AgentChatRoom[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
 
-  // 채팅방 목록 가져오기
-  const fetchChatRooms = async () => {
+  // Agent 간 채팅방 목록 가져오기
+  const fetchAgentChatRooms = async () => {
     try {
       setLoading(true);
       
@@ -42,8 +45,8 @@ const A2AScreen = () => {
         return;
       }
 
-      console.log('🔍 채팅방 목록 요청 중...');
-      const response = await fetch('http://localhost:3000/chat/rooms', {
+      console.log('🔍 Agent 채팅방 목록 요청 중...');
+      const response = await fetch('http://localhost:3000/chat/agent-rooms', {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -53,71 +56,178 @@ const A2AScreen = () => {
 
       if (response.ok) {
         const data = await response.json();
-        console.log('✅ 채팅방 목록 가져오기 성공:', data);
+        console.log('✅ Agent 채팅방 목록 가져오기 성공:', data);
         
         // 백엔드 응답을 프론트엔드 형식으로 변환
-        const formattedRooms = data.chat_rooms?.map((room: any, index: number) => ({
-          id: `room_${index}`,
-          participants: room.participant_names || room.participants,
-          lastMessage: room.last_message || '메시지가 없습니다',
+        const formattedRooms = data.agent_rooms?.map((room: any, index: number) => ({
+          id: room.id || `agent_room_${index}`,
+          agentNames: room.agent_names || room.participants,
+          lastMessage: room.last_message || 'Agent 간 대화가 없습니다',
           lastMessageTime: room.last_message_time ? 
             new Date(room.last_message_time).toLocaleTimeString('ko-KR', { 
               hour: '2-digit', 
               minute: '2-digit' 
-            }) : '시간 없음'
+            }) : '시간 없음',
+          status: room.status || 'pending'
         })) || [];
         
         setChatRooms(formattedRooms);
       } else {
-        console.log('❌ 채팅방 목록 가져오기 실패:', response.status);
+        console.log('❌ Agent 채팅방 목록 가져오기 실패:', response.status);
         setChatRooms([]);
       }
     } catch (error) {
-      console.error('❌ 채팅방 목록 가져오기 오류:', error);
+      console.error('❌ Agent 채팅방 목록 가져오기 오류:', error);
       setChatRooms([]);
     } finally {
       setLoading(false);
     }
   };
 
+  // 선택된 채팅방의 Agent 간 대화 가져오기
+  const fetchAgentMessages = async (roomId: string) => {
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) {
+        Alert.alert('오류', '로그인이 필요합니다.');
+        return;
+      }
+
+      console.log('🔍 Agent 대화 요청 중...', roomId);
+      const response = await fetch(`http://localhost:3000/chat/agent-messages/${roomId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Agent 대화 가져오기 성공:', data);
+        
+        const formattedMessages = data.messages?.map((msg: any) => ({
+          id: msg.id,
+          message: msg.message,
+          agentName: msg.agent_name,
+          timestamp: msg.timestamp,
+          isMyAgent: msg.is_my_agent || false
+        })) || [];
+        
+        setMessages(formattedMessages);
+      } else {
+        console.log('❌ Agent 대화 가져오기 실패:', response.status);
+        setMessages([]);
+      }
+    } catch (error) {
+      console.error('❌ Agent 대화 가져오기 오류:', error);
+      setMessages([]);
+    }
+  };
+
+  // 새로운 Agent 작업 시작
+  const startNewAgentTask = async (targetUserName: string, taskDescription: string) => {
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) {
+        Alert.alert('오류', '로그인이 필요합니다.');
+        return;
+      }
+
+      console.log('🔍 새로운 Agent 작업 시작...', targetUserName, taskDescription);
+      const response = await fetch('http://localhost:3000/chat/start-agent-task', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          target_user_name: targetUserName,
+          task_description: taskDescription
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Agent 작업 시작 성공:', data);
+        Alert.alert('성공', 'Agent 간 협업이 시작되었습니다!');
+        
+        // Agent 대화방 목록 새로고침
+        fetchAgentChatRooms();
+      } else {
+        const errorData = await response.json();
+        console.log('❌ Agent 작업 시작 실패:', response.status, errorData);
+        Alert.alert('오류', errorData.error || 'Agent 작업 시작에 실패했습니다.');
+      }
+    } catch (error) {
+      console.error('❌ Agent 작업 시작 오류:', error);
+      Alert.alert('오류', 'Agent 작업 시작 중 오류가 발생했습니다.');
+    }
+  };
+
   useEffect(() => {
-    fetchChatRooms();
+    fetchAgentChatRooms();
   }, []);
 
-  const renderMessage = ({ item }: { item: ChatMessage }) => (
+  const renderMessage = ({ item }: { item: AgentMessage }) => (
     <View style={[
       styles.messageContainer,
-      item.isFromMe ? styles.myMessage : styles.otherMessage
+      item.isMyAgent ? styles.myMessage : styles.otherMessage
     ]}>
       <View style={[
         styles.messageBubble,
-        item.isFromMe ? styles.myBubble : styles.otherBubble
+        item.isMyAgent ? styles.myBubble : styles.otherBubble
       ]}>
+        <Text style={styles.agentName}>
+          {item.agentName}
+        </Text>
         <Text style={[
           styles.messageText,
-          item.isFromMe ? styles.myMessageText : styles.otherMessageText
+          item.isMyAgent ? styles.myMessageText : styles.otherMessageText
         ]}>
           {item.message}
+        </Text>
+        <Text style={styles.timestamp}>
+          {new Date(item.timestamp).toLocaleTimeString('ko-KR', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          })}
         </Text>
       </View>
     </View>
   );
 
-  const renderChatRoom = ({ item }: { item: ChatRoom }) => (
+  const renderChatRoom = ({ item }: { item: AgentChatRoom }) => (
     <TouchableOpacity 
       style={styles.chatRoomItem}
-      onPress={() => setCurrentChat(item.participants.join(', '))}
+      onPress={() => {
+        setSelectedRoomId(item.id);
+        setCurrentChat(item.agentNames.join(' ↔ '));
+        fetchAgentMessages(item.id);
+      }}
     >
       <View style={styles.chatRoomIcon}>
-        <Ionicons name="chatbubbles" size={24} color="#4A90E2" />
+        <Ionicons name="people" size={24} color="#4A90E2" />
       </View>
       <View style={styles.chatRoomContent}>
         <Text style={styles.chatRoomTitle}>
-          {item.participants.join(', ')}
+          {item.agentNames.join(' ↔ ')}
         </Text>
         <Text style={styles.chatRoomLastMessage} numberOfLines={1}>
           {item.lastMessage}
         </Text>
+        <View style={styles.statusContainer}>
+          <View style={[
+            styles.statusIndicator,
+            item.status === 'completed' ? styles.completedStatus :
+            item.status === 'in_progress' ? styles.inProgressStatus :
+            styles.pendingStatus
+          ]} />
+          <Text style={styles.statusText}>
+            {item.status === 'completed' ? '완료' :
+             item.status === 'in_progress' ? '진행중' : '대기중'}
+          </Text>
+        </View>
       </View>
       <Text style={styles.chatRoomTime}>
         {item.lastMessageTime}
@@ -155,22 +265,56 @@ const A2AScreen = () => {
       {/* 채팅방 목록 */}
       <View style={styles.chatRoomsSection}>
         <View style={styles.chatRoomsHeader}>
-          <Text style={styles.chatRoomsTitle}>채팅방</Text>
-          <TouchableOpacity onPress={fetchChatRooms} style={styles.refreshButton}>
-            <Ionicons name="refresh" size={20} color="#4A90E2" />
-          </TouchableOpacity>
+          <Text style={styles.chatRoomsTitle}>Agent 대화방</Text>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity 
+              style={styles.newTaskButton}
+              onPress={() => {
+                Alert.prompt(
+                  '새로운 Agent 작업',
+                  '대상 사용자 이름과 작업을 입력하세요 (예: 귬모와 27일 저녁에 약속 잡아줘)',
+                  [
+                    { text: '취소', style: 'cancel' },
+                    { 
+                      text: '시작', 
+                      onPress: (taskDescription) => {
+                        if (taskDescription) {
+                          // 사용자 이름과 작업 분리
+                          const parts = taskDescription.split('와');
+                          if (parts.length >= 2) {
+                            const targetUserName = parts[0].trim();
+                            const task = parts.slice(1).join('와').trim();
+                            startNewAgentTask(targetUserName, task);
+                          } else {
+                            Alert.alert('입력 오류', '올바른 형식으로 입력해주세요. (예: 귬모와 27일 저녁에 약속 잡아줘)');
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  'plain-text'
+                );
+              }}
+            >
+              <Ionicons name="add" size={16} color="#fff" />
+              <Text style={styles.newTaskButtonText}>새 작업</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={fetchAgentChatRooms} style={styles.refreshButton}>
+              <Ionicons name="refresh" size={20} color="#4A90E2" />
+            </TouchableOpacity>
+          </View>
         </View>
         
         {loading ? (
           <View style={styles.emptyStateContainer}>
             <Ionicons name="hourglass" size={40} color="#ccc" />
-            <Text style={styles.emptyStateText}>채팅방을 불러오는 중...</Text>
+            <Text style={styles.emptyStateText}>Agent 대화방을 불러오는 중...</Text>
           </View>
         ) : chatRooms.length === 0 ? (
           <View style={styles.emptyStateContainer}>
-            <Ionicons name="chatbubble-outline" size={60} color="#ccc" />
-            <Text style={styles.emptyStateText}>채팅이 없습니다.</Text>
-            <Text style={styles.emptyStateSubText}>친구들과 대화를 시작해보세요!</Text>
+            <Ionicons name="people-outline" size={60} color="#ccc" />
+            <Text style={styles.emptyStateText}>Agent 간 대화가 없습니다.</Text>
+            <Text style={styles.emptyStateSubText}>Agent들이 협업할 작업을 시작해보세요!</Text>
           </View>
         ) : (
           <FlatList
@@ -312,6 +456,18 @@ const styles = StyleSheet.create({
   otherMessageText: {
     color: '#fff',
   },
+  agentName: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  timestamp: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 4,
+    alignSelf: 'flex-end',
+  },
   chatRoomsSection: {
     flex: 1,
     backgroundColor: '#1F2937',
@@ -325,6 +481,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingBottom: 12,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  newTaskButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#4A90E2',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 4,
+  },
+  newTaskButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   chatRoomsTitle: {
     color: '#fff',
@@ -388,6 +563,30 @@ const styles = StyleSheet.create({
   chatRoomTime: {
     color: '#9CA3AF',
     fontSize: 12,
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  statusIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 6,
+  },
+  pendingStatus: {
+    backgroundColor: '#FFC107', // 대기 상태
+  },
+  inProgressStatus: {
+    backgroundColor: '#4CAF50', // 진행 중 상태
+  },
+  completedStatus: {
+    backgroundColor: '#66BB6A', // 완료 상태
+  },
+  statusText: {
+    fontSize: 12,
+    color: '#9CA3AF',
   },
   bottomNavigation: {
     flexDirection: 'row',
