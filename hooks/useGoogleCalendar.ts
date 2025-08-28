@@ -366,6 +366,7 @@ export function useGoogleCalendar() {
     addEvent,
     deleteEvent,
     fetchGoogleCalendarEvents,
+    fetchMonthEvents, // 월 전체 이벤트 새로고침 함수 추가
     fetchRealGoogleCalendarEvents,
     getGoogleAuthUrl,
     authenticateGoogle,

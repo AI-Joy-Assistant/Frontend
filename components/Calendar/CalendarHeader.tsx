@@ -7,9 +7,10 @@ interface CalendarHeaderProps {
   month: number;
   onAddEvent: () => void;
   onMonthChange?: (direction: 'prev' | 'next') => void;
+  onRefresh?: () => void;
 }
 
-export default function CalendarHeader({ year, month, onAddEvent, onMonthChange }: CalendarHeaderProps) {
+export default function CalendarHeader({ year, month, onAddEvent, onMonthChange, onRefresh }: CalendarHeaderProps) {
   const monthNames = [
     '1월', '2월', '3월', '4월', '5월', '6월',
     '7월', '8월', '9월', '10월', '11월', '12월'
@@ -43,6 +44,11 @@ export default function CalendarHeader({ year, month, onAddEvent, onMonthChange 
       </View>
       
       <View style={styles.rightSection}>
+        {onRefresh && (
+          <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
+            <Ionicons name="refresh" size={20} color="#fff" />
+          </TouchableOpacity>
+        )}
         <TouchableOpacity style={styles.addButton} onPress={onAddEvent}>
           <Ionicons name="add" size={20} color="#fff" />
         </TouchableOpacity>
@@ -85,6 +91,14 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     flexDirection: 'row',
     gap: 10,
+  },
+  refreshButton: {
+    backgroundColor: '#374151',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   logoContainer: {
     flexDirection: 'row',

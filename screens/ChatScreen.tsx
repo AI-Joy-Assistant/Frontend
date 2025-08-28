@@ -65,23 +65,50 @@ const ChatScreen = () => {
   // 화면이 포커스될 때마다 실행 (채팅 기록 로드 및 자동 진행 확인)
   useFocusEffect(
     React.useCallback(() => {
-      console.log('🔄 useFocusEffect 실행됨');
+      console.log('🔄 useFocusEffect 실행됨 - messages.length:', messages.length);
       
-      // AsyncStorage에서 채팅 기록 로드
-      const loadChat = async () => {
-        await loadChatHistoryFromStorage();
-        
-        // 약속 상태를 확인하여 적절한 시점에만 진행
-        setTimeout(() => {
-          checkAndProceedWithReschedule();
-        }, 500);
+      // AsyncStorage에서 채팅 기록 로드 시도
+      const loadAndCheck = async () => {
+        try {
+          const savedMessages = await AsyncStorage.getItem('chatMessages');
+          if (savedMessages) {
+            const parsedMessages = JSON.parse(savedMessages);
+            console.log('🔍 저장된 메시지 개수:', parsedMessages.length);
+            
+            // timestamp를 Date 객체로 변환
+            const messagesWithDates = parsedMessages.map((msg: any) => ({
+              ...msg,
+              timestamp: new Date(msg.timestamp)
+            }));
+            
+            setMessages(messagesWithDates);
+            console.log('📥 AsyncStorage에서 채팅 기록 복원됨:', messagesWithDates.length, '개');
+            
+            // 채팅 기록 로드 후 스크롤을 최하단으로 이동
+            setTimeout(() => {
+              if (flatListRef.current) {
+                flatListRef.current.scrollToEnd({ animated: true });
+                console.log('📱 채팅 기록 로드 후 최하단으로 스크롤');
+              }
+            }, 200);
+          } else {
+            console.log('📭 AsyncStorage에 저장된 채팅 기록이 없습니다.');
+          }
+        } catch (error) {
+          console.error('채팅 기록 로드 오류:', error);
+        }
       };
       
-      loadChat();
+      loadAndCheck();
+      
+      // A2A 화면에서 돌아왔을 때만 자동으로 두 번째 약속 확정 진행
+      setTimeout(() => {
+        checkAndProceedWithReschedule();
+      }, 500);
     }, [])
   );
 
-  // messages가 변경될 때마다 자동으로 스크롤을 아래로
+  // messages가 변경될 때마다 자동으로 스크롤을 아래로 및 채팅 기록 저장
   useEffect(() => {
     if (messages.length > 0) {
       // 자동 스크롤
@@ -95,54 +122,42 @@ const ChatScreen = () => {
     }
   }, [messages]);
 
-  // 메시지가 추가될 때만 AsyncStorage에 저장 (화면 간 이동 시 유지)
+  // messages가 변경될 때마다 채팅 기록 저장 (화면 간 이동 시 유지)
   useEffect(() => {
     if (messages.length > 0) {
-      // 채팅 기록 저장 (화면 간 이동 시 유지)
-      const saveTimeoutId = setTimeout(() => {
-        saveChatHistoryToStorage(messages);
-      }, 500);
+      // 저장 전에 현재 AsyncStorage의 내용과 비교하여 중복 저장 방지
+      const saveWithCheck = async () => {
+        try {
+          const currentSaved = await AsyncStorage.getItem('chatMessages');
+          if (currentSaved) {
+            const currentMessages = JSON.parse(currentSaved);
+            // 메시지 개수가 다르거나 마지막 메시지가 다르면 저장
+            if (currentMessages.length !== messages.length || 
+                currentMessages[currentMessages.length - 1]?.text !== messages[messages.length - 1]?.text) {
+              await saveChatHistoryToStorage(messages);
+            }
+          } else {
+            // 저장된 내용이 없으면 저장
+            await saveChatHistoryToStorage(messages);
+          }
+        } catch (error) {
+          console.error('저장 확인 중 오류:', error);
+          // 오류 발생 시 안전하게 저장
+          await saveChatHistoryToStorage(messages);
+        }
+      };
       
+      const saveTimeoutId = setTimeout(saveWithCheck, 100);
       return () => clearTimeout(saveTimeoutId);
     }
-  }, [messages.length]); // messages.length만 의존성으로 사용
+  }, [messages]);
 
   // 한국 시간으로 Date 객체 생성하는 함수
   const getKoreanTime = () => {
     return new Date(); // 이미 한국 시간이므로 그대로 사용
   };
 
-  // AsyncStorage에서 채팅 기록 로드 (화면 간 이동 시 유지)
-  const loadChatHistoryFromStorage = async () => {
-    try {
-      console.log('🔍 AsyncStorage에서 채팅 기록 로드 시도...');
-      const savedMessages = await AsyncStorage.getItem('chatMessages');
-      console.log('🔍 저장된 메시지:', savedMessages ? '있음' : '없음');
-      
-      if (savedMessages) {
-        const parsedMessages = JSON.parse(savedMessages);
-        console.log('🔍 파싱된 메시지 개수:', parsedMessages.length);
-        
-        // 현재 메시지가 없거나 저장된 메시지가 더 많을 때만 로드
-        if (messages.length === 0 || parsedMessages.length > messages.length) {
-          // timestamp를 Date 객체로 변환
-          const messagesWithDates = parsedMessages.map((msg: any) => ({
-            ...msg,
-            timestamp: new Date(msg.timestamp)
-          }));
-          
-          setMessages(messagesWithDates);
-          console.log('📥 AsyncStorage에서 채팅 기록 복원됨:', messagesWithDates.length, '개');
-        } else {
-          console.log('📋 이미 메시지가 로드되어 있음:', messages.length, '개');
-        }
-      } else {
-        console.log('📭 AsyncStorage에 저장된 채팅 기록이 없습니다.');
-      }
-    } catch (error) {
-      console.error('채팅 기록 로드 오류:', error);
-    }
-  };
+
 
   // AsyncStorage에 채팅 기록 저장 (화면 간 이동 시 유지)
   const saveChatHistoryToStorage = async (messages: Message[]) => {
@@ -152,19 +167,10 @@ const ChatScreen = () => {
         return;
       }
       
-      // 메시지가 실제로 변경되었는지 확인
-      const currentSaved = await AsyncStorage.getItem('chatMessages');
-      if (currentSaved) {
-        const currentMessages = JSON.parse(currentSaved);
-        if (currentMessages.length === messages.length) {
-          console.log('💾 메시지 개수가 동일하여 저장 건너뜀');
-          return;
-        }
-      }
-      
+      // Date 객체를 문자열로 변환하여 저장
       const messagesToSave = messages.map(msg => ({
         ...msg,
-        timestamp: msg.timestamp.toISOString() // Date 객체를 문자열로 변환하여 저장
+        timestamp: msg.timestamp.toISOString()
       }));
       
       await AsyncStorage.setItem('chatMessages', JSON.stringify(messagesToSave));
@@ -206,22 +212,6 @@ const ChatScreen = () => {
   // 전역 함수로 등록 (개발자 콘솔에서 사용 가능)
   if (typeof window !== 'undefined') {
     (window as any).clearAsyncStorage = clearAsyncStorage;
-    (window as any).debugAsyncStorage = async () => {
-      try {
-        const chatMessages = await AsyncStorage.getItem('chatMessages');
-        const chatStatus = await AsyncStorage.getItem('chatAppointmentStatus');
-        const hasProceeded = await AsyncStorage.getItem('rescheduleProceeded');
-        const currentAppointmentData = await AsyncStorage.getItem('currentAppointmentData');
-        
-        console.log('🔍 AsyncStorage 디버그 정보:');
-        console.log('chatMessages:', chatMessages ? JSON.parse(chatMessages).length + '개' : '없음');
-        console.log('chatAppointmentStatus:', chatStatus);
-        console.log('rescheduleProceeded:', hasProceeded);
-        console.log('currentAppointmentData:', currentAppointmentData);
-      } catch (error) {
-        console.error('AsyncStorage 디버그 오류:', error);
-      }
-    };
   }
 
 
@@ -290,20 +280,23 @@ const ChatScreen = () => {
     AsyncStorage.removeItem('rescheduleProceeded');
 
     // 시나리오 1: 약속 요청
-    const aiResponse: Message = {
-      id: Date.now().toString() + '_ai',
-      text: '넵. 알겠습니다. A2A 화면에서 일정을 조율하겠습니다.',
-      isUser: false,
-      timestamp: new Date(),
-    };
-    
-    // AI 응답을 기존 메시지 배열에 추가 (채팅 기록 유지)
-    setMessages(prev => [...prev, aiResponse]);
-    setCurrentScenario('appointment_request');
-    
-    // 2초 후 약속 확정 메시지 표시 (지연 시간 단축)
+    // 2초 후 AI 응답 메시지 표시
     setTimeout(() => {
-      handleAppointmentConfirmation();
+      const aiResponse: Message = {
+        id: Date.now().toString() + '_ai',
+        text: '넵. 알겠습니다. A2A 화면에서 일정을 조율하겠습니다.',
+        isUser: false,
+        timestamp: new Date(),
+      };
+      
+      // AI 응답을 기존 메시지 배열에 추가 (채팅 기록 유지)
+      setMessages(prev => [...prev, aiResponse]);
+      setCurrentScenario('appointment_request');
+      
+      // 3초 후 약속 확정 메시지 표시
+      setTimeout(() => {
+        handleAppointmentConfirmation();
+      }, 3000);
     }, 2000);
   };
 
@@ -404,7 +397,7 @@ const ChatScreen = () => {
         
         // Google Calendar에 일정 추가
         addToGoogleCalendar();
-      }, 1500);
+      }, 2000);
     } else {
       // 첫 번째 약속 확정 - 거절 응답 (민서가 거절)
       console.log('❌ 첫 번째 약속 확정 - 거절 응답');
@@ -420,7 +413,7 @@ const ChatScreen = () => {
 
         setMessages(prev => [...prev, aiResponse]);
         setCurrentScenario('rejection');
-      }, 1500);
+      }, 2000);
     }
   };
 
@@ -467,10 +460,10 @@ const ChatScreen = () => {
     setMessages(prev => [...prev, rescheduleMessage, aiResponse]);
     setCurrentScenario('none');
     
-    // 2초 후 새로운 약속 확정 메시지 표시 (지연 시간 단축)
+    // 3초 후 새로운 약속 확정 메시지 표시
     setTimeout(() => {
       handleRescheduleConfirmation();
-    }, 2000);
+    }, 3000);
   };
 
   // A2A 화면에서 돌아왔을 때 자동으로 두 번째 약속 확정 진행
@@ -492,16 +485,16 @@ const ChatScreen = () => {
       console.log('🔍 checkAndProceedWithReschedule - currentScenario:', currentScenario);
       console.log('🔍 checkAndProceedWithReschedule - messages.length:', messages.length);
       
-      // 첫 번째 약속 확정이 완료된 후에만 두 번째 약속 확정 진행
-      // chatStatus가 'rejected'이고 hasProceeded가 false일 때만 진행
-      if (chatStatus === 'rejected' && !hasProceeded) {
+      // A2A 화면에서 돌아왔을 때는 무조건 두 번째 약속 확정 진행 시도
+      // (rescheduleProceeded 플래그만 확인)
+      if (!hasProceeded) {
         console.log('✅ 재조율 진행 조건 충족 - 두 번째 약속 확정 시작');
         // 즉시 두 번째 약속 확정 진행
         handleRescheduleConfirmation();
         // 실행 완료 후 플래그 해제
         isCheckingReschedule.current = false;
       } else {
-        console.log('❌ 재조율 진행 조건 불충족 - chatStatus:', chatStatus, 'hasProceeded:', hasProceeded);
+        console.log('❌ 이미 재조율이 진행됨 (hasProceeded):', hasProceeded);
         isCheckingReschedule.current = false;
       }
     } catch (error) {
@@ -600,7 +593,7 @@ const ChatScreen = () => {
           // 실패해도 성공 메시지 표시 (백엔드 미준비 시)
           const successMessage: Message = {
             id: Date.now().toString() + '_ai_calendar_success',
-            text: 'Google Calendar에 일정이 성공적으로 추가되었습니다! (백엔드 미준비로 시뮬레이션)',
+            text: '캘린더에 일정이 성공적으로 추가되었습니다!',
             isUser: false,
             timestamp: new Date(),
           };

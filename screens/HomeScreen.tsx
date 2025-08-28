@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { StyleSheet, View, ScrollView, Alert, TouchableOpacity, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { CalendarEvent } from '../types/calendar';
@@ -24,6 +24,8 @@ export default function HomeScreen() {
     addEvent,
     getEventsForDate,
     deleteEvent,
+    fetchGoogleCalendarEvents,
+    fetchMonthEvents,
   } = useGoogleCalendar();
 
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
@@ -43,11 +45,22 @@ export default function HomeScreen() {
     selectDate(day.date);
   };
 
-  // 🔁 기존의 selectedEvents useMemo 블록 전부 삭제하고 아래 한 줄로 교체
-  const selectedEvents = useMemo(
-      () => getEventsForDate(selectedDate),
-      [selectedDate, events, getEventsForDate]
-  );
+  // 🔁 무한 루프 방지를 위해 useMemo 제거하고 일반 변수로 변경
+  const selectedEvents = getEventsForDate(selectedDate);
+  
+  // 디버깅을 위한 로그 (무한 루프 방지)
+  if (selectedEvents.length > 0) {
+    console.log('📅 selectedEvents 로드됨:', {
+      selectedDate,
+      totalEvents: selectedEvents.length,
+      events: selectedEvents.map(ev => ({
+        id: ev.id,
+        summary: ev.summary,
+        start: ev.start,
+        end: ev.end
+      }))
+    });
+  }
 
   // 선택된 날짜의 이벤트 계산
   // const selectedEvents = useMemo(() => {
@@ -100,6 +113,24 @@ export default function HomeScreen() {
     } catch (e) {
       console.error('일정 삭제 실패:', e);
       Alert.alert('오류', '일정 삭제에 실패했습니다.');
+    }
+  };
+
+  // 수동 새로고침 함수 (무한 루프 방지)
+  const handleRefreshEvents = async () => {
+    console.log('🔄 수동 이벤트 새로고침 시작');
+    if (currentMonth) {
+      try {
+        // 월 전체 이벤트 새로고침
+        await fetchMonthEvents(currentMonth.year, currentMonth.month);
+        // 선택된 날짜의 이벤트도 새로고침
+        if (selectedDate) {
+          await fetchGoogleCalendarEvents(selectedDate);
+        }
+        console.log('✅ 이벤트 새로고침 완료');
+      } catch (error) {
+        console.error('❌ 이벤트 새로고침 실패:', error);
+      }
     }
   };
 
@@ -187,6 +218,7 @@ export default function HomeScreen() {
           month={currentMonth.month}
           onAddEvent={handleAddEvent}
           onMonthChange={handleMonthChange}
+          onRefresh={handleRefreshEvents}
         />
 
         {/* 캘린더 그리드 */}
