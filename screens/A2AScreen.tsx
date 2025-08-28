@@ -27,55 +27,182 @@ interface AgentChatRoom {
 
 const A2AScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const [currentChat, setCurrentChat] = useState<string>('Agent 대화를 선택하세요');
+  const [currentChat, setCurrentChat] = useState<string>('채팅방을 선택하세요');
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [chatRooms, setChatRooms] = useState<AgentChatRoom[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+  const [currentScenario, setCurrentScenario] = useState<'initial' | 'reschedule'>('initial');
+
+  // 초기 시나리오 2: AI 봇들 간의 약속 조율 대화
+  const initialScenarioMessages: AgentMessage[] = [
+    {
+      id: '1',
+      message: '이번주 금요일 저녁에 7시에 조수연님이 약속을 요청했습니다.',
+      agentName: '수연봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: true,
+    },
+    {
+      id: '2',
+      message: '사용자의 일정을 확인 중입니다…',
+      agentName: '규민봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: false,
+    },
+    {
+      id: '3',
+      message: '사용자의 일정을 확인 중입니다…',
+      agentName: '민서봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: false,
+    },
+    {
+      id: '4',
+      message: '민서님은 금요일 저녁 7시 가능합니다.',
+      agentName: '민서봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: false,
+    },
+    {
+      id: '5',
+      message: '저도 가능합니다. 장소는 성신여대역 어떠세요?',
+      agentName: '규민봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: false,
+    },
+    {
+      id: '6',
+      message: '네, 괜찮습니다.',
+      agentName: '민서봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: false,
+    },
+    {
+      id: '7',
+      message: '일정 확정 채팅 전달하겠습니다.',
+      agentName: '수연봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: true,
+    },
+  ];
+
+  // 재조율 시나리오 5: AI 봇들 간의 재조율 대화 (이전 대화 포함)
+  const rescheduleScenarioMessages: AgentMessage[] = [
+    // 이전 대화 기록 (첫 번째 약속 요청)
+    {
+      id: '1',
+      message: '이번주 금요일 저녁에 7시에 조수연님이 약속을 요청했습니다.',
+      agentName: '수연봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: true,
+    },
+    {
+      id: '2',
+      message: '사용자의 일정을 확인 중입니다…',
+      agentName: '규민봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: false,
+    },
+    {
+      id: '3',
+      message: '사용자의 일정을 확인 중입니다…',
+      agentName: '민서봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: false,
+    },
+    {
+      id: '4',
+      message: '민서님은 금요일 저녁 7시 가능합니다.',
+      agentName: '민서봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: false,
+    },
+    {
+      id: '5',
+      message: '저도 가능합니다. 장소는 성신여대역 어떠세요?',
+      agentName: '규민봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: false,
+    },
+    {
+      id: '6',
+      message: '네, 괜찮습니다.',
+      agentName: '민서봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: false,
+    },
+    {
+      id: '7',
+      message: '일정 확정 채팅 전달하겠습니다.',
+      agentName: '수연봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: true,
+    },
+    // 재조율 대화 (민서봇이 거절 메시지 전송)
+    {
+      id: '8',
+      message: '민서님이 일정을 거절했습니다. 민서님이 8월 30일 오후 5시로 요청했습니다.',
+      agentName: '민서봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: false,
+    },
+    {
+      id: '9',
+      message: '사용자의 일정을 확인 중입니다…',
+      agentName: '규민봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: false,
+    },
+    {
+      id: '10',
+      message: '사용자의 일정을 확인 중입니다…',
+      agentName: '수연봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: true,
+    },
+    {
+      id: '11',
+      message: '규민님 가능합니다.',
+      agentName: '규민봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: false,
+    },
+    {
+      id: '12',
+      message: '수연님 가능합니다.',
+      agentName: '수연봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: true,
+    },
+    {
+      id: '13',
+      message: '일정 확정 채팅 전달하겠습니다.',
+      agentName: '민서봇',
+      timestamp: new Date().toISOString(),
+      isMyAgent: false,
+    },
+  ];
+
+  // 하드코딩된 채팅방 목록 (하나만)
+  const hardcodedChatRooms: AgentChatRoom[] = [
+    {
+      id: 'room_1',
+      agentNames: ['민서', '규민'],
+      lastMessage: '약속 조율 대화방',
+      lastMessageTime: '19:00',
+      status: 'completed',
+    },
+  ];
 
   // Agent 간 채팅방 목록 가져오기
   const fetchAgentChatRooms = async () => {
     try {
       setLoading(true);
       
-      // AsyncStorage에서 토큰 가져오기
-      const token = await AsyncStorage.getItem('accessToken');
-      if (!token) {
-        Alert.alert('오류', '로그인이 필요합니다.');
-        return;
-      }
-
-      console.log('🔍 Agent 채팅방 목록 요청 중...');
-      const response = await fetch('http://localhost:3000/chat/agent-rooms', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Agent 채팅방 목록 가져오기 성공:', data);
-        
-        // 백엔드 응답을 프론트엔드 형식으로 변환
-        const formattedRooms = data.agent_rooms?.map((room: any, index: number) => ({
-          id: room.id || `agent_room_${index}`,
-          agentNames: room.agent_names || room.participants,
-          lastMessage: room.last_message || 'Agent 간 대화가 없습니다',
-          lastMessageTime: room.last_message_time ? 
-            new Date(room.last_message_time).toLocaleTimeString('ko-KR', { 
-              hour: '2-digit', 
-              minute: '2-digit' 
-            }) : '시간 없음',
-          status: room.status || 'pending'
-        })) || [];
-        
-        setChatRooms(formattedRooms);
-      } else {
-        console.log('❌ Agent 채팅방 목록 가져오기 실패:', response.status);
-        setChatRooms([]);
-      }
+      // 하드코딩된 데이터 사용
+      setChatRooms(hardcodedChatRooms);
+      
     } catch (error) {
       console.error('❌ Agent 채팅방 목록 가져오기 오류:', error);
       setChatRooms([]);
@@ -87,38 +214,27 @@ const A2AScreen = () => {
   // 선택된 채팅방의 Agent 간 대화 가져오기
   const fetchAgentMessages = async (roomId: string) => {
     try {
-      const token = await AsyncStorage.getItem('accessToken');
-      if (!token) {
-        Alert.alert('오류', '로그인이 필요합니다.');
-        return;
-      }
-
-      console.log('🔍 Agent 대화 요청 중...', roomId);
-      const response = await fetch(`http://localhost:3000/chat/agent-messages/${roomId}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Agent 대화 가져오기 성공:', data);
+      if (roomId === 'room_1') {
+        // Chat 화면의 상태를 확인하여 적절한 시나리오 표시
+        const chatStatus = await AsyncStorage.getItem('chatAppointmentStatus');
         
-        const formattedMessages = data.messages?.map((msg: any) => ({
-          id: msg.id,
-          message: msg.message,
-          agentName: msg.agent_name,
-          timestamp: msg.timestamp,
-          isMyAgent: msg.is_my_agent || false
-        })) || [];
-        
-        setMessages(formattedMessages);
+        if (chatStatus === 'accepted') {
+          // 사용자가 승인한 경우 - 성공 시나리오 (재조율 후 두 번째 약속 확정)
+          setMessages(rescheduleScenarioMessages);
+          setCurrentScenario('reschedule');
+        } else if (chatStatus === 'rejected') {
+          // 사용자가 거절한 경우 - 재조율 시나리오
+          setMessages(rescheduleScenarioMessages);
+          setCurrentScenario('reschedule');
+        } else {
+          // 기본 시나리오 (사용자가 아직 응답하지 않은 상태)
+          setMessages(initialScenarioMessages);
+          setCurrentScenario('initial');
+        }
       } else {
-        console.log('❌ Agent 대화 가져오기 실패:', response.status);
         setMessages([]);
       }
+      
     } catch (error) {
       console.error('❌ Agent 대화 가져오기 오류:', error);
       setMessages([]);
@@ -128,37 +244,22 @@ const A2AScreen = () => {
   // 새로운 Agent 작업 시작
   const startNewAgentTask = async (targetUserName: string, taskDescription: string) => {
     try {
-      const token = await AsyncStorage.getItem('accessToken');
-      if (!token) {
-        Alert.alert('오류', '로그인이 필요합니다.');
-        return;
-      }
-
-      console.log('🔍 새로운 Agent 작업 시작...', targetUserName, taskDescription);
-      const response = await fetch('http://localhost:3000/chat/start-agent-task', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          target_user_name: targetUserName,
-          task_description: taskDescription
+      Alert.alert('성공', 'Agent 간 협업이 시작되었습니다!');
+      
+      // 새로운 채팅방 추가
+      const newRoom: AgentChatRoom = {
+        id: `room_${Date.now()}`,
+        agentNames: [targetUserName],
+        lastMessage: taskDescription,
+        lastMessageTime: new Date().toLocaleTimeString('ko-KR', { 
+          hour: '2-digit', 
+          minute: '2-digit' 
         }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Agent 작업 시작 성공:', data);
-        Alert.alert('성공', 'Agent 간 협업이 시작되었습니다!');
-        
-        // Agent 대화방 목록 새로고침
-        fetchAgentChatRooms();
-      } else {
-        const errorData = await response.json();
-        console.log('❌ Agent 작업 시작 실패:', response.status, errorData);
-        Alert.alert('오류', errorData.error || 'Agent 작업 시작에 실패했습니다.');
-      }
+        status: 'in_progress',
+      };
+      
+      setChatRooms(prev => [newRoom, ...prev]);
+      
     } catch (error) {
       console.error('❌ Agent 작업 시작 오류:', error);
       Alert.alert('오류', 'Agent 작업 시작 중 오류가 발생했습니다.');
@@ -167,6 +268,7 @@ const A2AScreen = () => {
 
   useEffect(() => {
     fetchAgentChatRooms();
+    // 초기에는 메시지 표시하지 않음
   }, []);
 
   const renderMessage = ({ item }: { item: AgentMessage }) => (
@@ -202,7 +304,7 @@ const A2AScreen = () => {
       style={styles.chatRoomItem}
       onPress={() => {
         setSelectedRoomId(item.id);
-        setCurrentChat(item.agentNames.join(' ↔ '));
+        setCurrentChat(item.agentNames.join(', '));
         fetchAgentMessages(item.id);
       }}
     >
@@ -211,7 +313,7 @@ const A2AScreen = () => {
       </View>
       <View style={styles.chatRoomContent}>
         <Text style={styles.chatRoomTitle}>
-          {item.agentNames.join(' ↔ ')}
+          {item.agentNames.join(', ')}
         </Text>
         <Text style={styles.chatRoomLastMessage} numberOfLines={1}>
           {item.lastMessage}
@@ -251,8 +353,11 @@ const A2AScreen = () => {
         </View>
       </View>
 
-      {/* 채팅 메시지 영역 */}
+      {/* AI 봇들 간 대화 영역 */}
       <View style={styles.chatArea}>
+        <View style={styles.chatAreaHeader}>
+          <Text style={styles.chatAreaTitle}>AI 비서 간 대화</Text>
+        </View>
         <FlatList
           data={messages}
           renderItem={renderMessage}
@@ -265,7 +370,7 @@ const A2AScreen = () => {
       {/* 채팅방 목록 */}
       <View style={styles.chatRoomsSection}>
         <View style={styles.chatRoomsHeader}>
-          <Text style={styles.chatRoomsTitle}>Agent 대화방</Text>
+          <Text style={styles.chatRoomsTitle}>채팅방 목록</Text>
           <View style={styles.headerButtons}>
             <TouchableOpacity 
               style={styles.newTaskButton}
@@ -338,7 +443,7 @@ const A2AScreen = () => {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.navItem}
-          onPress={() => navigation.navigate('A2A')}
+          onPress={() => navigation.navigate('Chat')}
         >
           <Ionicons name="chatbubble" size={24} color="#9CA3AF" />
           <Text style={styles.navText}>Chat</Text>
@@ -352,7 +457,7 @@ const A2AScreen = () => {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.navItem, styles.activeNavItem]}
-          onPress={() => navigation.navigate('Chat')}
+          onPress={() => navigation.navigate('A2A')}
         >
           <Ionicons name="person" size={24} color="#4A90E2" />
           <Text style={[styles.navText, styles.activeNavText]}>A2A</Text>
@@ -368,6 +473,8 @@ const A2AScreen = () => {
     </SafeAreaView>
   );
 };
+
+export default A2AScreen;
 
 const styles = StyleSheet.create({
   container: {
@@ -399,27 +506,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginHorizontal: 12,
   },
-  headerTitleContainer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   headerTitle: {
     color: '#fff',
     fontSize: 22,
     fontWeight: 'bold',
     textAlign: 'center',
   },
-  menuButton: {
-    padding: 8,
-  },
   chatArea: {
     flex: 1,
     backgroundColor: '#0F111A',
     paddingHorizontal: 16,
     paddingTop: 8,
+  },
+  chatAreaHeader: {
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#374151',
+    marginBottom: 8,
+  },
+  chatAreaTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   messagesList: {
     flex: 1,
@@ -436,9 +545,17 @@ const styles = StyleSheet.create({
   },
   messageBubble: {
     maxWidth: '70%',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
     borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   myBubble: {
     backgroundColor: '#4A90E2',
@@ -448,7 +565,8 @@ const styles = StyleSheet.create({
   },
   messageText: {
     fontSize: 16,
-    lineHeight: 20,
+    lineHeight: 22,
+    fontWeight: '500',
   },
   myMessageText: {
     color: '#fff',
@@ -457,10 +575,16 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   agentName: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    fontWeight: '600',
-    marginBottom: 4,
+    fontSize: 16,
+    color: '#E5E7EB',
+    fontWeight: 'bold',
+    marginBottom: 6,
+    textAlign: 'center',
+    backgroundColor: 'rgba(74, 144, 226, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   timestamp: {
     fontSize: 12,
@@ -613,5 +737,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-
-export default A2AScreen;

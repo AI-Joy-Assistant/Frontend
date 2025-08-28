@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -17,6 +17,13 @@ interface Message {
   text: string;
   isUser: boolean;
   timestamp: Date;
+  type?: 'normal' | 'appointment_confirmation' | 'rejection_input';
+  appointmentData?: {
+    date: string;
+    time: string;
+    location: string;
+    participants: string[];
+  };
 }
 
 const ChatScreen = () => {
@@ -25,9 +32,11 @@ const ChatScreen = () => {
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [userNickname, setUserNickname] = useState('');
+  const [currentScenario, setCurrentScenario] = useState<'none' | 'appointment_request' | 'confirmation' | 'rejection'>('none');
   const flatListRef = useRef<FlatList>(null);
+  const isCheckingReschedule = useRef(false);
 
-  // 사용자 닉네임 가져오기 및 채팅 기록 로드
+  // 사용자 닉네임 가져오기
   useEffect(() => {
     const fetchUserInfo = async () => {
       try {
@@ -51,15 +60,173 @@ const ChatScreen = () => {
     };
 
     fetchUserInfo();
-    loadChatHistory();
   }, []);
+
+  // 화면이 포커스될 때마다 실행 (채팅 기록 로드 및 자동 진행 확인)
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('🔄 useFocusEffect 실행됨');
+      
+      // AsyncStorage에서 채팅 기록 로드
+      const loadChat = async () => {
+        await loadChatHistoryFromStorage();
+        
+        // 약속 상태를 확인하여 적절한 시점에만 진행
+        setTimeout(() => {
+          checkAndProceedWithReschedule();
+        }, 500);
+      };
+      
+      loadChat();
+    }, [])
+  );
+
+  // messages가 변경될 때마다 자동으로 스크롤을 아래로
+  useEffect(() => {
+    if (messages.length > 0) {
+      // 자동 스크롤
+      if (flatListRef.current) {
+        const timeoutId = setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 200);
+        
+        return () => clearTimeout(timeoutId);
+      }
+    }
+  }, [messages]);
+
+  // 메시지가 추가될 때만 AsyncStorage에 저장 (화면 간 이동 시 유지)
+  useEffect(() => {
+    if (messages.length > 0) {
+      // 채팅 기록 저장 (화면 간 이동 시 유지)
+      const saveTimeoutId = setTimeout(() => {
+        saveChatHistoryToStorage(messages);
+      }, 500);
+      
+      return () => clearTimeout(saveTimeoutId);
+    }
+  }, [messages.length]); // messages.length만 의존성으로 사용
 
   // 한국 시간으로 Date 객체 생성하는 함수
   const getKoreanTime = () => {
     return new Date(); // 이미 한국 시간이므로 그대로 사용
   };
 
-  // 채팅 기록 로드 함수
+  // AsyncStorage에서 채팅 기록 로드 (화면 간 이동 시 유지)
+  const loadChatHistoryFromStorage = async () => {
+    try {
+      console.log('🔍 AsyncStorage에서 채팅 기록 로드 시도...');
+      const savedMessages = await AsyncStorage.getItem('chatMessages');
+      console.log('🔍 저장된 메시지:', savedMessages ? '있음' : '없음');
+      
+      if (savedMessages) {
+        const parsedMessages = JSON.parse(savedMessages);
+        console.log('🔍 파싱된 메시지 개수:', parsedMessages.length);
+        
+        // 현재 메시지가 없거나 저장된 메시지가 더 많을 때만 로드
+        if (messages.length === 0 || parsedMessages.length > messages.length) {
+          // timestamp를 Date 객체로 변환
+          const messagesWithDates = parsedMessages.map((msg: any) => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp)
+          }));
+          
+          setMessages(messagesWithDates);
+          console.log('📥 AsyncStorage에서 채팅 기록 복원됨:', messagesWithDates.length, '개');
+        } else {
+          console.log('📋 이미 메시지가 로드되어 있음:', messages.length, '개');
+        }
+      } else {
+        console.log('📭 AsyncStorage에 저장된 채팅 기록이 없습니다.');
+      }
+    } catch (error) {
+      console.error('채팅 기록 로드 오류:', error);
+    }
+  };
+
+  // AsyncStorage에 채팅 기록 저장 (화면 간 이동 시 유지)
+  const saveChatHistoryToStorage = async (messages: Message[]) => {
+    try {
+      if (messages.length === 0) {
+        console.log('💾 저장할 메시지가 없습니다.');
+        return;
+      }
+      
+      // 메시지가 실제로 변경되었는지 확인
+      const currentSaved = await AsyncStorage.getItem('chatMessages');
+      if (currentSaved) {
+        const currentMessages = JSON.parse(currentSaved);
+        if (currentMessages.length === messages.length) {
+          console.log('💾 메시지 개수가 동일하여 저장 건너뜀');
+          return;
+        }
+      }
+      
+      const messagesToSave = messages.map(msg => ({
+        ...msg,
+        timestamp: msg.timestamp.toISOString() // Date 객체를 문자열로 변환하여 저장
+      }));
+      
+      await AsyncStorage.setItem('chatMessages', JSON.stringify(messagesToSave));
+      console.log('💾 AsyncStorage에 채팅 기록 저장됨:', messages.length, '개');
+    } catch (error) {
+      console.error('채팅 기록 저장 오류:', error);
+    }
+  };
+
+  // AsyncStorage 초기화 함수 (디버깅용)
+  const clearAsyncStorage = async () => {
+    try {
+      await AsyncStorage.multiRemove([
+        'chatAppointmentStatus',
+        'rescheduleProceeded',
+        'currentAppointmentData',
+        'chatMessages'
+      ]);
+      console.log('🧹 AsyncStorage 초기화 완료');
+      
+      // 상태도 초기화
+      setMessages([]);
+      setCurrentScenario('none');
+      
+      // 초기화 완료 메시지 표시
+      const clearMessage: Message = {
+        id: Date.now().toString() + '_clear',
+        text: 'AsyncStorage가 초기화되었습니다. 새로운 시나리오를 시작하세요.',
+        isUser: false,
+        timestamp: new Date(),
+      };
+      setMessages([clearMessage]);
+      
+    } catch (error) {
+      console.error('AsyncStorage 초기화 오류:', error);
+    }
+  };
+
+  // 전역 함수로 등록 (개발자 콘솔에서 사용 가능)
+  if (typeof window !== 'undefined') {
+    (window as any).clearAsyncStorage = clearAsyncStorage;
+    (window as any).debugAsyncStorage = async () => {
+      try {
+        const chatMessages = await AsyncStorage.getItem('chatMessages');
+        const chatStatus = await AsyncStorage.getItem('chatAppointmentStatus');
+        const hasProceeded = await AsyncStorage.getItem('rescheduleProceeded');
+        const currentAppointmentData = await AsyncStorage.getItem('currentAppointmentData');
+        
+        console.log('🔍 AsyncStorage 디버그 정보:');
+        console.log('chatMessages:', chatMessages ? JSON.parse(chatMessages).length + '개' : '없음');
+        console.log('chatAppointmentStatus:', chatStatus);
+        console.log('rescheduleProceeded:', hasProceeded);
+        console.log('currentAppointmentData:', currentAppointmentData);
+      } catch (error) {
+        console.error('AsyncStorage 디버그 오류:', error);
+      }
+    };
+  }
+
+
+
+  // 채팅 기록 로드 함수 (백엔드 연동용)
   const loadChatHistory = async () => {
     try {
       const token = await AsyncStorage.getItem('accessToken');
@@ -109,6 +276,342 @@ const ChatScreen = () => {
     }
   };
 
+  // 약속 요청 시나리오 처리
+  const handleAppointmentRequest = (userMessage: string) => {
+    // 이미 약속 요청 상태라면 중복 실행 방지
+    if (currentScenario === 'appointment_request') {
+      return;
+    }
+
+    // 새로운 약속 요청이므로 상태 초기화
+    AsyncStorage.setItem('chatAppointmentStatus', 'pending');
+    
+    // 재조율 진행 플래그 초기화
+    AsyncStorage.removeItem('rescheduleProceeded');
+
+    // 시나리오 1: 약속 요청
+    const aiResponse: Message = {
+      id: Date.now().toString() + '_ai',
+      text: '넵. 알겠습니다. A2A 화면에서 일정을 조율하겠습니다.',
+      isUser: false,
+      timestamp: new Date(),
+    };
+    
+    // AI 응답을 기존 메시지 배열에 추가 (채팅 기록 유지)
+    setMessages(prev => [...prev, aiResponse]);
+    setCurrentScenario('appointment_request');
+    
+    // 2초 후 약속 확정 메시지 표시 (지연 시간 단축)
+    setTimeout(() => {
+      handleAppointmentConfirmation();
+    }, 2000);
+  };
+
+  // 약속 확정 시나리오 처리
+  const handleAppointmentConfirmation = () => {
+    console.log('🔄 handleAppointmentConfirmation 실행됨 - currentScenario:', currentScenario);
+    
+    // 이미 약속 확정 상태라면 중복 실행 방지
+    if (currentScenario === 'confirmation') {
+      console.log('🚫 이미 confirmation 상태 - 중복 실행 방지');
+      return;
+    }
+
+    const appointmentData = {
+      date: '8/29(금)',
+      time: '19:00',
+      location: '성신여대역',
+      participants: ['민서', '규민']
+    };
+
+    console.log('📝 약속 확정 메시지 생성:', appointmentData);
+
+    // 약속 데이터를 AsyncStorage에 저장
+    AsyncStorage.setItem('currentAppointmentData', JSON.stringify(appointmentData));
+
+    const confirmationMessage: Message = {
+      id: Date.now().toString() + '_ai_confirmation',
+      text: `약속 확정: ${appointmentData.date} ${appointmentData.time} / ${appointmentData.location}\n확정하시겠습니까?`,
+      isUser: false,
+      timestamp: new Date(),
+      type: 'appointment_confirmation',
+      appointmentData
+    };
+
+    // 약속 확정 메시지를 기존 메시지 배열에 추가 (채팅 기록 유지)
+    setMessages(prev => [...prev, confirmationMessage]);
+    setCurrentScenario('confirmation');
+    
+    console.log('✅ currentScenario를 confirmation으로 설정 완료');
+  };
+
+  // 사용자 응답이 승인인지 거절인지 확인
+  const checkAcceptanceResponse = (userMessage: string): 'accept' | 'reject' | 'unknown' => {
+    const acceptanceKeywords = ['응', '네', '예', '좋아', '좋습니다', '괜찮아', '괜찮습니다', '확정', '승인', 'ok', 'yes'];
+    const rejectionKeywords = ['아니', '아니요', '안돼', '싫어', '취소', '거절', 'no', 'cancel'];
+    
+    const lowerMessage = userMessage.toLowerCase();
+    
+    // 승인 키워드 확인
+    if (acceptanceKeywords.some(keyword => lowerMessage.includes(keyword.toLowerCase()))) {
+      return 'accept';
+    }
+    
+    // 거절 키워드 확인
+    if (rejectionKeywords.some(keyword => lowerMessage.includes(keyword.toLowerCase()))) {
+      return 'reject';
+    }
+    
+    return 'unknown';
+  };
+
+  // 약속 승인 처리 (재조율 후 두 번째 약속 확정인지 확인)
+  const handleAppointmentAccept = async () => {
+    // 현재 약속 데이터 확인
+    const appointmentData = await AsyncStorage.getItem('currentAppointmentData');
+    let isReschedule = false;
+    
+    console.log('🔍 handleAppointmentAccept - appointmentData:', appointmentData);
+    
+    if (appointmentData) {
+      const data = JSON.parse(appointmentData);
+      console.log('🔍 handleAppointmentAccept - parsed data:', data);
+      
+      // 8/30(금) 17:00인 경우 재조율 후 두 번째 약속 확정
+      if (data.date === '8/30(금)' && data.time === '17:00') {
+        isReschedule = true;
+        console.log('✅ 재조율 후 두 번째 약속 확정으로 인식됨');
+      }
+    }
+    
+    console.log('🔍 handleAppointmentAccept - isReschedule:', isReschedule);
+    
+    if (isReschedule) {
+      // 재조율 후 두 번째 약속 확정 - 성공 응답
+      console.log('🎉 재조율 후 두 번째 약속 확정 - 성공 응답');
+      AsyncStorage.setItem('chatAppointmentStatus', 'accepted');
+      
+      setTimeout(() => {
+        const aiResponse: Message = {
+          id: Date.now().toString() + '_ai_accept_success',
+          text: '상대가 모두 수락했습니다. 캘린더에 일정을 추가하겠습니다.',
+          isUser: false,
+          timestamp: new Date(),
+        };
+
+        setMessages(prev => [...prev, aiResponse]);
+        setCurrentScenario('none');
+        
+        // Google Calendar에 일정 추가
+        addToGoogleCalendar();
+      }, 1500);
+    } else {
+      // 첫 번째 약속 확정 - 거절 응답 (민서가 거절)
+      console.log('❌ 첫 번째 약속 확정 - 거절 응답');
+      AsyncStorage.setItem('chatAppointmentStatus', 'rejected');
+      
+      setTimeout(() => {
+        const aiResponse: Message = {
+          id: Date.now().toString() + '_ai_accept',
+          text: '민서님이 거절했습니다. 일정을 재조율하겠습니다.',
+          isUser: false,
+          timestamp: new Date(),
+        };
+
+        setMessages(prev => [...prev, aiResponse]);
+        setCurrentScenario('rejection');
+      }, 1500);
+    }
+  };
+
+  // 약속 거절 처리 (현재는 사용되지 않음 - 사용자가 승인하든 거절하든 항상 거절 응답)
+  /*
+  const handleAppointmentReject = () => {
+    // AsyncStorage에 거절 상태 저장
+    AsyncStorage.setItem('chatAppointmentStatus', 'rejected');
+    
+    // 2초 후 AI 응답 표시
+    setTimeout(() => {
+      const aiResponse: Message = {
+        id: Date.now().toString() + '_ai_reject',
+        text: '민서님이 거절했습니다. 일정을 재조율하겠습니다.',
+        isUser: false,
+        timestamp: new Date(),
+        type: 'rejection_input'
+      };
+
+      // 거절 응답을 기존 메시지 배열에 추가 (채팅 기록 유지)
+      setMessages(prev => [...prev, aiResponse]);
+      setCurrentScenario('rejection');
+    }, 2000);
+  };
+  */
+
+  // 재조율 요청 처리
+  const handleRescheduleRequest = (userMessage: string) => {
+    const rescheduleMessage: Message = {
+      id: Date.now().toString() + '_user_reschedule',
+      text: userMessage,
+      isUser: true,
+      timestamp: new Date(),
+    };
+
+    const aiResponse: Message = {
+      id: Date.now().toString() + '_ai_reschedule',
+      text: '네, 새로운 일정으로 다시 조율하겠습니다. A2A 화면에서 확인해보세요.',
+      isUser: false,
+      timestamp: new Date(),
+    };
+
+    // 재조율 메시지들을 기존 메시지 배열에 추가 (채팅 기록 유지)
+    setMessages(prev => [...prev, rescheduleMessage, aiResponse]);
+    setCurrentScenario('none');
+    
+    // 2초 후 새로운 약속 확정 메시지 표시 (지연 시간 단축)
+    setTimeout(() => {
+      handleRescheduleConfirmation();
+    }, 2000);
+  };
+
+  // A2A 화면에서 돌아왔을 때 자동으로 두 번째 약속 확정 진행
+  const checkAndProceedWithReschedule = async () => {
+    try {
+      // 이미 실행 중인지 확인하는 플래그
+      if (isCheckingReschedule.current) {
+        console.log('🚫 이미 실행 중 - 중복 실행 방지');
+        return;
+      }
+      
+      isCheckingReschedule.current = true;
+      
+      const chatStatus = await AsyncStorage.getItem('chatAppointmentStatus');
+      const hasProceeded = await AsyncStorage.getItem('rescheduleProceeded');
+      
+      console.log('🔍 checkAndProceedWithReschedule - chatStatus:', chatStatus);
+      console.log('🔍 checkAndProceedWithReschedule - hasProceeded:', hasProceeded);
+      console.log('🔍 checkAndProceedWithReschedule - currentScenario:', currentScenario);
+      console.log('🔍 checkAndProceedWithReschedule - messages.length:', messages.length);
+      
+      // 첫 번째 약속 확정이 완료된 후에만 두 번째 약속 확정 진행
+      // chatStatus가 'rejected'이고 hasProceeded가 false일 때만 진행
+      if (chatStatus === 'rejected' && !hasProceeded) {
+        console.log('✅ 재조율 진행 조건 충족 - 두 번째 약속 확정 시작');
+        // 즉시 두 번째 약속 확정 진행
+        handleRescheduleConfirmation();
+        // 실행 완료 후 플래그 해제
+        isCheckingReschedule.current = false;
+      } else {
+        console.log('❌ 재조율 진행 조건 불충족 - chatStatus:', chatStatus, 'hasProceeded:', hasProceeded);
+        isCheckingReschedule.current = false;
+      }
+    } catch (error) {
+      console.error('자동 진행 확인 오류:', error);
+      isCheckingReschedule.current = false;
+    }
+  };
+
+  // 재조율 후 새로운 약속 확정 시나리오 처리
+  const handleRescheduleConfirmation = () => {
+    const appointmentData = {
+      date: '8/30(금)',
+      time: '17:00',
+      location: '성신여대역',
+      participants: ['민서', '규민']
+    };
+
+    console.log('🔄 handleRescheduleConfirmation - appointmentData:', appointmentData);
+
+    // 약속 데이터를 AsyncStorage에 저장
+    AsyncStorage.setItem('currentAppointmentData', JSON.stringify(appointmentData));
+    console.log('💾 AsyncStorage에 약속 데이터 저장됨');
+    
+    // 재조율 진행 플래그 설정 (중복 실행 방지)
+    AsyncStorage.setItem('rescheduleProceeded', 'true');
+    
+    // chatAppointmentStatus를 rejected로 설정 (A2A 화면에서 돌아왔음을 표시)
+    AsyncStorage.setItem('chatAppointmentStatus', 'rejected');
+
+    const confirmationMessage: Message = {
+      id: Date.now().toString() + '_ai_reschedule_confirmation',
+      text: `약속 확정: ${appointmentData.date} ${appointmentData.time} / ${appointmentData.location}\n확정하시겠습니까?`,
+      isUser: false,
+      timestamp: new Date(),
+      type: 'appointment_confirmation',
+      appointmentData
+    };
+
+    console.log('📝 두 번째 약속 확정 메시지 생성:', confirmationMessage.text);
+
+    // 약속 확정 메시지를 기존 메시지 배열에 추가 (채팅 기록 유지)
+    setMessages(prev => [...prev, confirmationMessage]);
+    setCurrentScenario('confirmation');
+  };
+
+  // Google Calendar에 일정 추가
+  const addToGoogleCalendar = async () => {
+    try {
+      // 현재 약속 데이터 가져오기 (AsyncStorage에서)
+      const appointmentData = await AsyncStorage.getItem('currentAppointmentData');
+      let eventData;
+      
+      if (appointmentData) {
+        eventData = JSON.parse(appointmentData);
+      } else {
+        // 기본 일정 데이터 (8/30 17:00)
+        eventData = {
+          title: '규민, 민서와의 미팅',
+          location: '성신여대역',
+          date: '8/30(금)',
+          time: '17:00',
+          participants: ['민서', '규민']
+        };
+      }
+
+      // Google Calendar API 호출 (백엔드 연동)
+      const token = await AsyncStorage.getItem('accessToken');
+      if (token) {
+        const response = await fetch('http://localhost:3000/calendar/events', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            summary: '규민, 민서와의 미팅',
+            location: '성신여대역',
+            start_time: '2024-08-30T17:00:00+09:00',
+            end_time: '2024-08-30T18:00:00+09:00',
+            attendees: ['민서', '규민']
+          }),
+        });
+
+        if (response.ok) {
+          console.log('Google Calendar에 일정이 추가되었습니다.');
+          // 성공 메시지 표시
+          const successMessage: Message = {
+            id: Date.now().toString() + '_ai_calendar_success',
+            text: 'Google Calendar에 일정이 성공적으로 추가되었습니다!',
+            isUser: false,
+            timestamp: new Date(),
+          };
+          setMessages(prev => [...prev, successMessage]);
+        } else {
+          console.error('Google Calendar 일정 추가 실패');
+          // 실패해도 성공 메시지 표시 (백엔드 미준비 시)
+          const successMessage: Message = {
+            id: Date.now().toString() + '_ai_calendar_success',
+            text: 'Google Calendar에 일정이 성공적으로 추가되었습니다! (백엔드 미준비로 시뮬레이션)',
+            isUser: false,
+            timestamp: new Date(),
+          };
+          setMessages(prev => [...prev, successMessage]);
+        }
+      }
+    } catch (error) {
+      console.error('Google Calendar 연동 오류:', error);
+    }
+  };
+
   // ChatGPT API 호출
   const callChatGPTAPI = async (userMessage: string) => {
     setIsLoading(true);
@@ -119,38 +622,72 @@ const ChatScreen = () => {
         throw new Error('인증 토큰이 없습니다.');
       }
 
-      // Agent 간 협업이 필요한지 확인
-      const isAgentCollaborationRequest = checkAgentCollaborationRequest(userMessage);
-      
-      if (isAgentCollaborationRequest) {
-        // Agent 간 협업 시작
-        await startAgentCollaboration(userMessage, token);
-      } else {
-        // 일반 ChatGPT 응답
-        const response = await fetch('http://localhost:3000/chat/chat', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ message: userMessage }),
-        });
+      // 약속 요청인지 확인
+      if (userMessage.includes('약속') && (userMessage.includes('민서') || userMessage.includes('규민'))) {
+        handleAppointmentRequest(userMessage);
+        return;
+      }
 
-        if (!response.ok) {
-          throw new Error(`API 호출 실패: ${response.status}`);
-        }
-
-        const data = await response.json();
+      // 약속 확정 응답인지 확인
+      console.log('🔍 callChatGPTAPI - currentScenario:', currentScenario);
+      if (currentScenario === 'confirmation') {
+        console.log('✅ confirmation 상태 확인됨 - 약속 확정 응답 처리');
+        const isAcceptance = checkAcceptanceResponse(userMessage);
+        console.log('🔍 사용자 응답 분석 결과:', isAcceptance);
         
-        const aiMessage: Message = {
+        if (isAcceptance === 'accept' || isAcceptance === 'reject') {
+          console.log('🚀 handleAppointmentAccept 호출 시작');
+          // 사용자가 승인하든 거절하든 항상 거절 응답 (민서가 거절)
+          handleAppointmentAccept();
+          return;
+        } else {
+          console.log('❓ 이해할 수 없는 응답 - 안내 메시지 표시');
+          // 이해할 수 없는 응답인 경우 안내 메시지
+          const guideMessage: Message = {
+            id: Date.now().toString() + '_ai_guide',
+            text: '약속을 확정하시려면 "네", "응", "좋아" 등을 입력해주세요.',
+            isUser: false,
+            timestamp: new Date(),
+          };
+          // 안내 메시지를 기존 메시지 배열에 추가 (채팅 기록 유지)
+          setMessages(prev => [...prev, guideMessage]);
+          return;
+        }
+      } else {
+        console.log('❌ confirmation 상태가 아님 - currentScenario:', currentScenario);
+      }
+
+      // 재조율 요청인지 확인
+      if (currentScenario === 'rejection' && (userMessage.includes('일') || userMessage.includes('시'))) {
+        handleRescheduleRequest(userMessage);
+        return;
+      }
+
+      // 일반 ChatGPT 응답
+      const response = await fetch('http://localhost:3000/chat/chat', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: userMessage }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API 호출 실패: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+              const aiMessage: Message = {
           id: Date.now().toString() + '_ai',
           text: data.ai_response || '죄송합니다. 응답을 생성할 수 없습니다.',
           isUser: false,
           timestamp: new Date(),
         };
         
+        // AI 응답을 기존 메시지 배열에 추가 (채팅 기록 유지)
         setMessages(prev => [...prev, aiMessage]);
-      }
       
     } catch (error) {
       console.error('ChatGPT API 호출 오류:', error);
@@ -162,155 +699,10 @@ const ChatScreen = () => {
         timestamp: new Date(),
       };
       
+      // 에러 메시지를 기존 메시지 배열에 추가 (채팅 기록 유지)
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // Agent 간 협업 요청인지 확인
-  const checkAgentCollaborationRequest = (message: string): boolean => {
-    const collaborationKeywords = ['와', '과', '랑', '이랑'];
-    const scheduleKeywords = ['약속', '일정', '만나', '미팅', '회의', '점심', '저녁', '오후', '오전'];
-    
-    // 다른 사용자와의 협업 요청인지 확인
-    const hasCollaborationKeyword = collaborationKeywords.some(keyword => message.includes(keyword));
-    const hasScheduleKeyword = scheduleKeywords.some(keyword => message.includes(keyword));
-    
-    return hasCollaborationKeyword && hasScheduleKeyword;
-  };
-
-  // Agent 간 협업 시작
-  const startAgentCollaboration = async (userMessage: string, token: string) => {
-    try {
-      // 사용자 이름과 작업 분리
-      const parts = userMessage.split('와');
-      if (parts.length >= 2) {
-        const targetUserName = parts[0].trim();
-        const task = parts.slice(1).join('와').trim();
-        
-        // Agent 간 협업 시작
-        const response = await fetch('http://localhost:3000/chat/start-agent-task', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            target_user_name: targetUserName,
-            task_description: task
-          }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          
-          // 협업 시작 메시지
-          const startMessage: Message = {
-            id: Date.now().toString() + '_ai_start',
-            text: `🤖 ${targetUserName}의 Agent와 협업을 시작합니다...`,
-            isUser: false,
-            timestamp: new Date(),
-          };
-          
-          setMessages(prev => [...prev, startMessage]);
-          
-          // 잠시 후 협업 결과 표시
-          setTimeout(() => {
-            const resultMessage: Message = {
-              id: Date.now().toString() + '_ai_result',
-              text: data.message || 'Agent 간 협업이 완료되었습니다.',
-              isUser: false,
-              timestamp: new Date(),
-            };
-            
-            setMessages(prev => [...prev, resultMessage]);
-            
-            // Agent 간 대화 내용 표시
-            if (data.agent_messages) {
-              const agentAMessage: Message = {
-                id: Date.now().toString() + '_agent_a',
-                text: `👤 ${userNickname}의 Agent: ${data.agent_messages.agent_a}`,
-                isUser: false,
-                timestamp: new Date(),
-              };
-              
-              const agentBMessage: Message = {
-                id: Date.now().toString() + '_agent_b',
-                text: `👤 ${targetUserName}의 Agent: ${data.agent_messages.agent_b}`,
-                isUser: false,
-                timestamp: new Date(),
-              };
-              
-              const finalResultMessage: Message = {
-                id: Date.now().toString() + '_final_result',
-                text: `📋 최종 결과: ${data.agent_messages.final_result}`,
-                isUser: false,
-                timestamp: new Date(),
-              };
-              
-              setMessages(prev => [...prev, agentAMessage, agentBMessage, finalResultMessage]);
-            }
-            
-            // 일정이 추가된 경우 알림
-            if (data.schedule_info && data.schedule_info.schedule_created) {
-              const scheduleMessage: Message = {
-                id: Date.now().toString() + '_schedule',
-                text: `📅 일정이 Google Calendar에 추가되었습니다!`,
-                isUser: false,
-                timestamp: new Date(),
-              };
-              
-              setMessages(prev => [...prev, scheduleMessage]);
-            }
-          }, 2000);
-          
-        } else {
-          const errorData = await response.json();
-          const errorMessage: Message = {
-            id: Date.now().toString() + '_ai_error',
-            text: errorData.error || 'Agent 간 협업 시작에 실패했습니다.',
-            isUser: false,
-            timestamp: new Date(),
-          };
-          
-          setMessages(prev => [...prev, errorMessage]);
-        }
-      } else {
-        // 형식이 맞지 않는 경우 일반 응답
-        const response = await fetch('http://localhost:3000/chat/chat', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ message: userMessage }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          
-          const aiMessage: Message = {
-            id: Date.now().toString() + '_ai',
-            text: data.ai_response || '죄송합니다. 응답을 생성할 수 없습니다.',
-            isUser: false,
-            timestamp: new Date(),
-          };
-          
-          setMessages(prev => [...prev, aiMessage]);
-        }
-      }
-    } catch (error) {
-      console.error('Agent 협업 오류:', error);
-      
-      const errorMessage: Message = {
-        id: Date.now().toString() + '_ai_error',
-        text: 'Agent 간 협업 중 오류가 발생했습니다.',
-        isUser: false,
-        timestamp: new Date(),
-      };
-      
-      setMessages(prev => [...prev, errorMessage]);
     }
   };
 
@@ -324,12 +716,20 @@ const ChatScreen = () => {
       timestamp: new Date(), // 현재 시간
     };
 
+    // 사용자 메시지를 기존 메시지 배열에 추가 (채팅 기록 유지)
     setMessages(prev => [...prev, userMessage]);
     setInputText('');
+    
+    // 메시지 추가 후 자동 스크롤
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 100);
     
     // ChatGPT API 호출
     await callChatGPTAPI(userMessage.text);
   };
+
+
 
   const renderMessage = ({ item }: { item: Message }) => {
     // 시간 포맷팅 개선 (한국 시간 기준)
@@ -359,6 +759,9 @@ const ChatScreen = () => {
         ]}>
           {item.text}
         </Text>
+        
+
+        
         <Text style={styles.timestamp}>
           {formatTime(item.timestamp)}
         </Text>
@@ -394,8 +797,21 @@ const ChatScreen = () => {
           keyExtractor={(item) => item.id}
           style={styles.messagesList}
           contentContainerStyle={styles.messagesContainer}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-          onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          onContentSizeChange={() => {
+            setTimeout(() => {
+              flatListRef.current?.scrollToEnd({ animated: true });
+            }, 100);
+          }}
+          onLayout={() => {
+            setTimeout(() => {
+              flatListRef.current?.scrollToEnd({ animated: true });
+            }, 100);
+          }}
+          showsVerticalScrollIndicator={false}
+          removeClippedSubviews={false}
+          initialNumToRender={messages.length}
+          maxToRenderPerBatch={messages.length}
+          windowSize={10}
         />
 
         {/* 로딩 인디케이터 */}
@@ -448,7 +864,7 @@ const ChatScreen = () => {
           </TouchableOpacity>
           <TouchableOpacity
               style={[styles.navItem, styles.activeNavItem]}
-              onPress={() => navigation.navigate('A2A')}
+              onPress={() => navigation.navigate('Chat')}
           >
           <Ionicons name="chatbubble" size={24} color="#3B82F6" />
             <Text style={[styles.navText, styles.activeNavText]}>Chat</Text>
@@ -462,7 +878,7 @@ const ChatScreen = () => {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.navItem}
-            onPress={() => navigation.navigate('Chat')}
+            onPress={() => navigation.navigate('A2A')}
           >
           <Ionicons name="person" size={24} color="#9CA3AF" />
             <Text style={styles.navText}>A2A</Text>
@@ -531,6 +947,8 @@ const styles = StyleSheet.create({
   messagesContainer: {
     paddingHorizontal: 16,
     paddingVertical: 20,
+    flexGrow: 1,
+    justifyContent: 'flex-end',
   },
   messageContainer: {
     marginBottom: 16,
@@ -568,6 +986,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     alignSelf: 'flex-end',
   },
+
   loadingContainer: {
     paddingHorizontal: 16,
     paddingVertical: 8,
