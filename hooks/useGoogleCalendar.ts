@@ -1,19 +1,14 @@
 // hooks/useGoogleCalendar.ts
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { CalendarEvent, CalendarDay, CalendarMonth } from '../types/calendar';
-
-const API_BASE = 'http://localhost:3000';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_BASE } from '../constants/config';
 
 // 앱 JWT 얻기
 async function getAppJwt(): Promise<string> {
-  const cached = typeof window !== 'undefined' ? localStorage.getItem('app_jwt') : null;
-  if (cached) return cached;
-  const res = await fetch(`${API_BASE}/auth/token`, { credentials: 'include' });
-  if (!res.ok) throw new Error('앱 로그인 필요');
-  const data = await res.json();
-  const token = data?.accessToken;
+  // RN 환경: AsyncStorage에서 로그인 시 저장한 앱 토큰 사용
+  const token = await AsyncStorage.getItem('accessToken');
   if (!token) throw new Error('앱 로그인 필요');
-  try { localStorage.setItem('app_jwt', token); } catch {}
   return token;
 }
 
@@ -55,7 +50,7 @@ export function useGoogleCalendar() {
     const data = await res.json();
     const newToken = data?.accessToken;
     if (newToken) {
-      try { localStorage.setItem('app_jwt', newToken); } catch {}
+      await AsyncStorage.setItem('accessToken', newToken);
     }
     return newToken;
   }
@@ -139,7 +134,7 @@ export function useGoogleCalendar() {
       const res = await fetch(`${API_BASE}/calendar/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, redirect_uri: 'http://localhost:3000/auth/google/callback' }),
+        body: JSON.stringify({ code, redirect_uri: 'http://localhost:8000/auth/google/callback' }),
       });
       if (!res.ok) return null;
       const data = await res.json();

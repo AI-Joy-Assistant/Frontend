@@ -8,6 +8,7 @@ import { RootStackParamList } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { API_BASE } from '../constants/config';
 
 interface AgentMessage {
   id: string;
@@ -18,11 +19,28 @@ interface AgentMessage {
 }
 
 interface AgentChatRoom {
-  id: string;
+  id: string; // other user id 또는 파생 키
   agentNames: string[];
   lastMessage: string;
   lastMessageTime: string;
   status: 'pending' | 'completed' | 'in_progress';
+}
+
+// 백엔드 응답 타입 (필요한 필드만 정의)
+interface BackendChatRoom {
+  participants: string[]; // uuid string[]
+  last_message?: string;
+  last_message_time?: string; // ISO datetime
+  participant_names: string[]; // 참가자 이름들 (현재 사용자 포함 가능)
+}
+
+interface BackendMessage {
+  id: string;
+  send_id: string;
+  receive_id: string;
+  message: string;
+  message_type: string;
+  created_at: string; // ISO datetime
 }
 
 const A2AScreen = () => {
@@ -32,177 +50,92 @@ const A2AScreen = () => {
   const [chatRooms, setChatRooms] = useState<AgentChatRoom[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
-  const [currentScenario, setCurrentScenario] = useState<'initial' | 'reschedule'>('initial');
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserName, setCurrentUserName] = useState<string>('나');
+  const [myAgentName, setMyAgentName] = useState<string>('내 비서');
+  const [otherAgentName, setOtherAgentName] = useState<string>('상대 비서');
 
-  // 초기 시나리오 2: AI 봇들 간의 약속 조율 대화
-  const initialScenarioMessages: AgentMessage[] = [
-    {
-      id: '1',
-      message: '이번주 금요일 저녁에 7시에 조수연님이 약속을 요청했습니다.',
-      agentName: '수연봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: true,
-    },
-    {
-      id: '2',
-      message: '사용자의 일정을 확인 중입니다…',
-      agentName: '규민봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: false,
-    },
-    {
-      id: '3',
-      message: '사용자의 일정을 확인 중입니다…',
-      agentName: '민서봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: false,
-    },
-    {
-      id: '4',
-      message: '민서님은 금요일 저녁 7시 가능합니다.',
-      agentName: '민서봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: false,
-    },
-    {
-      id: '5',
-      message: '저도 가능합니다. 장소는 성신여대역 어떠세요?',
-      agentName: '규민봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: false,
-    },
-    {
-      id: '6',
-      message: '네, 괜찮습니다.',
-      agentName: '민서봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: false,
-    },
-    {
-      id: '7',
-      message: '일정 확정 채팅 전달하겠습니다.',
-      agentName: '수연봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: true,
-    },
-  ];
+  // participants에서 otherUserId를 구하기 위해, 방 id(파생) -> otherUserId 매핑 저장
+  const [roomOtherUserMap, setRoomOtherUserMap] = useState<Record<string, string>>({});
 
-  // 재조율 시나리오 5: AI 봇들 간의 재조율 대화 (이전 대화 포함)
-  const rescheduleScenarioMessages: AgentMessage[] = [
-    // 이전 대화 기록 (첫 번째 약속 요청)
-    {
-      id: '1',
-      message: '이번주 금요일 저녁에 7시에 조수연님이 약속을 요청했습니다.',
-      agentName: '수연봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: true,
-    },
-    {
-      id: '2',
-      message: '사용자의 일정을 확인 중입니다…',
-      agentName: '규민봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: false,
-    },
-    {
-      id: '3',
-      message: '사용자의 일정을 확인 중입니다…',
-      agentName: '민서봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: false,
-    },
-    {
-      id: '4',
-      message: '민서님은 금요일 저녁 7시 가능합니다.',
-      agentName: '민서봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: false,
-    },
-    {
-      id: '5',
-      message: '저도 가능합니다. 장소는 성신여대역 어떠세요?',
-      agentName: '규민봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: false,
-    },
-    {
-      id: '6',
-      message: '네, 괜찮습니다.',
-      agentName: '민서봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: false,
-    },
-    {
-      id: '7',
-      message: '일정 확정 채팅 전달하겠습니다.',
-      agentName: '수연봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: true,
-    },
-    // 재조율 대화 (민서봇이 거절 메시지 전송)
-    {
-      id: '8',
-      message: '민서님이 일정을 거절했습니다. 민서님이 8월 30일 오후 5시로 요청했습니다.',
-      agentName: '민서봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: false,
-    },
-    {
-      id: '9',
-      message: '사용자의 일정을 확인 중입니다…',
-      agentName: '규민봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: false,
-    },
-    {
-      id: '10',
-      message: '사용자의 일정을 확인 중입니다…',
-      agentName: '수연봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: true,
-    },
-    {
-      id: '11',
-      message: '규민님 가능합니다.',
-      agentName: '규민봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: false,
-    },
-    {
-      id: '12',
-      message: '수연님 가능합니다.',
-      agentName: '수연봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: true,
-    },
-    {
-      id: '13',
-      message: '일정 확정 채팅 전달하겠습니다.',
-      agentName: '민서봇',
-      timestamp: new Date().toISOString(),
-      isMyAgent: false,
-    },
-  ];
+  // 백엔드 연동: 현재 사용자 정보
+  const fetchMe = async () => {
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) return;
+      const response = await fetch(`${API_BASE}/auth/me`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (response.ok) {
+        const me = await response.json();
+        setCurrentUserId(me.id || null);
+        setCurrentUserName(me.name || '나');
+        setMyAgentName(`${me.name || '나'}봇`);
+      }
+    } catch (e) {
+      // 무시하고 기본값 사용
+    }
+  };
 
-  // 하드코딩된 채팅방 목록 (하나만)
-  const hardcodedChatRooms: AgentChatRoom[] = [
-    {
-      id: 'room_1',
-      agentNames: ['민서', '규민'],
-      lastMessage: '약속 조율 대화방',
-      lastMessageTime: '19:00',
-      status: 'completed',
-    },
-  ];
-
-  // Agent 간 채팅방 목록 가져오기
+  // Agent 간 채팅방 목록 가져오기 (백엔드 연동)
   const fetchAgentChatRooms = async () => {
     try {
       setLoading(true);
-      
-      // 하드코딩된 데이터 사용
-      setChatRooms(hardcodedChatRooms);
-      
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) {
+        setChatRooms([]);
+        return;
+      }
+      const res = await fetch(`${API_BASE}/chat/rooms`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!res.ok) {
+        setChatRooms([]);
+        return;
+      }
+      const data = await res.json();
+      const backendRooms: BackendChatRoom[] = data.chat_rooms || data || [];
+
+      const otherMap: Record<string, string> = {};
+
+      const mapped: AgentChatRoom[] = backendRooms.map((room) => {
+        // 방 키: participants를 정렬해서 파생 id 생성 또는 otherUserId 사용
+        const participants = room.participants || [];
+        let otherUserId = '';
+        if (currentUserId) {
+          otherUserId = participants.find((p) => p !== currentUserId) || participants[0] || '';
+        } else {
+          otherUserId = participants[0] || '';
+        }
+        const roomId = otherUserId || participants.sort().join('_') || `room_${Math.random()}`;
+        otherMap[roomId] = otherUserId;
+
+        // 표시 이름들: 현재 사용자 이름을 제외해 보여주기
+        const names = (room.participant_names || []).filter((n) => n && n !== currentUserName);
+
+        // 시간 포맷팅 HH:mm
+        const time = room.last_message_time
+          ? new Date(room.last_message_time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+          : '';
+
+        return {
+          id: roomId,
+          agentNames: names.length > 0 ? names : ['대화상대'],
+          lastMessage: room.last_message || '',
+          lastMessageTime: time,
+          status: 'in_progress',
+        } as AgentChatRoom;
+      });
+
+      setRoomOtherUserMap(otherMap);
+      setChatRooms(mapped);
     } catch (error) {
       console.error('❌ Agent 채팅방 목록 가져오기 오류:', error);
       setChatRooms([]);
@@ -211,55 +144,176 @@ const A2AScreen = () => {
     }
   };
 
-  // 선택된 채팅방의 Agent 간 대화 가져오기
+  // 선택된 채팅방의 Agent 간 대화 가져오기 (백엔드 연동)
   const fetchAgentMessages = async (roomId: string) => {
     try {
-      if (roomId === 'room_1') {
-        // Chat 화면의 상태를 확인하여 적절한 시나리오 표시
-        const chatStatus = await AsyncStorage.getItem('chatAppointmentStatus');
-        
-        if (chatStatus === 'accepted') {
-          // 사용자가 승인한 경우 - 성공 시나리오 (재조율 후 두 번째 약속 확정)
-          setMessages(rescheduleScenarioMessages);
-          setCurrentScenario('reschedule');
-        } else if (chatStatus === 'rejected') {
-          // 사용자가 거절한 경우 - 재조율 시나리오
-          setMessages(rescheduleScenarioMessages);
-          setCurrentScenario('reschedule');
-        } else {
-          // 기본 시나리오 (사용자가 아직 응답하지 않은 상태)
-          setMessages(initialScenarioMessages);
-          setCurrentScenario('initial');
-        }
-      } else {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) {
         setMessages([]);
+        return;
       }
-      
+      // roomId 자체가 otherUserId인 경우가 있어 맵이 비어도 roomId를 사용
+      const otherUserId = (roomId && roomOtherUserMap[roomId]) || roomId;
+      if (!otherUserId) {
+        setMessages([]);
+        return;
+      }
+      // 기존 a2a 메시지 대신, 백엔드가 정리해 둔 대화 히스토리 API 사용
+      const res = await fetch(`${API_BASE}/chat/friend/${otherUserId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!res.ok) {
+        setMessages([]);
+        return;
+      }
+      const data = await res.json();
+      let conversation = data?.messages || [];
+
+      // 보조: 히스토리가 비어있으면 a2a 메시지 테이블 기반 API 한 번 더 시도
+      if (!conversation.length) {
+        const fallback = await fetch(`${API_BASE}/chat/messages/${otherUserId}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (fallback.ok) {
+          const fb = await fallback.json();
+          const msgs: BackendMessage[] = fb.messages || fb || [];
+          if (msgs.length) {
+            const mappedFb: AgentMessage[] = msgs.map((m) => ({
+              id: String(m.id),
+              message: m.message,
+              agentName: m.send_id === currentUserId ? myAgentName : otherAgentName,
+              timestamp: m.created_at,
+              isMyAgent: m.send_id === currentUserId,
+            }));
+            setMessages(mappedFb);
+            return;
+          }
+        }
+      }
+
+      const mapped: AgentMessage[] = conversation.map((m: any, idx: number) => ({
+        id: String(idx + 1),
+        message: m.message,
+        agentName: m.type === 'user' ? myAgentName : otherAgentName,
+        timestamp: m.timestamp,
+        isMyAgent: m.type === 'user',
+      }));
+      setMessages(mapped);
     } catch (error) {
       console.error('❌ Agent 대화 가져오기 오류:', error);
       setMessages([]);
     }
   };
 
-  // 새로운 Agent 작업 시작
+  // 채팅방 삭제 공통 함수 (롱프레스/버튼 공용)
+  const deleteChatRoom = async (roomId: string) => {
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) return;
+      const otherId = (roomId && roomOtherUserMap[roomId]) || roomId;
+      const res = await fetch(`${API_BASE}/chat/rooms/${otherId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        // UI 즉시 반영
+        setSelectedRoomId(null);
+        setMessages([]);
+        setChatRooms(prev => prev.filter(r => r.id !== roomId));
+        // 맵 정리
+        setRoomOtherUserMap(prev => {
+          const copy = { ...prev }; delete copy[roomId]; return copy;
+        });
+        // 서버 재조회로 최종 동기화
+        fetchAgentChatRooms();
+      } else {
+        Alert.alert('오류', '채팅방 삭제에 실패했습니다.');
+      }
+    } catch (e) {
+      Alert.alert('오류', '채팅방 삭제 중 문제가 발생했습니다.');
+    }
+  };
+
+  // 새로운 Agent 작업 시작 -> 백엔드에 메시지 전달하여 대화 세션 트리거
   const startNewAgentTask = async (targetUserName: string, taskDescription: string) => {
     try {
-      Alert.alert('성공', 'Agent 간 협업이 시작되었습니다!');
-      
-      // 새로운 채팅방 추가
-      const newRoom: AgentChatRoom = {
-        id: `room_${Date.now()}`,
-        agentNames: [targetUserName],
-        lastMessage: taskDescription,
-        lastMessageTime: new Date().toLocaleTimeString('ko-KR', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        }),
-        status: 'in_progress',
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) {
+        Alert.alert('오류', '로그인이 필요합니다.');
+        return;
+      }
+      // 1) 친구 목록에서 이름으로 friend_id 찾기
+      const friendsResp = await fetch(`${API_BASE}/chat/friends`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!friendsResp.ok) {
+        Alert.alert('오류', '친구 목록 조회에 실패했습니다.');
+        return;
+      }
+      const friendsData = await friendsResp.json();
+      const friends: { id: string; name: string }[] = friendsData?.friends || [];
+      const friend = friends.find(f => f.name?.includes(targetUserName));
+      if (!friend) {
+        Alert.alert('오류', `${targetUserName}님을 친구에서 찾을 수 없습니다.`);
+        return;
+      }
+
+      // 2) 공통 가용 시간 계산 (기본 60분)
+      const commonUrl = `${API_BASE}/calendar/common-free?friend_id=${encodeURIComponent(friend.id)}&duration_minutes=60`;
+      const commonRes = await fetch(commonUrl, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!commonRes.ok) {
+        Alert.alert('오류', '공통 가용 시간 계산에 실패했습니다.');
+        return;
+      }
+      const common = await commonRes.json();
+      const earliest = (common?.slots || [])[0];
+      if (!earliest) {
+        Alert.alert('안내', '공통으로 비는 시간이 없습니다. 다른 시간대로 시도해 주세요.');
+        return;
+      }
+
+      // 3) 가장 이른 슬롯으로 일정 생성
+      const payload = {
+        friend_id: friend.id,
+        summary: `${targetUserName}와 약속`,
+        location: undefined,
+        duration_minutes: 60,
+        time_min: earliest.start,
+        time_max: earliest.end,
       };
-      
-      setChatRooms(prev => [newRoom, ...prev]);
-      
+      const meetRes = await fetch(`${API_BASE}/calendar/meet-with-friend`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!meetRes.ok) {
+        Alert.alert('오류', '일정 생성에 실패했습니다.');
+        return;
+      }
+      const meet = await meetRes.json();
+
+      // 4) 상단 히스토리에 기록 (AI 응답 형태)
+      const confirmText = '일정이 확정되었습니다. 캘린더를 확인해주세요.';
+      await fetch(`${API_BASE}/chat/log`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ friend_id: friend.id, message: confirmText, role: 'ai' }),
+      }).catch(() => {});
+
+      Alert.alert('성공', '가장 이른 공통 시간으로 일정이 생성되었습니다.');
+      // 방 목록 갱신 및 메시지 새로고침
+      fetchAgentChatRooms();
+      if (selectedRoomId) fetchAgentMessages(selectedRoomId);
     } catch (error) {
       console.error('❌ Agent 작업 시작 오류:', error);
       Alert.alert('오류', 'Agent 작업 시작 중 오류가 발생했습니다.');
@@ -267,8 +321,11 @@ const A2AScreen = () => {
   };
 
   useEffect(() => {
-    fetchAgentChatRooms();
-    // 초기에는 메시지 표시하지 않음
+    (async () => {
+      // 사용자 정보를 먼저 확보한 뒤 방 목록을 가져와 ID/이름 매핑 정확도 보장
+      await fetchMe();
+      await fetchAgentChatRooms();
+    })();
   }, []);
 
   const renderMessage = ({ item }: { item: AgentMessage }) => (
@@ -305,7 +362,22 @@ const A2AScreen = () => {
       onPress={() => {
         setSelectedRoomId(item.id);
         setCurrentChat(item.agentNames.join(', '));
+        // 선택된 방의 상대 에이전트 이름 설정 (리스트에 현재 사용자 제외된 이름들이 들어있음)
+        const firstOtherName = (item.agentNames && item.agentNames[0]) ? item.agentNames[0] : '상대';
+        setOtherAgentName(`${firstOtherName}봇`);
         fetchAgentMessages(item.id);
+      }}
+      onLongPress={() => {
+        Alert.alert(
+          '채팅방 삭제',
+          `${item.agentNames.join(', ')} 방의 대화를 삭제할까요?`,
+          [
+            { text: '취소', style: 'cancel' },
+            { text: '삭제', style: 'destructive', onPress: async () => {
+              deleteChatRoom(item.id);
+            } }
+          ]
+        );
       }}
     >
       <View style={styles.chatRoomIcon}>
@@ -331,9 +403,26 @@ const A2AScreen = () => {
           </Text>
         </View>
       </View>
-      <Text style={styles.chatRoomTime}>
-        {item.lastMessageTime}
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Text style={styles.chatRoomTime}>
+          {item.lastMessageTime}
+        </Text>
+        <TouchableOpacity
+          onPress={() => {
+            Alert.alert(
+              '채팅방 삭제',
+              `${item.agentNames.join(', ')} 방의 대화를 삭제할까요?`,
+              [
+                { text: '취소', style: 'cancel' },
+                { text: '삭제', style: 'destructive', onPress: () => deleteChatRoom(item.id) }
+              ]
+            );
+          }}
+          style={styles.deleteIconButton}
+        >
+          <Ionicons name="trash" size={18} color="#ef4444" />
+        </TouchableOpacity>
+      </View>
     </TouchableOpacity>
   );
 
@@ -687,6 +776,11 @@ const styles = StyleSheet.create({
   chatRoomTime: {
     color: '#9CA3AF',
     fontSize: 12,
+  },
+  deleteIconButton: {
+    padding: 6,
+    borderRadius: 14,
+    backgroundColor: 'rgba(239, 68, 68, 0.08)'
   },
   statusContainer: {
     flexDirection: 'row',

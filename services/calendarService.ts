@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CalendarEvent, CreateEventRequest } from '../types/calendar';
+import { API_BASE } from '../constants/config';
 
-const API_BASE_URL = 'http://localhost:3000';
+const API_BASE_URL = API_BASE;
 
 class CalendarService {
   private async getStoredAccessToken(): Promise<string | null> {

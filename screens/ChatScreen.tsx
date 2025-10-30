@@ -9,6 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { API_BASE } from '../constants/config';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -42,7 +43,7 @@ const ChatScreen = () => {
       try {
         const token = await AsyncStorage.getItem('accessToken');
         if (token) {
-          const response = await fetch('http://localhost:3000/auth/me', {
+          const response = await fetch(`${API_BASE}/auth/me`, {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json',
@@ -225,7 +226,7 @@ const ChatScreen = () => {
         return;
       }
 
-      const response = await fetch('http://localhost:3000/chat/history', {
+      const response = await fetch(`${API_BASE}/chat/history`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -563,7 +564,7 @@ const ChatScreen = () => {
       // Google Calendar API 호출 (백엔드 연동)
       const token = await AsyncStorage.getItem('accessToken');
       if (token) {
-        const response = await fetch('http://localhost:3000/calendar/events', {
+      const response = await fetch(`${API_BASE}/calendar/events`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -657,7 +658,7 @@ const ChatScreen = () => {
       }
 
       // 일반 ChatGPT 응답
-      const response = await fetch('http://localhost:3000/chat/chat', {
+      const response = await fetch(`${API_BASE}/chat/chat`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

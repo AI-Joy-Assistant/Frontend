@@ -8,6 +8,7 @@ import { RootStackParamList } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { API_BASE } from '../constants/config';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -35,7 +36,7 @@ const MyPageScreen = () => {
       }
 
       // 백엔드에서 사용자 정보 가져오기
-      const response = await fetch('http://localhost:3000/auth/me', {
+      const response = await fetch(`${API_BASE}/auth/me`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -78,7 +79,7 @@ const MyPageScreen = () => {
         return;
       }
 
-      const response = await fetch('http://localhost:3000/auth/me', {
+      const response = await fetch(`${API_BASE}/auth/me`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -127,7 +128,7 @@ const MyPageScreen = () => {
         return;
       }
 
-      const response = await fetch('http://localhost:3000/auth/me', {
+      const response = await fetch(`${API_BASE}/auth/me`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -177,7 +178,7 @@ const MyPageScreen = () => {
         <View style={styles.profileSection}>
           <Image 
             source={{ 
-              uri: userInfo.profile_image ? `http://localhost:3000/auth/profile-image/${userInfo.id}?t=${Date.now()}` : undefined,
+              uri: userInfo.profile_image ? `${API_BASE}/auth/profile-image/${userInfo.id}?t=${Date.now()}` : undefined,
               cache: 'reload'
             }} 
             style={styles.profileImage}
@@ -185,7 +186,7 @@ const MyPageScreen = () => {
             onLoad={() => console.log('=== IMAGE_SUCCESS === 프로필 이미지 로드 성공:', userInfo.profile_image)}
             onError={(error) => {
               console.log('=== IMAGE_ERROR === 프로필 이미지 로드 실패:', error.nativeEvent.error);
-              console.log('=== IMAGE_ERROR === 시도한 URL:', `http://localhost:3000/auth/profile-image/${userInfo.id}`);
+              console.log('=== IMAGE_ERROR === 시도한 URL:', `${API_BASE}/auth/profile-image/${userInfo.id}`);
             }}
           />
           <Text style={styles.name}>{userInfo.name}</Text>

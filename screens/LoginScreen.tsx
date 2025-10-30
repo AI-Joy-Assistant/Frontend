@@ -15,12 +15,12 @@ const LoginScreen = () => {
       console.log('🔐 Google 로그인 시작...');
       
       // Google OAuth URL로 브라우저 열기
-      const authUrl = 'http://localhost:3000/auth/google';
+      const authUrl = 'http://localhost:8000/auth/google';
       console.log('🌐 브라우저에서 Google 로그인 열기:', authUrl);
       
       const result = await WebBrowser.openAuthSessionAsync(
         authUrl,
-        'http://localhost:3000/auth/google/callback'
+        'frontend://auth-success'
       );
       
       console.log('🔍 로그인 결과:', result);
@@ -29,25 +29,30 @@ const LoginScreen = () => {
         // 성공 또는 dismiss(자동 창 닫기) 모두 성공으로 처리
         console.log('✅ Google 로그인 성공!');
         
-        // 백엔드에서 실제 토큰 받아오기
+        // 1) 모바일/네이티브: 앱 스킴으로 리다이렉트된 URL에서 토큰 파싱 시도
+        const finalUrl = (result as any)?.url || '';
+        const tokenMatch = /[?&]token=([^&#]+)/.exec(finalUrl);
+        if (tokenMatch && tokenMatch[1]) {
+          const token = decodeURIComponent(tokenMatch[1]);
+          await AsyncStorage.setItem('accessToken', token);
+          console.log('💾 토큰 저장 완료(딥링크)');
+          navigation.navigate('Home');
+          return;
+        }
+
+        // 2) 웹/로컬 환경 등 쿠키 공유 가능한 경우: 백엔드 세션에서 토큰 조회
         try {
           console.log('🔑 백엔드에서 토큰 받아오는 중...');
-          const tokenResponse = await fetch('http://localhost:3000/auth/token', {
+          const tokenResponse = await fetch('http://localhost:8000/auth/token', {
             method: 'GET',
-            credentials: 'include', // 쿠키 포함
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
           });
-          
+
           if (tokenResponse.ok) {
             const tokenData = await tokenResponse.json();
-            console.log('✅ 실제 토큰 받아오기 성공!');
             await AsyncStorage.setItem('accessToken', tokenData.accessToken);
-            console.log('💾 실제 토큰 저장 완료');
-            
-            // 성공 시 홈 화면으로 이동
-            console.log('🚀 홈 화면으로 이동...');
+            console.log('💾 토큰 저장 완료(세션)');
             navigation.navigate('Home');
           } else {
             console.log('❌ 토큰 받아오기 실패:', tokenResponse.status);

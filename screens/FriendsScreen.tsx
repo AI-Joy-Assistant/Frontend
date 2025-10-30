@@ -16,6 +16,7 @@ import {
     View,
 } from 'react-native';
 import { RootStackParamList } from '../types';
+import { API_BASE } from '../constants/config';
 
 interface FriendRequest {
   id: string;
@@ -60,7 +61,7 @@ const FriendsScreen = () => {
         return;
       }
 
-      const response = await fetch('http://localhost:3000/friends/requests', {
+      const response = await fetch(`${API_BASE}/friends/requests`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -90,7 +91,7 @@ const FriendsScreen = () => {
         return;
       }
 
-      const response = await fetch('http://localhost:3000/friends/list', {
+      const response = await fetch(`${API_BASE}/friends/list`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -127,7 +128,7 @@ const FriendsScreen = () => {
         return;
       }
 
-      const response = await fetch(`http://localhost:3000/friends/requests/${requestId}/accept`, {
+      const response = await fetch(`${API_BASE}/friends/requests/${requestId}/accept`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -157,7 +158,7 @@ const FriendsScreen = () => {
         return;
       }
 
-      const response = await fetch(`http://localhost:3000/friends/requests/${requestId}/reject`, {
+      const response = await fetch(`${API_BASE}/friends/requests/${requestId}/reject`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -186,7 +187,7 @@ const FriendsScreen = () => {
         return;
       }
 
-      const response = await fetch(`http://localhost:3000/friends/${friendId}`, {
+      const response = await fetch(`${API_BASE}/friends/${friendId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -220,7 +221,7 @@ const FriendsScreen = () => {
         return;
       }
 
-      const response = await fetch('http://localhost:3000/friends/add', {
+      const response = await fetch(`${API_BASE}/friends/add`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
