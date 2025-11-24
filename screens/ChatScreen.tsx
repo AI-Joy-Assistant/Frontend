@@ -62,27 +62,69 @@ export default function ChatScreen() {
       const chatLogs = await res.json();
       
       // chat_log 형식을 messages 형식으로 변환
-      const loadedMessages: Array<{ sender: string; text: string }> = [];
+      const loadedMessages: Array<{ 
+        sender: string; 
+        text: string; 
+        needsApproval?: boolean;
+        proposal?: any;
+        threadId?: string;
+        sessionIds?: string[];
+      }> = [];
       
       if (Array.isArray(chatLogs)) {
         chatLogs.forEach((log: any) => {
-          // 사용자 메시지
+          // 사용자 메시지 (일반 메시지 또는 승인/거절 응답)
           if (log.request_text) {
-            loadedMessages.push({
-              sender: "user",
-              text: log.request_text,
-            });
+            // 승인/거절 응답인 경우 맥락을 포함한 메시지로 표시
+            if (log.message_type === "schedule_approval_response") {
+              const metadata = log.metadata || {};
+              const approved = metadata.approved;
+              const proposal = metadata.proposal || {};
+              
+              if (approved) {
+                // 승인한 경우
+                loadedMessages.push({
+                  sender: "user",
+                  text: log.request_text, // "예"
+                });
+              } else {
+                // 거절한 경우 - 맥락을 포함한 메시지로 표시
+                const proposalText = proposal.date && proposal.time 
+                  ? `${proposal.date} ${proposal.time} 일정을 거절했습니다.`
+                  : "일정을 거절했습니다.";
+                loadedMessages.push({
+                  sender: "user",
+                  text: proposalText,
+                });
+              }
+            } else {
+              // 일반 사용자 메시지
+              loadedMessages.push({
+                sender: "user",
+                text: log.request_text,
+              });
+            }
           }
           // AI 응답
           if (log.response_text) {
             // 승인 요청 메시지인지 확인
-            const isApprovalRequest = log.message_type === "schedule_approval_request";
+            const isApprovalRequest = log.message_type === "schedule_approval" || log.message_type === "schedule_approval_request";
+            const isRejectionMessage = log.message_type === "schedule_rejection";
+            const metadata = log.metadata || {};
+            
+            // metadata.needs_approval이 명시적으로 false가 아니고, approved_by와 rejected_by가 없으면 승인 필요
+            const needsApproval = isApprovalRequest && 
+                                 metadata.needs_approval !== false && 
+                                 !metadata.approved_by &&
+                                 !metadata.rejected_by;
+            
             loadedMessages.push({
               sender: "ai",
               text: log.response_text,
-              needsApproval: isApprovalRequest,
-              // proposal, threadId, sessionIds는 별도로 저장되어야 함
-              // 일단 메시지 텍스트에서 파싱하거나 별도 API로 조회 필요
+              needsApproval: needsApproval,
+              proposal: metadata.proposal,
+              threadId: metadata.thread_id,
+              sessionIds: metadata.session_ids,
             });
           }
         });

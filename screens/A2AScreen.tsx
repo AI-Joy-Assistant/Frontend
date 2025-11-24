@@ -184,22 +184,43 @@ const A2AScreen = () => {
       const mapped: AgentChatRoom[] = [];
       
       sessionsByThread.forEach((thread_sessions, thread_id) => {
-        // 참여자 이름 수집
+        // 참여자 이름 수집 (place_pref의 participants 정보 활용)
         const participantNames: string[] = [];
         const participantIds: string[] = [];
         
-        thread_sessions.forEach((session: any) => {
-          const otherUserId = session.initiator_user_id === userId
-            ? session.target_user_id
-            : session.initiator_user_id;
-          
-          if (!participantIds.includes(otherUserId)) {
-            participantIds.push(otherUserId);
-            const otherName = localFriendMap[otherUserId] || '대화상대';
-            participantNames.push(otherName);
-            otherMap[thread_id] = otherUserId; // 첫 번째 참여자를 대표로
-          }
-        });
+        // place_pref에서 participants 정보 가져오기
+        const firstSession = thread_sessions[0];
+        const place_pref = firstSession.place_pref || {};
+        const prefParticipants = place_pref.participants || [];
+        
+        // place_pref의 participants가 있으면 사용, 없으면 세션에서 추출
+        if (prefParticipants.length > 0) {
+          prefParticipants.forEach((participantId: string) => {
+            if (participantId !== userId && !participantIds.includes(participantId)) {
+              participantIds.push(participantId);
+              const participantName = localFriendMap[participantId] || '대화상대';
+              participantNames.push(participantName);
+            }
+          });
+        } else {
+          // place_pref에 participants가 없으면 세션에서 추출
+          thread_sessions.forEach((session: any) => {
+            const otherUserId = session.initiator_user_id === userId
+              ? session.target_user_id
+              : session.initiator_user_id;
+            
+            if (!participantIds.includes(otherUserId)) {
+              participantIds.push(otherUserId);
+              const otherName = localFriendMap[otherUserId] || '대화상대';
+              participantNames.push(otherName);
+            }
+          });
+        }
+        
+        // 첫 번째 참여자를 대표로 설정
+        if (participantIds.length > 0) {
+          otherMap[thread_id] = participantIds[0];
+        }
         
         // 가장 최근 세션의 상태 사용
         const latestSession = thread_sessions.sort((a, b) => 
@@ -337,7 +358,17 @@ const A2AScreen = () => {
 
         // sender_user_id와 receiver_user_id 확인
         const isMyAgent = m.sender_user_id === userId || m.sender_user_id === currentUserId;
-        const agentName = isMyAgent ? myAgentName : `${friendlyName}봇`;
+        
+        // 상대방 Agent 이름 결정
+        let otherAgentName = '상대봇';
+        if (participantIds.length > 0) {
+          // 첫 번째 참여자의 이름 사용
+          const firstParticipantId = participantIds[0];
+          const firstParticipantName = friendMap[firstParticipantId] || '대화상대';
+          otherAgentName = `${firstParticipantName}봇`;
+        }
+        
+        const agentName = isMyAgent ? myAgentName : otherAgentName;
 
         console.log('📝 메시지 파싱:', {
           id: m.id,
@@ -525,13 +556,24 @@ const A2AScreen = () => {
         <Text style={styles.timestamp}>
           {(() => {
             // 한국 시간(KST, UTC+9)으로 변환
-            const date = new Date(item.timestamp);
-            // toLocaleString을 사용하여 한국 시간대로 변환
-            return date.toLocaleTimeString('ko-KR', {
-              timeZone: 'Asia/Seoul',
-              hour: '2-digit', 
-              minute: '2-digit' 
-            });
+            try {
+              const timestampStr = item.timestamp;
+              // ISO 문자열을 Date 객체로 파싱
+              const date = new Date(timestampStr);
+              
+              // UTC 시간에 9시간을 더해서 한국 시간으로 변환
+              const kstTime = new Date(date.getTime() + (9 * 60 * 60 * 1000));
+              
+              // UTC 메서드를 사용하여 변환된 시간 추출
+              const hours = kstTime.getUTCHours().toString().padStart(2, '0');
+              const minutes = kstTime.getUTCMinutes().toString().padStart(2, '0');
+              
+              return `${hours}:${minutes}`;
+            } catch (e) {
+              // 파싱 실패 시 원본 표시
+              console.error('시간 파싱 오류:', e, item.timestamp);
+              return item.timestamp;
+            }
           })()}
         </Text>
       </View>
@@ -589,14 +631,26 @@ const A2AScreen = () => {
         <Text style={styles.chatRoomTime}>
           {item.lastMessageTime ? (() => {
             // 한국 시간(KST)으로 변환
-            const date = new Date(item.lastMessageTime);
-            return date.toLocaleString('ko-KR', {
-              timeZone: 'Asia/Seoul',
-              month: 'short',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit'
-            });
+            try {
+              const timestampStr = item.lastMessageTime;
+              // ISO 문자열을 Date 객체로 파싱
+              const date = new Date(timestampStr);
+              
+              // UTC 시간에 9시간을 더해서 한국 시간으로 변환
+              const kstTime = new Date(date.getTime() + (9 * 60 * 60 * 1000));
+              
+              // UTC 메서드를 사용하여 변환된 시간 추출
+              const month = kstTime.getUTCMonth() + 1;
+              const day = kstTime.getUTCDate();
+              const hours = kstTime.getUTCHours().toString().padStart(2, '0');
+              const minutes = kstTime.getUTCMinutes().toString().padStart(2, '0');
+              
+              return `${month}/${day} ${hours}:${minutes}`;
+            } catch (e) {
+              // 파싱 실패 시 원본 표시
+              console.error('시간 파싱 오류:', e, item.lastMessageTime);
+              return item.lastMessageTime;
+            }
           })() : ''}
         </Text>
         <TouchableOpacity
