@@ -381,7 +381,7 @@ const FriendsScreen = () => {
           <Text style={styles.navText}>Chat</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-          <Ionicons name="people" size={24} color="#3B82F6" />
+          <Ionicons name="people" size={24} color="#4A90E2" />
           <Text style={[styles.navText, styles.activeNavText]}>Friends</Text>
         </TouchableOpacity>
         <TouchableOpacity 
@@ -694,7 +694,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   activeNavText: {
-    color: '#3B82F6',
+    color: '#4A90E2',
     fontWeight: '600',
   },
   modalOverlay: {

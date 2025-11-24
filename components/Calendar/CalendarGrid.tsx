@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
     borderRadius: 20,
     borderWidth: 2,
-    borderColor: '#3B82F6',
+    borderColor: '#4A90E2',
   },
   selectedDayText: {
     color: '#fff',
@@ -181,7 +181,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
     borderRadius: 20,
     borderWidth: 2,
-    borderColor: '#3B82F6',
+    borderColor: '#4A90E2',
     zIndex: 1,
     pointerEvents: 'none',
     transform: [{ translateX: -20 }],

@@ -326,7 +326,7 @@ const MyPageScreen = () => {
           <Text style={styles.navText}>A2A</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-          <Ionicons name="person-circle" size={24} color="#3B82F6" />
+          <Ionicons name="person-circle" size={24} color="#4A90E2" />
           <Text style={[styles.navText, styles.activeNavText]}>User</Text>
         </TouchableOpacity>
       </View>
@@ -399,7 +399,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   defaultAvatar: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#4A90E2',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -544,7 +544,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   activeNavText: {
-    color: '#3B82F6',
+    color: '#4A90E2',
     fontWeight: '600',
   },
   debugText: {

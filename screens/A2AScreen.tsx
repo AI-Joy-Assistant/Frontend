@@ -2,13 +2,36 @@ import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList, Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { API_BASE } from '../constants/config';
+
+// 문자열 정규화 (공백 제거 + 소문자 통일)
+const normalize = (str: string) => {
+  if (!str) return '';
+  return str
+    .replace(/\s+/g, '')
+    .replace(/ /g, '')
+    .toLowerCase();
+};
+
+const findFriendByName = (
+  friends: { id: string; name: string }[],
+  targetUserName: string
+) => {
+  if (!targetUserName) return null;
+  const normTarget = normalize(targetUserName);
+  return (
+    friends.find((f) => {
+      const normName = normalize(f.name);
+      return normName.includes(normTarget) || normTarget.includes(normName);
+    }) || null
+  );
+};
 
 interface AgentMessage {
   id: string;
@@ -54,15 +77,16 @@ const A2AScreen = () => {
   const [currentUserName, setCurrentUserName] = useState<string>('나');
   const [myAgentName, setMyAgentName] = useState<string>('내 비서');
   const [otherAgentName, setOtherAgentName] = useState<string>('상대 비서');
+  const [friendMap, setFriendMap] = useState<Record<string, string>>({});
 
   // participants에서 otherUserId를 구하기 위해, 방 id(파생) -> otherUserId 매핑 저장
   const [roomOtherUserMap, setRoomOtherUserMap] = useState<Record<string, string>>({});
 
   // 백엔드 연동: 현재 사용자 정보
-  const fetchMe = async () => {
+  const fetchMe = async (): Promise<string | null> => {
     try {
       const token = await AsyncStorage.getItem('accessToken');
-      if (!token) return;
+      if (!token) return null;
       const response = await fetch(`${API_BASE}/auth/me`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -74,22 +98,59 @@ const A2AScreen = () => {
         setCurrentUserId(me.id || null);
         setCurrentUserName(me.name || '나');
         setMyAgentName(`${me.name || '나'}봇`);
+        return me.id || null;
       }
+      return null;
     } catch (e) {
-      // 무시하고 기본값 사용
+      return null;
     }
   };
 
   // Agent 간 채팅방 목록 가져오기 (백엔드 연동)
   const fetchAgentChatRooms = async () => {
     try {
+      console.log('🔄 [A2A] fetchAgentChatRooms start');
       setLoading(true);
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) {
+        console.log('❌ [A2A] 토큰 없음, 방 목록 불러오지 않음');
         setChatRooms([]);
         return;
       }
-      const res = await fetch(`${API_BASE}/chat/rooms`, {
+      // 현재 사용자 정보가 없으면 먼저 가져오기
+      let userId = currentUserId;
+      if (!userId) {
+        userId = await fetchMe();
+      }
+      if (!userId) {
+        console.log('❌ [A2A] userId 없음, 방 목록 중단');
+        setChatRooms([]);
+        return;
+      }
+
+      // 친구 맵 미리 확보 (이름 매핑용)
+      let localFriendMap = friendMap;
+      try {
+        const friendsResp = await fetch(`${API_BASE}/chat/friends`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (friendsResp.ok) {
+          console.log('✅ [A2A] 친구 목록 조회 성공');
+          const friendsData = await friendsResp.json();
+          const map: Record<string, string> = {};
+          (friendsData?.friends || []).forEach((f: { id: string; name: string }) => {
+            map[f.id] = f.name;
+          });
+          setFriendMap(map);
+          localFriendMap = map;
+        }
+      } catch (e) {
+        // 이름 매핑 실패 시 무시
+        console.log('⚠️ [A2A] 친구 목록 조회 실패, 이름 매핑 생략:', e);
+      }
+
+      // A2A 세션 목록 기반으로 방 목록 구성
+      const res = await fetch(`${API_BASE}/a2a/sessions`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -97,47 +158,41 @@ const A2AScreen = () => {
         },
       });
       if (!res.ok) {
+        console.log('❌ [A2A] 세션 목록 조회 실패 status:', res.status);
         setChatRooms([]);
         return;
       }
       const data = await res.json();
-      const backendRooms: BackendChatRoom[] = data.chat_rooms || data || [];
+      const sessions = data?.sessions || [];
+      console.log('📋 [A2A] 세션 수:', sessions.length);
 
       const otherMap: Record<string, string> = {};
 
-      const mapped: AgentChatRoom[] = backendRooms.map((room) => {
-        // 방 키: participants를 정렬해서 파생 id 생성 또는 otherUserId 사용
-        const participants = room.participants || [];
-        let otherUserId = '';
-        if (currentUserId) {
-          otherUserId = participants.find((p) => p !== currentUserId) || participants[0] || '';
-        } else {
-          otherUserId = participants[0] || '';
-        }
-        const roomId = otherUserId || participants.sort().join('_') || `room_${Math.random()}`;
+      const mapped: AgentChatRoom[] = sessions.map((session: any) => {
+        const otherUserId = session.initiator_user_id === userId
+          ? session.target_user_id
+          : session.initiator_user_id;
+        const roomId = session.id;
         otherMap[roomId] = otherUserId;
-
-        // 표시 이름들: 현재 사용자 이름을 제외해 보여주기
-        const names = (room.participant_names || []).filter((n) => n && n !== currentUserName);
-
-        // 시간 포맷팅 HH:mm
-        const time = room.last_message_time
-          ? new Date(room.last_message_time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
-          : '';
+        const otherName = localFriendMap[otherUserId] || '대화상대';
 
         return {
           id: roomId,
-          agentNames: names.length > 0 ? names : ['대화상대'],
-          lastMessage: room.last_message || '',
-          lastMessageTime: time,
-          status: 'in_progress',
+          agentNames: [otherName],
+          lastMessage: '',
+          lastMessageTime: '',
+          status: session.status === 'completed'
+            ? 'completed'
+            : session.status === 'in_progress'
+              ? 'in_progress'
+              : 'pending',
         } as AgentChatRoom;
       });
 
       setRoomOtherUserMap(otherMap);
       setChatRooms(mapped);
     } catch (error) {
-      console.error('❌ Agent 채팅방 목록 가져오기 오류:', error);
+      console.error('❌ [A2A] 채팅방 목록 가져오기 오류:', error);
       setChatRooms([]);
     } finally {
       setLoading(false);
@@ -149,59 +204,112 @@ const A2AScreen = () => {
     try {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) {
+        console.log('❌ fetchAgentMessages: 토큰 없음');
         setMessages([]);
         return;
       }
-      // roomId 자체가 otherUserId인 경우가 있어 맵이 비어도 roomId를 사용
-      const otherUserId = (roomId && roomOtherUserMap[roomId]) || roomId;
-      if (!otherUserId) {
-        setMessages([]);
-        return;
-      }
-      // 기존 a2a 메시지 대신, 백엔드가 정리해 둔 대화 히스토리 API 사용
-      const res = await fetch(`${API_BASE}/chat/friend/${otherUserId}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      if (!res.ok) {
-        setMessages([]);
-        return;
-      }
-      const data = await res.json();
-      let conversation = data?.messages || [];
+      // currentUserId가 없으면 먼저 가져오기
+      let userId = currentUserId;
+        if (!userId) {
+          console.log('⚠️ currentUserId 없음, fetchMe 실행');
+          userId = await fetchMe();
+        }
 
-      // 보조: 히스토리가 비어있으면 a2a 메시지 테이블 기반 API 한 번 더 시도
-      if (!conversation.length) {
-        const fallback = await fetch(`${API_BASE}/chat/messages/${otherUserId}`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-        if (fallback.ok) {
-          const fb = await fallback.json();
-          const msgs: BackendMessage[] = fb.messages || fb || [];
-          if (msgs.length) {
-            const mappedFb: AgentMessage[] = msgs.map((m) => ({
-              id: String(m.id),
-              message: m.message,
-              agentName: m.send_id === currentUserId ? myAgentName : otherAgentName,
-              timestamp: m.created_at,
-              isMyAgent: m.send_id === currentUserId,
-            }));
-            setMessages(mappedFb);
-            return;
+        if (!userId) {
+          console.log('❌ 사용자 ID를 가져올 수 없습니다.');
+          setMessages([]);
+        return;
+      }
+
+      console.log('🔍 fetchAgentMessages 시작:', { roomId });
+
+      // 세션 정보 조회
+      const sessionRes = await fetch(`${API_BASE}/a2a/session/${roomId}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!sessionRes.ok) {
+        console.log('❌ 세션 조회 실패:', sessionRes.status);
+        setMessages([]);
+        return;
+      }
+      const sessionData = await sessionRes.json();
+      const otherUserId = sessionData.initiator_user_id === userId
+        ? sessionData.target_user_id
+        : sessionData.initiator_user_id;
+      setRoomOtherUserMap(prev => ({ ...prev, [roomId]: otherUserId }));
+
+      const friendlyName = friendMap[otherUserId] || otherAgentName || '상대';
+      setOtherAgentName(`${friendlyName}봇`);
+
+      // 메시지 조회
+      const a2aRes = await fetch(`${API_BASE}/a2a/session/${roomId}/messages`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!a2aRes.ok) {
+        console.log('❌ A2A 메시지 조회 실패:', a2aRes.status);
+        setMessages([]);
+        return;
+      }
+      const a2aData = await a2aRes.json();
+      const a2aMessages = a2aData?.messages || [];
+      console.log('📨 A2A 메시지 개수:', a2aMessages.length);
+
+      if (a2aMessages.length === 0) {
+        console.log('⚠️ A2A 메시지가 없습니다.');
+        setMessages([]);
+        return;
+      }
+
+      const mapped: AgentMessage[] = a2aMessages.map((m: any) => {
+        let messageText = '';
+        
+        // 백엔드에서 반환하는 메시지 형식에 맞게 파싱
+        // a2a_message 테이블의 message 필드는 JSONB이므로 객체일 수 있음
+        if (m.message) {
+          if (typeof m.message === 'string') {
+            messageText = m.message;
+          } else if (typeof m.message === 'object') {
+            // message 객체 내부의 text 필드 추출
+            messageText = m.message.text || m.message.message || m.message.content || '';
+            // text가 없으면 전체 객체를 문자열로 변환
+            if (!messageText) {
+              try {
+                messageText = JSON.stringify(m.message);
+              } catch {
+                messageText = String(m.message);
+              }
+            }
+          } else {
+            messageText = String(m.message);
           }
         }
-      }
+        
+        // message가 비어있으면 기본 메시지
+        if (!messageText.trim()) {
+          messageText = '[메시지 없음]';
+        }
 
-      const mapped: AgentMessage[] = conversation.map((m: any, idx: number) => ({
-        id: String(idx + 1),
-        message: m.message,
-        agentName: m.type === 'user' ? myAgentName : otherAgentName,
-        timestamp: m.timestamp,
-        isMyAgent: m.type === 'user',
-      }));
+        // sender_user_id와 receiver_user_id 확인
+        const isMyAgent = m.sender_user_id === userId || m.sender_user_id === currentUserId;
+        const agentName = isMyAgent ? myAgentName : `${friendlyName}봇`;
+
+        console.log('📝 메시지 파싱:', {
+          id: m.id,
+          sender: m.sender_user_id,
+          receiver: m.receiver_user_id,
+          messageType: m.message_type || m.type,
+          message: messageText.substring(0, 50),
+          isMyAgent
+        });
+
+        return {
+          id: String(m.id || `${Date.now()}-${Math.random()}`),
+          message: messageText,
+          agentName: agentName,
+          timestamp: m.created_at || new Date().toISOString(),
+          isMyAgent: isMyAgent,
+        };
+      });
       setMessages(mapped);
     } catch (error) {
       console.error('❌ Agent 대화 가져오기 오류:', error);
@@ -238,7 +346,7 @@ const A2AScreen = () => {
     }
   };
 
-  // 새로운 Agent 작업 시작 -> 백엔드에 메시지 전달하여 대화 세션 트리거
+  // 새로운 Agent 작업 시작 -> 백엔드가 전체 시뮬레이션 자동 진행
   const startNewAgentTask = async (targetUserName: string, taskDescription: string) => {
     try {
       const token = await AsyncStorage.getItem('accessToken');
@@ -246,6 +354,7 @@ const A2AScreen = () => {
         Alert.alert('오류', '로그인이 필요합니다.');
         return;
       }
+      
       // 1) 친구 목록에서 이름으로 friend_id 찾기
       const friendsResp = await fetch(`${API_BASE}/chat/friends`, {
         headers: { 'Authorization': `Bearer ${token}` },
@@ -256,61 +365,42 @@ const A2AScreen = () => {
       }
       const friendsData = await friendsResp.json();
       const friends: { id: string; name: string }[] = friendsData?.friends || [];
-      const friend = friends.find(f => f.name?.includes(targetUserName));
+      const friend = findFriendByName(friends, targetUserName);
       if (!friend) {
         Alert.alert('오류', `${targetUserName}님을 친구에서 찾을 수 없습니다.`);
         return;
       }
 
-      // 2) 공통 가용 시간 계산 (기본 60분)
-      const commonUrl = `${API_BASE}/calendar/common-free?friend_id=${encodeURIComponent(friend.id)}&duration_minutes=60`;
-      const commonRes = await fetch(commonUrl, { headers: { 'Authorization': `Bearer ${token}` } });
-      if (!commonRes.ok) {
-        Alert.alert('오류', '공통 가용 시간 계산에 실패했습니다.');
-        return;
-      }
-      const common = await commonRes.json();
-      const earliest = (common?.slots || [])[0];
-      if (!earliest) {
-        Alert.alert('안내', '공통으로 비는 시간이 없습니다. 다른 시간대로 시도해 주세요.');
-        return;
-      }
-
-      // 3) 가장 이른 슬롯으로 일정 생성
-      const payload = {
-        friend_id: friend.id,
-        summary: `${targetUserName}와 약속`,
-        location: undefined,
-        duration_minutes: 60,
-        time_min: earliest.start,
-        time_max: earliest.end,
-      };
-      const meetRes = await fetch(`${API_BASE}/calendar/meet-with-friend`, {
+      // 2) A2A 세션 시작 (백엔드가 전체 시뮬레이션 자동 진행)
+      const summary = taskDescription ? `${targetUserName}와 ${taskDescription}` : `${targetUserName}와 약속`;
+      const sessionRes = await fetch(`${API_BASE}/a2a/session/start`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          target_user_id: friend.id,
+          intent: 'schedule',
+          summary: summary,
+          time_window: { duration_minutes: 60 },
+        }),
       });
-      if (!meetRes.ok) {
-        Alert.alert('오류', '일정 생성에 실패했습니다.');
+
+      if (!sessionRes.ok) {
+        const errorData = await sessionRes.json().catch(() => ({ detail: 'A2A 세션 시작 실패' }));
+        Alert.alert('오류', errorData.detail || 'A2A 세션 시작에 실패했습니다.');
         return;
       }
-      const meet = await meetRes.json();
 
-      // 4) 상단 히스토리에 기록 (AI 응답 형태)
-      const confirmText = '일정이 확정되었습니다. 캘린더를 확인해주세요.';
-      await fetch(`${API_BASE}/chat/log`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ friend_id: friend.id, message: confirmText, role: 'ai' }),
-      }).catch(() => {});
+      const sessionData = await sessionRes.json();
+      
+      if (sessionData.event) {
+        Alert.alert('성공', '에이전트 간 일정 조율이 완료되었습니다!');
+      } else {
+        Alert.alert('안내', '공통으로 비는 시간을 찾지 못했습니다.');
+      }
 
-      Alert.alert('성공', '가장 이른 공통 시간으로 일정이 생성되었습니다.');
       // 방 목록 갱신 및 메시지 새로고침
       fetchAgentChatRooms();
       if (selectedRoomId) fetchAgentMessages(selectedRoomId);
@@ -320,13 +410,34 @@ const A2AScreen = () => {
     }
   };
 
+  // 화면이 포커스될 때마다 채팅방 목록 새로고침
+  useFocusEffect(
+    React.useCallback(() => {
+      (async () => {
+        // 사용자 정보를 먼저 확보한 뒤 방 목록을 가져와 ID/이름 매핑 정확도 보장
+        await fetchMe();
+        await fetchAgentChatRooms();
+      })();
+    }, [])
+  );
+
+  // selectedRoomId가 변경되면 메시지 자동 로드
   useEffect(() => {
-    (async () => {
-      // 사용자 정보를 먼저 확보한 뒤 방 목록을 가져와 ID/이름 매핑 정확도 보장
-      await fetchMe();
-      await fetchAgentChatRooms();
-    })();
-  }, []);
+    if (selectedRoomId) {
+      console.log('🔄 selectedRoomId 변경됨, 메시지 로드 시작:', selectedRoomId, 'currentUserId:', currentUserId);
+      // currentUserId가 없으면 fetchMe를 먼저 실행
+      if (!currentUserId) {
+        fetchMe().then(() => {
+          // fetchMe 완료 후 메시지 로드
+          if (selectedRoomId) {
+            fetchAgentMessages(selectedRoomId);
+          }
+        });
+      } else {
+        fetchAgentMessages(selectedRoomId);
+      }
+    }
+  }, [selectedRoomId]);
 
   const renderMessage = ({ item }: { item: AgentMessage }) => (
     <View style={[
@@ -461,38 +572,6 @@ const A2AScreen = () => {
         <View style={styles.chatRoomsHeader}>
           <Text style={styles.chatRoomsTitle}>채팅방 목록</Text>
           <View style={styles.headerButtons}>
-            <TouchableOpacity 
-              style={styles.newTaskButton}
-              onPress={() => {
-                Alert.prompt(
-                  '새로운 Agent 작업',
-                  '대상 사용자 이름과 작업을 입력하세요 (예: 귬모와 27일 저녁에 약속 잡아줘)',
-                  [
-                    { text: '취소', style: 'cancel' },
-                    { 
-                      text: '시작', 
-                      onPress: (taskDescription) => {
-                        if (taskDescription) {
-                          // 사용자 이름과 작업 분리
-                          const parts = taskDescription.split('와');
-                          if (parts.length >= 2) {
-                            const targetUserName = parts[0].trim();
-                            const task = parts.slice(1).join('와').trim();
-                            startNewAgentTask(targetUserName, task);
-                          } else {
-                            Alert.alert('입력 오류', '올바른 형식으로 입력해주세요. (예: 귬모와 27일 저녁에 약속 잡아줘)');
-                          }
-                        }
-                      }
-                    }
-                  ],
-                  'plain-text'
-                );
-              }}
-            >
-              <Ionicons name="add" size={16} color="#fff" />
-              <Text style={styles.newTaskButtonText}>새 작업</Text>
-            </TouchableOpacity>
             <TouchableOpacity onPress={fetchAgentChatRooms} style={styles.refreshButton}>
               <Ionicons name="refresh" size={20} color="#4A90E2" />
             </TouchableOpacity>
