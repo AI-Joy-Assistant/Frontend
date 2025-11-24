@@ -168,25 +168,55 @@ const A2AScreen = () => {
 
       const otherMap: Record<string, string> = {};
 
-      const mapped: AgentChatRoom[] = sessions.map((session: any) => {
-        const otherUserId = session.initiator_user_id === userId
-          ? session.target_user_id
-          : session.initiator_user_id;
-        const roomId = session.id;
-        otherMap[roomId] = otherUserId;
-        const otherName = localFriendMap[otherUserId] || '대화상대';
+      // thread_id 기준으로 그룹화하여 단체 채팅방 생성
+      const sessionsByThread = new Map<string, any[]>();
+      
+      sessions.forEach((session: any) => {
+        const place_pref = session.place_pref || {};
+        const thread_id = place_pref.thread_id || session.id; // thread_id가 없으면 세션 ID 사용
+        
+        if (!sessionsByThread.has(thread_id)) {
+          sessionsByThread.set(thread_id, []);
+        }
+        sessionsByThread.get(thread_id)!.push(session);
+      });
 
-        return {
-          id: roomId,
-          agentNames: [otherName],
+      const mapped: AgentChatRoom[] = [];
+      
+      sessionsByThread.forEach((thread_sessions, thread_id) => {
+        // 참여자 이름 수집
+        const participantNames: string[] = [];
+        const participantIds: string[] = [];
+        
+        thread_sessions.forEach((session: any) => {
+          const otherUserId = session.initiator_user_id === userId
+            ? session.target_user_id
+            : session.initiator_user_id;
+          
+          if (!participantIds.includes(otherUserId)) {
+            participantIds.push(otherUserId);
+            const otherName = localFriendMap[otherUserId] || '대화상대';
+            participantNames.push(otherName);
+            otherMap[thread_id] = otherUserId; // 첫 번째 참여자를 대표로
+          }
+        });
+        
+        // 가장 최근 세션의 상태 사용
+        const latestSession = thread_sessions.sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )[0];
+        
+        mapped.push({
+          id: thread_id, // thread_id를 채팅방 ID로 사용
+          agentNames: participantNames, // 모든 참여자 이름
           lastMessage: '',
-          lastMessageTime: '',
-          status: session.status === 'completed'
+          lastMessageTime: latestSession.created_at || '',
+          status: latestSession.status === 'completed'
             ? 'completed'
-            : session.status === 'in_progress'
+            : latestSession.status === 'in_progress'
               ? 'in_progress'
               : 'pending',
-        } as AgentChatRoom;
+        } as AgentChatRoom);
       });
 
       setRoomOtherUserMap(otherMap);
@@ -233,13 +263,29 @@ const A2AScreen = () => {
         return;
       }
       const sessionData = await sessionRes.json();
-      const otherUserId = sessionData.initiator_user_id === userId
-        ? sessionData.target_user_id
-        : sessionData.initiator_user_id;
-      setRoomOtherUserMap(prev => ({ ...prev, [roomId]: otherUserId }));
-
-      const friendlyName = friendMap[otherUserId] || otherAgentName || '상대';
-      setOtherAgentName(`${friendlyName}봇`);
+      
+      // thread_id가 있으면 단체 채팅방, 없으면 1:1 채팅방
+      const place_pref = sessionData.place_pref || {};
+      const thread_id = place_pref.thread_id;
+      
+      // 참여자 정보 수집 (단체 채팅방인 경우)
+      const participantIds: string[] = [];
+      if (thread_id && place_pref.participants) {
+        participantIds.push(...place_pref.participants);
+      } else {
+        // 1:1 채팅방
+        const otherUserId = sessionData.initiator_user_id === userId
+          ? sessionData.target_user_id
+          : sessionData.initiator_user_id;
+        participantIds.push(otherUserId);
+        setRoomOtherUserMap(prev => ({ ...prev, [roomId]: otherUserId }));
+      }
+      
+      // 참여자 이름 표시 (여러 명이면 모두 표시)
+      const participantNames = participantIds
+        .map(id => friendMap[id] || '대화상대')
+        .join(', ');
+      setOtherAgentName(participantNames ? `${participantNames}봇` : '상대봇');
 
       // 메시지 조회
       const a2aRes = await fetch(`${API_BASE}/a2a/session/${roomId}/messages`, {
@@ -321,27 +367,46 @@ const A2AScreen = () => {
   const deleteChatRoom = async (roomId: string) => {
     try {
       const token = await AsyncStorage.getItem('accessToken');
-      if (!token) return;
-      const otherId = (roomId && roomOtherUserMap[roomId]) || roomId;
-      const res = await fetch(`${API_BASE}/chat/rooms/${otherId}`, {
+      if (!token) {
+        Alert.alert('오류', '인증 토큰이 없습니다.');
+        return;
+      }
+      
+      // A2A 세션 삭제 API 호출
+      const res = await fetch(`${API_BASE}/a2a/session/${roomId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
       });
+      
       if (res.ok) {
-        // UI 즉시 반영
+        // UI 즉시 반영 - 채팅방 목록에서 제거
         setSelectedRoomId(null);
         setMessages([]);
-        setChatRooms(prev => prev.filter(r => r.id !== roomId));
+        setChatRooms(prev => {
+          const filtered = prev.filter(r => r.id !== roomId);
+          console.log(`🗑️ 채팅방 삭제: ${roomId}, 남은 방 수: ${filtered.length}`);
+          return filtered;
+        });
         // 맵 정리
         setRoomOtherUserMap(prev => {
           const copy = { ...prev }; delete copy[roomId]; return copy;
         });
-        // 서버 재조회로 최종 동기화
-        fetchAgentChatRooms();
+        // 서버 재조회로 최종 동기화 (삭제 확인)
+        try {
+          await fetchAgentChatRooms();
+        } catch (e) {
+          console.error('채팅방 목록 재조회 실패:', e);
+        }
+        Alert.alert('완료', '채팅방이 삭제되었습니다.');
       } else {
-        Alert.alert('오류', '채팅방 삭제에 실패했습니다.');
+        const errorData = await res.json().catch(() => ({ detail: '삭제 실패' }));
+        Alert.alert('오류', errorData.detail || '채팅방 삭제에 실패했습니다.');
       }
     } catch (e) {
+      console.error('채팅방 삭제 오류:', e);
       Alert.alert('오류', '채팅방 삭제 중 문제가 발생했습니다.');
     }
   };
@@ -458,10 +523,16 @@ const A2AScreen = () => {
           {item.message}
         </Text>
         <Text style={styles.timestamp}>
-          {new Date(item.timestamp).toLocaleTimeString('ko-KR', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
-          })}
+          {(() => {
+            // 한국 시간(KST, UTC+9)으로 변환
+            const date = new Date(item.timestamp);
+            // toLocaleString을 사용하여 한국 시간대로 변환
+            return date.toLocaleTimeString('ko-KR', {
+              timeZone: 'Asia/Seoul',
+              hour: '2-digit', 
+              minute: '2-digit' 
+            });
+          })()}
         </Text>
       </View>
     </View>
@@ -516,7 +587,17 @@ const A2AScreen = () => {
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Text style={styles.chatRoomTime}>
-          {item.lastMessageTime}
+          {item.lastMessageTime ? (() => {
+            // 한국 시간(KST)으로 변환
+            const date = new Date(item.lastMessageTime);
+            return date.toLocaleString('ko-KR', {
+              timeZone: 'Asia/Seoul',
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            });
+          })() : ''}
         </Text>
         <TouchableOpacity
           onPress={() => {

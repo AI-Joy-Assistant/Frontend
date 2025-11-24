@@ -22,7 +22,14 @@ import { API_BASE } from "../constants/config";
 
 export default function ChatScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const [messages, setMessages] = useState<Array<{ sender: string; text: string }>>([]);
+  const [messages, setMessages] = useState<Array<{ 
+    sender: string; 
+    text: string; 
+    needsApproval?: boolean;
+    proposal?: any;
+    threadId?: string;
+    sessionIds?: string[];
+  }>>([]);
   const [input, setInput] = useState("");
   const scrollRef = useRef<FlatList>(null);
   const [pendingDate, setPendingDate] = useState<string | null>(null); // ask_time 흐름 용 상태
@@ -68,9 +75,14 @@ export default function ChatScreen() {
           }
           // AI 응답
           if (log.response_text) {
+            // 승인 요청 메시지인지 확인
+            const isApprovalRequest = log.message_type === "schedule_approval_request";
             loadedMessages.push({
               sender: "ai",
               text: log.response_text,
+              needsApproval: isApprovalRequest,
+              // proposal, threadId, sessionIds는 별도로 저장되어야 함
+              // 일단 메시지 텍스트에서 파싱하거나 별도 API로 조회 필요
             });
           }
         });
@@ -140,10 +152,19 @@ export default function ChatScreen() {
     const intent = scheduleInfo.intent;
     const hasScheduleRequest = scheduleInfo.has_schedule_request || false;
     const calendarEvent = data.calendar_event;
+    const needsApproval = scheduleInfo.needs_approval || false;
+    const proposal = scheduleInfo.proposal;
+    const threadId = scheduleInfo.thread_id;
+    const sessionIds = scheduleInfo.session_ids || [];
 
     // AI 응답이 있으면 항상 표시
     if (aiResponse) {
-      addMessage("ai", aiResponse);
+      if (needsApproval && proposal) {
+        // 승인 필요 메시지
+        addMessage("ai", aiResponse, true, proposal, threadId, sessionIds);
+      } else {
+        addMessage("ai", aiResponse);
+      }
     }
 
     // 일정 관련 추가 처리
@@ -169,11 +190,63 @@ export default function ChatScreen() {
   };
 
   // 메시지 UI 렌더링
-  const addMessage = (sender, text) => {
-    setMessages((prev) => [...prev, { sender, text }]);
+  const addMessage = (
+    sender: string, 
+    text: string, 
+    needsApproval?: boolean, 
+    proposal?: any, 
+    threadId?: string, 
+    sessionIds?: string[]
+  ) => {
+    setMessages((prev) => [...prev, { 
+      sender, 
+      text, 
+      needsApproval, 
+      proposal, 
+      threadId, 
+      sessionIds 
+    }]);
   };
 
-  const renderItem = ({ item }: { item: { sender: string; text: string } }) => (
+  // 일정 승인/거절 처리
+  const handleScheduleApproval = async (approved: boolean, proposal: any, threadId: string, sessionIds: string[]) => {
+    try {
+      const token = await AsyncStorage.getItem("accessToken");
+      if (!token) return;
+
+      const res = await fetch(`${API_BASE}/chat/approve-schedule`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          thread_id: threadId,
+          session_ids: sessionIds,
+          approved: approved,
+          proposal: proposal
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ detail: '승인 처리 실패' }));
+        addMessage("system", `❌ 오류: ${errorData.detail || '승인 처리 실패'}`);
+        return;
+      }
+
+      const result = await res.json();
+      if (approved) {
+        addMessage("ai", result.message || "일정이 확정되어 모든 참여자 캘린더에 추가되었습니다.");
+      } else {
+        addMessage("ai", result.message || "일정이 거절되었습니다. 재조율을 진행합니다.");
+      }
+    } catch (error) {
+      console.error("승인 처리 오류:", error);
+      addMessage("system", "❌ 승인 처리 중 오류가 발생했습니다.");
+    }
+  };
+
+  const renderItem = ({ item }: { item: any }) => (
     <View
       style={[
         styles.messageItem,
@@ -186,6 +259,24 @@ export default function ChatScreen() {
       ]}>
         {item.text}
       </Text>
+      
+      {/* 승인/거절 버튼 */}
+      {item.needsApproval && item.proposal && (
+        <View style={styles.approvalButtons}>
+          <TouchableOpacity
+            style={[styles.approvalButton, styles.approveButton]}
+            onPress={() => handleScheduleApproval(true, item.proposal, item.threadId, item.sessionIds)}
+          >
+            <Text style={styles.approvalButtonText}>예</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.approvalButton, styles.rejectButton]}
+            onPress={() => handleScheduleApproval(false, item.proposal, item.threadId, item.sessionIds)}
+          >
+            <Text style={styles.approvalButtonText}>아니오</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 
@@ -458,5 +549,29 @@ const styles = StyleSheet.create({
   emptySubText: {
     color: '#9CA3AF',
     fontSize: 14,
+  },
+  approvalButtons: {
+    flexDirection: 'row',
+    marginTop: 12,
+    gap: 8,
+  },
+  approvalButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  approveButton: {
+    backgroundColor: '#4A90E2',
+  },
+  rejectButton: {
+    backgroundColor: '#EF4444',
+  },
+  approvalButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
