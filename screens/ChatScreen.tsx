@@ -1,5 +1,3 @@
-// app/screens/ChatScreen.tsx
-
 import React, { useState, useRef, useEffect } from "react";
 import {
   View,
@@ -19,30 +17,81 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../types";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "../constants/config";
+import ProposalCard, { Proposal } from "../components/ProposalCard";
 
 export default function ChatScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const [messages, setMessages] = useState<Array<{ 
-    sender: string; 
-    text: string; 
+  const [messages, setMessages] = useState<Array<{
+    sender: string;
+    text: string;
     needsApproval?: boolean;
     proposal?: any;
     threadId?: string;
     sessionIds?: string[];
+    approvalStatus?: {
+      approvedBy: string[];
+      totalParticipants: number;
+    };
+    isApproved?: boolean;
+    isRejected?: boolean;
+    allApproved?: boolean;
+    shouldShowProposalCard?: boolean;
+    timestamp?: string;
   }>>([]);
   const [input, setInput] = useState("");
   const scrollRef = useRef<FlatList>(null);
-  const [pendingDate, setPendingDate] = useState<string | null>(null); // ask_time 흐름 용 상태
+  const [pendingDate, setPendingDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  const formatTime = (isoString?: string) => {
+    if (!isoString) return "";
+    const date = new Date(isoString);
+    return date.toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
+
+  // 현재 사용자 ID 가져오기
+  const getCurrentUserId = async (): Promise<string | null> => {
+    try {
+      const token = await AsyncStorage.getItem("accessToken");
+      if (!token) return null;
+
+      const res = await fetch(`${API_BASE}/auth/me`, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (res.ok) {
+        const userData = await res.json();
+        return userData.id || null;
+      }
+      return null;
+    } catch (error) {
+      console.error("사용자 ID 가져오기 오류:", error);
+      return null;
+    }
+  };
 
   // 채팅 기록 불러오기
-  const loadChatHistory = async () => {
+  const loadChatHistory = async (showLoadingUI = true) => {
     try {
-      setLoading(true);
+      if (showLoadingUI) setLoading(true);
       const token = await AsyncStorage.getItem("accessToken");
       if (!token) {
-        setLoading(false);
+        if (showLoadingUI) setLoading(false);
         return;
+      }
+
+      const userId = await getCurrentUserId();
+      if (userId) {
+        setCurrentUserId(userId);
       }
 
       const res = await fetch(`${API_BASE}/chat/history`, {
@@ -53,102 +102,193 @@ export default function ChatScreen() {
         },
       });
 
+      // [401 인증 만료 처리]
+      if (res.status === 401) {
+        console.log("인증 토큰 만료됨 - 폴링 중단");
+        if (showLoadingUI) setLoading(false);
+        await AsyncStorage.removeItem("accessToken");
+        // 필요 시 로그인 화면 이동: navigation.reset(...)
+        return;
+      }
+
       if (!res.ok) {
         console.log("채팅 기록 조회 실패:", res.status);
-        setLoading(false);
+        if (showLoadingUI) setLoading(false);
         return;
       }
 
       const chatLogs = await res.json();
-      
-      // chat_log 형식을 messages 형식으로 변환
-      const loadedMessages: Array<{ 
-        sender: string; 
-        text: string; 
+
+      const loadedMessages: Array<{
+        sender: string;
+        text: string;
         needsApproval?: boolean;
         proposal?: any;
         threadId?: string;
         sessionIds?: string[];
+        approvalStatus?: {
+          approvedBy: string[];
+          totalParticipants: number;
+        };
+        isApproved?: boolean;
+        isRejected?: boolean;
+        allApproved?: boolean;
+        shouldShowProposalCard?: boolean;
+        timestamp?: string;
       }> = [];
-      
+
       if (Array.isArray(chatLogs)) {
         chatLogs.forEach((log: any) => {
-          // 사용자 메시지 (일반 메시지 또는 승인/거절 응답)
+          // 사용자 메시지
           if (log.request_text) {
-            // 승인/거절 응답인 경우 맥락을 포함한 메시지로 표시
             if (log.message_type === "schedule_approval_response") {
               const metadata = log.metadata || {};
               const approved = metadata.approved;
               const proposal = metadata.proposal || {};
-              
+
               if (approved) {
-                // 승인한 경우
                 loadedMessages.push({
                   sender: "user",
-                  text: log.request_text, // "예"
+                  text: log.request_text,
+                  timestamp: log.created_at,
                 });
               } else {
-                // 거절한 경우 - 맥락을 포함한 메시지로 표시
-                const proposalText = proposal.date && proposal.time 
-                  ? `${proposal.date} ${proposal.time} 일정을 거절했습니다.`
-                  : "일정을 거절했습니다.";
+                const proposalText = proposal.date && proposal.time
+                    ? `${proposal.date} ${proposal.time} 일정을 거절했습니다.`
+                    : "일정을 거절했습니다.";
                 loadedMessages.push({
                   sender: "user",
                   text: proposalText,
+                  timestamp: log.created_at,
                 });
               }
             } else {
-              // 일반 사용자 메시지
               loadedMessages.push({
                 sender: "user",
                 text: log.request_text,
+                timestamp: log.created_at,
               });
             }
           }
           // AI 응답
           if (log.response_text) {
-            // 승인 요청 메시지인지 확인
             const isApprovalRequest = log.message_type === "schedule_approval" || log.message_type === "schedule_approval_request";
-            const isRejectionMessage = log.message_type === "schedule_rejection";
             const metadata = log.metadata || {};
-            
-            // metadata.needs_approval이 명시적으로 false가 아니고, approved_by와 rejected_by가 없으면 승인 필요
-            const needsApproval = isApprovalRequest && 
-                                 metadata.needs_approval !== false && 
-                                 !metadata.approved_by &&
-                                 !metadata.rejected_by;
-            
-            loadedMessages.push({
-              sender: "ai",
-              text: log.response_text,
-              needsApproval: needsApproval,
-              proposal: metadata.proposal,
-              threadId: metadata.thread_id,
-              sessionIds: metadata.session_ids,
-            });
+
+            const approvedByList = metadata.approved_by_list || [];
+            if (metadata.approved_by && !approvedByList.includes(metadata.approved_by)) {
+              approvedByList.push(metadata.approved_by);
+            }
+
+            const currentUserApproved = currentUserId && approvedByList.includes(currentUserId);
+            const allApproved = metadata.all_approved === true;
+            const isRejected = !!metadata.rejected_by;
+
+            const needsApproval = isApprovalRequest && !currentUserApproved && !isRejected && !allApproved;
+            const hasProposal = metadata.proposal && (metadata.proposal.date || metadata.proposal.time);
+            const shouldShowProposalCard = isApprovalRequest && hasProposal;
+            const threadId = metadata.thread_id || (metadata.session_ids && metadata.session_ids[0]);
+
+            if (shouldShowProposalCard) {
+              loadedMessages.push({
+                sender: "ai",
+                text: log.response_text,
+                needsApproval: needsApproval,
+                proposal: metadata.proposal,
+                threadId: threadId,
+                sessionIds: metadata.session_ids || [],
+                approvalStatus: {
+                  approvedBy: approvedByList,
+                  totalParticipants: metadata.proposal?.participants?.length || 2
+                },
+                isApproved: currentUserApproved || allApproved,
+                isRejected: isRejected,
+                allApproved: allApproved,
+                shouldShowProposalCard: true,
+                timestamp: log.created_at,
+              });
+            } else {
+              loadedMessages.push({
+                sender: "ai",
+                text: log.response_text,
+                timestamp: log.created_at,
+              });
+            }
           }
         });
+
+        // 시간순 정렬
+        loadedMessages.sort((a, b) => {
+          const timeA = new Date(a.timestamp || 0).getTime();
+          const timeB = new Date(b.timestamp || 0).getTime();
+          return timeA - timeB;
+        });
+        // 2. [✅ 핵심 수정] 중복 카드 제거 (같은 일정은 최신 상태 하나만 보여주기)
+        const uniqueMessages: typeof loadedMessages = [];
+        const processedThreadIds = new Set<string>();
+
+        // 배열을 뒤에서부터(최신부터) 검사
+        for (let i = loadedMessages.length - 1; i >= 0; i--) {
+          const msg = loadedMessages[i];
+          
+          // 카드형 메시지인 경우
+          if (msg.shouldShowProposalCard && msg.threadId) {
+            if (processedThreadIds.has(msg.threadId)) {
+              // 이미 더 최신의 카드가 있으므로, 이 옛날 카드는 숨김(건너뜀)
+              continue; 
+            } else {
+              // 최신 카드이므로 등록
+              processedThreadIds.add(msg.threadId);
+              uniqueMessages.unshift(msg); // 앞에 추가 (순서 유지)
+            }
+          } else {
+            // 일반 메시지는 무조건 추가
+            uniqueMessages.unshift(msg);
+          }
+        }
+        setMessages(loadedMessages);
+      } else {
+        setMessages([]);
       }
 
-      setMessages(loadedMessages);
     } catch (error) {
       console.error("채팅 기록 불러오기 오류:", error);
     } finally {
-      setLoading(false);
+      if (showLoadingUI) setLoading(false);
     }
   };
 
-  // 화면이 포커스될 때마다 채팅 기록 불러오기
+  // [✅ 수정] useFocusEffect를 사용하여 화면이 보일 때만 폴링 동작
   useFocusEffect(
-    React.useCallback(() => {
-      loadChatHistory();
-    }, [])
+      React.useCallback(() => {
+        // 1. 화면 진입 시 즉시 로드
+        loadChatHistory(true);
+
+        // 2. 3초마다 주기적 로드 (타이머 설정)
+        const interval = setInterval(() => {
+          loadChatHistory(false);
+        }, 5000);
+
+        // 3. 화면 이탈 시 타이머 해제 (중요: 401 에러 루프 방지)
+        return () => {
+          console.log("채팅 화면 벗어남 - 폴링 중지");
+          clearInterval(interval);
+        };
+      }, [currentUserId])
   );
 
-  // 스크롤 자동 하단 이동 (메시지 로드 후)
+  // [중요] 기존의 useEffect(setInterval) 코드는 삭제했습니다. (중복 실행 방지)
+
+  // ID 변경 시 즉시 갱신용 (선택 사항)
+  useEffect(() => {
+    if (currentUserId) {
+      loadChatHistory();
+    }
+  }, [currentUserId]);
+
+  // 스크롤 자동 하단 이동
   useEffect(() => {
     if (scrollRef.current && messages.length > 0 && !loading) {
-      // 로딩이 완료된 후 스크롤
       setTimeout(() => {
         scrollRef.current?.scrollToEnd({ animated: false });
       }, 200);
@@ -161,8 +301,6 @@ export default function ChatScreen() {
 
     const userText = input;
     setInput("");
-
-    // 사용자 메시지 표시
     addMessage("user", userText);
 
     const token = await AsyncStorage.getItem("accessToken");
@@ -180,15 +318,15 @@ export default function ChatScreen() {
     });
 
     if (!res.ok) {
+      if (res.status === 401) return; // 401이면 자동 폴링에서 처리됨
       const errorData = await res.json().catch(() => ({ detail: '서버 오류가 발생했습니다.' }));
       addMessage("system", `❌ 오류: ${errorData.detail || '알 수 없는 오류'}`);
       return;
     }
 
     const response = await res.json();
-    const data = response.data || response; // 백엔드가 {data: {...}} 형식으로 반환할 수 있음
+    const data = response.data || response;
 
-    // 백엔드 응답 형식에 맞게 처리
     const aiResponse = data.ai_response || data.response;
     const scheduleInfo = data.schedule_info || {};
     const intent = scheduleInfo.intent;
@@ -199,58 +337,36 @@ export default function ChatScreen() {
     const threadId = scheduleInfo.thread_id;
     const sessionIds = scheduleInfo.session_ids || [];
 
-    // AI 응답이 있으면 항상 표시
     if (aiResponse) {
       if (needsApproval && proposal) {
-        // 승인 필요 메시지
         addMessage("ai", aiResponse, true, proposal, threadId, sessionIds);
       } else {
         addMessage("ai", aiResponse);
       }
     }
-
-    // 일정 관련 추가 처리
-    if (hasScheduleRequest) {
-      // A2A 세션이 시작된 경우 (응답 메시지에 이미 포함됨)
-      if (aiResponse && aiResponse.includes("A2A")) {
-        // A2A 화면으로 자동 이동 가능(옵션)
-        // navigation.navigate("A2A");
-      }
-      // 캘린더 이벤트가 생성된 경우
-      else if (calendarEvent) {
-        // 이미 ai_response에 일정 추가 메시지가 포함되어 있음
-      }
-    }
-
-    // 디버깅용 로그
-    console.log("Chat 응답:", {
-      aiResponse,
-      intent,
-      hasScheduleRequest,
-      hasCalendarEvent: !!calendarEvent
-    });
   };
 
-  // 메시지 UI 렌더링
+  // 메시지 UI 추가
   const addMessage = (
-    sender: string, 
-    text: string, 
-    needsApproval?: boolean, 
-    proposal?: any, 
-    threadId?: string, 
-    sessionIds?: string[]
+      sender: string,
+      text: string,
+      needsApproval?: boolean,
+      proposal?: any,
+      threadId?: string,
+      sessionIds?: string[]
   ) => {
-    setMessages((prev) => [...prev, { 
-      sender, 
-      text, 
-      needsApproval, 
-      proposal, 
-      threadId, 
-      sessionIds 
+    setMessages((prev) => [...prev, {
+      sender,
+      text,
+      needsApproval,
+      proposal,
+      threadId,
+      sessionIds,
+      timestamp: new Date().toISOString()
     }]);
   };
 
-  // 일정 승인/거절 처리
+  // 승인 처리
   const handleScheduleApproval = async (approved: boolean, proposal: any, threadId: string, sessionIds: string[]) => {
     try {
       const token = await AsyncStorage.getItem("accessToken");
@@ -277,6 +393,39 @@ export default function ChatScreen() {
       }
 
       const result = await res.json();
+
+      setMessages((prev) =>
+          prev.map((msg) => {
+            if (!msg.proposal) return msg;
+
+            const matchesThreadId = threadId && msg.threadId === threadId;
+            const matchesSessionIds = msg.sessionIds && sessionIds &&
+                msg.sessionIds.length > 0 && sessionIds.length > 0 &&
+                msg.sessionIds.some(sid => sessionIds.includes(sid));
+
+            const proposalMatches = proposal && msg.proposal &&
+                proposal.date === msg.proposal.date &&
+                proposal.time === msg.proposal.time;
+
+            if (proposalMatches && (matchesThreadId || matchesSessionIds)) {
+              const updatedApprovalStatus = result.all_approved !== undefined ? {
+                approvedBy: result.approved_by_list || [],
+                totalParticipants: msg.approvalStatus?.totalParticipants || 2,
+              } : msg.approvalStatus;
+
+              return {
+                ...msg,
+                needsApproval: false,
+                isApproved: approved || result.all_approved,
+                isRejected: !approved && !result.all_approved,
+                allApproved: result.all_approved || false,
+                approvalStatus: updatedApprovalStatus,
+              };
+            }
+            return msg;
+          })
+      );
+
       if (approved) {
         addMessage("ai", result.message || "일정이 확정되어 모든 참여자 캘린더에 추가되었습니다.");
       } else {
@@ -288,156 +437,163 @@ export default function ChatScreen() {
     }
   };
 
-  const renderItem = ({ item }: { item: any }) => (
-    <View
-      style={[
-        styles.messageItem,
-        item.sender === "user" ? styles.userMessage : styles.aiMessage,
-      ]}
-    >
-      <Text style={[
-        styles.messageText,
-        item.sender === "user" ? styles.userMessageText : styles.aiMessageText
-      ]}>
-        {item.text}
-      </Text>
-      
-      {/* 승인/거절 버튼 */}
-      {item.needsApproval && item.proposal && (
-        <View style={styles.approvalButtons}>
-          <TouchableOpacity
-            style={[styles.approvalButton, styles.approveButton]}
-            onPress={() => handleScheduleApproval(true, item.proposal, item.threadId, item.sessionIds)}
-          >
-            <Text style={styles.approvalButtonText}>예</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.approvalButton, styles.rejectButton]}
-            onPress={() => handleScheduleApproval(false, item.proposal, item.threadId, item.sessionIds)}
-          >
-            <Text style={styles.approvalButtonText}>아니오</Text>
-          </TouchableOpacity>
+  const renderItem = ({ item }: { item: any }) => {
+    const hasProposal = item.proposal && (item.proposal.date || item.proposal.time);
+    const canShowProposal = item.shouldShowProposalCard || (hasProposal && (item.needsApproval || item.isApproved || item.isRejected));
+
+    if (canShowProposal) {
+      const threadId = item.threadId || (item.sessionIds && item.sessionIds.length > 0 ? item.sessionIds[0] : null);
+      const sessionIds = item.sessionIds || [];
+
+      return (
+          <View style={styles.messageItem}>
+            <ProposalCard
+                proposal={item.proposal as Proposal}
+                onApprove={(proposal) => handleScheduleApproval(true, proposal, threadId, sessionIds)}
+                onReject={(proposal) => handleScheduleApproval(false, proposal, threadId, sessionIds)}
+                approvalStatus={item.approvalStatus}
+                isApproved={item.isApproved}
+                isRejected={item.isRejected}
+                timestamp={item.timestamp}
+            />
+          </View>
+      );
+    }
+
+    return (
+        <View
+            style={[
+              styles.messageItem,
+              item.sender === "user" ? styles.userMessage : styles.aiMessage,
+            ]}
+        >
+          <Text style={[
+            styles.messageText,
+            item.sender === "user" ? styles.userMessageText : styles.aiMessageText
+          ]}>
+            {item.text}
+          </Text>
+          <Text style={[
+            styles.timestampText,
+            item.sender === "user" ? styles.userTimestamp : styles.aiTimestamp
+          ]}>
+            {formatTime(item.timestamp)}
+          </Text>
         </View>
-      )}
-    </View>
-  );
+    );
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* 헤더 */}
-      <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>AI 채팅</Text>
-        </View>
-        <View style={styles.placeholder} />
-      </View>
-
-      <KeyboardAvoidingView
-        style={styles.chatContainer}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#4A90E2" />
-            <Text style={styles.loadingText}>채팅 기록을 불러오는 중...</Text>
-          </View>
-        ) : (
-          <FlatList
-            ref={scrollRef}
-            data={messages}
-            keyExtractor={(_, idx) => idx.toString()}
-            renderItem={renderItem}
-            contentContainerStyle={[
-              styles.messagesContainer,
-              messages.length > 0 && styles.messagesContainerWithContent
-            ]}
-            showsVerticalScrollIndicator={false}
-            onContentSizeChange={() => {
-              // 내용 크기가 변경될 때마다 하단으로 스크롤
-              if (scrollRef.current && messages.length > 0) {
-                setTimeout(() => {
-                  scrollRef.current?.scrollToEnd({ animated: false });
-                }, 50);
-              }
-            }}
-            onLayout={() => {
-              // 레이아웃이 완료되면 하단으로 스크롤
-              if (scrollRef.current && messages.length > 0) {
-                setTimeout(() => {
-                  scrollRef.current?.scrollToEnd({ animated: false });
-                }, 100);
-              }
-            }}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>아직 대화가 없습니다.</Text>
-                <Text style={styles.emptySubText}>메시지를 입력해보세요!</Text>
-              </View>
-            }
-          />
-        )}
-
-        {/* 입력창 */}
-        <View style={styles.inputContainer}>
-          <TextInput
-            value={input}
-            onChangeText={setInput}
-            placeholder="메시지를 입력하세요"
-            placeholderTextColor="#9CA3AF"
-            style={styles.input}
-          />
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
           <TouchableOpacity
-            onPress={sendMessage}
-            style={styles.sendButton}
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.7}
           >
-            <Text style={styles.sendButtonText}>전송</Text>
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerTitle}>AI 채팅</Text>
+          </View>
+          <View style={styles.placeholder} />
+        </View>
+
+        <KeyboardAvoidingView
+            style={styles.chatContainer}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#4A90E2" />
+                <Text style={styles.loadingText}>채팅 기록을 불러오는 중...</Text>
+              </View>
+          ) : (
+              <FlatList
+                  ref={scrollRef}
+                  data={messages}
+                  keyExtractor={(_, idx) => idx.toString()}
+                  renderItem={renderItem}
+                  contentContainerStyle={[
+                    styles.messagesContainer,
+                    messages.length > 0 && styles.messagesContainerWithContent
+                  ]}
+                  showsVerticalScrollIndicator={false}
+                  onContentSizeChange={() => {
+                    if (scrollRef.current && messages.length > 0) {
+                      setTimeout(() => {
+                        scrollRef.current?.scrollToEnd({ animated: false });
+                      }, 50);
+                    }
+                  }}
+                  onLayout={() => {
+                    if (scrollRef.current && messages.length > 0) {
+                      setTimeout(() => {
+                        scrollRef.current?.scrollToEnd({ animated: false });
+                      }, 100);
+                    }
+                  }}
+                  ListEmptyComponent={
+                    <View style={styles.emptyContainer}>
+                      <Text style={styles.emptyText}>아직 대화가 없습니다.</Text>
+                      <Text style={styles.emptySubText}>메시지를 입력해보세요!</Text>
+                    </View>
+                  }
+              />
+          )}
+
+          <View style={styles.inputContainer}>
+            <TextInput
+                value={input}
+                onChangeText={setInput}
+                placeholder="메시지를 입력하세요"
+                placeholderTextColor="#9CA3AF"
+                style={styles.input}
+            />
+            <TouchableOpacity
+                onPress={sendMessage}
+                style={styles.sendButton}
+            >
+              <Text style={styles.sendButtonText}>전송</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+
+        <View style={styles.bottomNavigation}>
+          <TouchableOpacity
+              style={styles.navItem}
+              onPress={() => navigation.navigate('Home')}
+          >
+            <Ionicons name="home" size={24} color="#9CA3AF" />
+            <Text style={styles.navText}>Home</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
+            <Ionicons name="chatbubble" size={24} color="#4A90E2" />
+            <Text style={[styles.navText, styles.activeNavText]}>Chat</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+              style={styles.navItem}
+              onPress={() => navigation.navigate('Friends')}
+          >
+            <Ionicons name="people" size={24} color="#9CA3AF" />
+            <Text style={styles.navText}>Friends</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+              style={styles.navItem}
+              onPress={() => navigation.navigate('A2A')}
+          >
+            <Ionicons name="person" size={24} color="#9CA3AF" />
+            <Text style={styles.navText}>A2A</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+              style={styles.navItem}
+              onPress={() => navigation.navigate('User')}
+          >
+            <Ionicons name="person-circle" size={24} color="#9CA3AF" />
+            <Text style={styles.navText}>User</Text>
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
-
-      {/* 하단 네비게이션 */}
-      <View style={styles.bottomNavigation}>
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => navigation.navigate('Home')}
-        >
-          <Ionicons name="home" size={24} color="#9CA3AF" />
-          <Text style={styles.navText}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-          <Ionicons name="chatbubble" size={24} color="#4A90E2" />
-          <Text style={[styles.navText, styles.activeNavText]}>Chat</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => navigation.navigate('Friends')}
-        >
-          <Ionicons name="people" size={24} color="#9CA3AF" />
-          <Text style={styles.navText}>Friends</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => navigation.navigate('A2A')}
-        >
-          <Ionicons name="person" size={24} color="#9CA3AF" />
-          <Text style={styles.navText}>A2A</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => navigation.navigate('User')}
-        >
-          <Ionicons name="person-circle" size={24} color="#9CA3AF" />
-          <Text style={styles.navText}>User</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
   );
 }
 
@@ -592,28 +748,15 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     fontSize: 14,
   },
-  approvalButtons: {
-    flexDirection: 'row',
-    marginTop: 12,
-    gap: 8,
+  timestampText: {
+    fontSize: 10,
+    marginTop: 4,
+    alignSelf: 'flex-end',
   },
-  approvalButton: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
+  userTimestamp: {
+    color: 'rgba(255, 255, 255, 0.7)',
   },
-  approveButton: {
-    backgroundColor: '#4A90E2',
-  },
-  rejectButton: {
-    backgroundColor: '#EF4444',
-  },
-  approvalButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  aiTimestamp: {
+    color: 'rgba(255, 255, 255, 0.5)',
   },
 });

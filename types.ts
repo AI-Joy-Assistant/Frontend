@@ -10,4 +10,5 @@ export type RootStackParamList = {
   User: undefined;
   MyPage: undefined;
   Test: undefined;
+  A2AChatDetail: { sessionId: string; title: string };
 };

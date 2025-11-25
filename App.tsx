@@ -11,6 +11,7 @@ import LoginScreen from './screens/LoginScreen';
 import MyPageScreen from './screens/MyPageScreen';
 import SplashScreen from './screens/SplashScreen';
 import TestScreen from './screens/TestScreen';
+import A2AChatDetailScreen from './screens/A2AChatDetailScreen';
 import { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -29,6 +30,11 @@ export default function App() {
         <Stack.Screen name="User" component={MyPageScreen} />
         <Stack.Screen name="MyPage" component={MyPageScreen} />
         <Stack.Screen name="Test" component={TestScreen} />
+        <Stack.Screen
+            name="A2AChatDetail"
+            component={A2AChatDetailScreen}
+            options={{ headerShown: false }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
