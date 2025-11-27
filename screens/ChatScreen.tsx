@@ -9,6 +9,8 @@ import {
   Platform,
   StyleSheet,
   ActivityIndicator,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -43,6 +45,8 @@ export default function ChatScreen() {
   const [pendingDate, setPendingDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  const isAtBottom = useRef(true);
 
   const formatTime = (isoString?: string) => {
     if (!isoString) return "";
@@ -135,6 +139,7 @@ export default function ChatScreen() {
         allApproved?: boolean;
         shouldShowProposalCard?: boolean;
         timestamp?: string;
+        id?: string;
       }> = [];
 
       if (Array.isArray(chatLogs)) {
@@ -172,30 +177,25 @@ export default function ChatScreen() {
           }
           // AI 응답
           if (log.response_text) {
-            const isApprovalRequest = log.message_type === "schedule_approval" || log.message_type === "schedule_approval_request";
-            const metadata = log.metadata || {};
+            // [✅ 수정] schedule_approval 타입은 무조건 카드 데이터로만 변환 (텍스트 렌더링 방지)
+            if (log.message_type === 'schedule_approval') {
+              const metadata = log.metadata || {};
+              const approvedByList = metadata.approved_by_list || [];
+              if (metadata.approved_by && !approvedByList.includes(metadata.approved_by)) {
+                approvedByList.push(metadata.approved_by);
+              }
+              const currentUserApproved = currentUserId && approvedByList.includes(currentUserId);
+              const allApproved = metadata.all_approved === true;
 
-            const approvedByList = metadata.approved_by_list || [];
-            if (metadata.approved_by && !approvedByList.includes(metadata.approved_by)) {
-              approvedByList.push(metadata.approved_by);
-            }
+              const isRejected = !!metadata.rejected_by || metadata.status === 'rejected';
+              const needsApproval = !currentUserApproved && !isRejected && !allApproved;
 
-            const currentUserApproved = currentUserId && approvedByList.includes(currentUserId);
-            const allApproved = metadata.all_approved === true;
-            const isRejected = !!metadata.rejected_by;
-
-            const needsApproval = isApprovalRequest && !currentUserApproved && !isRejected && !allApproved;
-            const hasProposal = metadata.proposal && (metadata.proposal.date || metadata.proposal.time);
-            const shouldShowProposalCard = isApprovalRequest && hasProposal;
-            const threadId = metadata.thread_id || (metadata.session_ids && metadata.session_ids[0]);
-
-            if (shouldShowProposalCard) {
               loadedMessages.push({
                 sender: "ai",
-                text: log.response_text,
+                text: log.response_text, // 텍스트 데이터는 있지만 렌더링에선 무시됨
                 needsApproval: needsApproval,
                 proposal: metadata.proposal,
-                threadId: threadId,
+                threadId: metadata.thread_id,
                 sessionIds: metadata.session_ids || [],
                 approvalStatus: {
                   approvedBy: approvedByList,
@@ -204,14 +204,18 @@ export default function ChatScreen() {
                 isApproved: currentUserApproved || allApproved,
                 isRejected: isRejected,
                 allApproved: allApproved,
-                shouldShowProposalCard: true,
+                shouldShowProposalCard: true, // 이 플래그가 중요
                 timestamp: log.created_at,
+                id: log.id // 키 중복 방지용
               });
-            } else {
+            }
+            else {
+              // 일반 메시지 (ai_response, system 등)
               loadedMessages.push({
                 sender: "ai",
                 text: log.response_text,
                 timestamp: log.created_at,
+                id: log.id
               });
             }
           }
@@ -261,60 +265,35 @@ export default function ChatScreen() {
   // [✅ 수정] useFocusEffect를 사용하여 화면이 보일 때만 폴링 동작
   useFocusEffect(
       React.useCallback(() => {
-        // 1. 화면 진입 시 즉시 로드
         loadChatHistory(true);
-
-        // 2. 3초마다 주기적 로드 (타이머 설정)
         const interval = setInterval(() => {
           loadChatHistory(false);
-        }, 5000);
-
-        // 3. 화면 이탈 시 타이머 해제 (중요: 401 에러 루프 방지)
-        return () => {
-          console.log("채팅 화면 벗어남 - 폴링 중지");
-          clearInterval(interval);
-        };
+        }, 3000);
+        return () => clearInterval(interval);
       }, [currentUserId])
   );
 
-  // [중요] 기존의 useEffect(setInterval) 코드는 삭제했습니다. (중복 실행 방지)
-
-  // ID 변경 시 즉시 갱신용 (선택 사항)
-  useEffect(() => {
-    if (currentUserId) {
-      loadChatHistory();
-    }
-  }, [currentUserId]);
-
-  // 스크롤 자동 하단 이동
-  useEffect(() => {
-    if (scrollRef.current && messages.length > 0 && !loading) {
-      setTimeout(() => {
-        scrollRef.current?.scrollToEnd({ animated: false });
-      }, 200);
-    }
-  }, [messages, loading]);
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const paddingToBottom = 20;
+    // 맨 아래에 있는지 여부 판단 (오차 범위 20px)
+    isAtBottom.current = layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
+  };
 
   // 메시지 전송
   const sendMessage = async () => {
     if (!input.trim()) return;
-
     const userText = input;
     setInput("");
-    addMessage("user", userText);
+    // 사용자 메시지는 즉시 추가하고 스크롤 내림
+    setMessages((prev) => [...prev, { sender: "user", text: userText, timestamp: new Date().toISOString() }]);
+    isAtBottom.current = true; // 내가 보냈으니 맨 아래로
 
     const token = await AsyncStorage.getItem("accessToken");
-
     const res = await fetch(`${API_BASE}/chat/chat`, {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        message: userText,
-        date: pendingDate ?? undefined,
-      }),
+      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ message: userText, date: pendingDate ?? undefined }),
     });
 
     if (!res.ok) {
@@ -499,63 +478,36 @@ export default function ChatScreen() {
           <View style={styles.placeholder} />
         </View>
 
-        <KeyboardAvoidingView
-            style={styles.chatContainer}
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-        >
+        <KeyboardAvoidingView style={styles.chatContainer} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           {loading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#4A90E2" />
-                <Text style={styles.loadingText}>채팅 기록을 불러오는 중...</Text>
-              </View>
+              <View style={styles.loadingContainer}><ActivityIndicator size="large" color="#4A90E2" /></View>
           ) : (
               <FlatList
                   ref={scrollRef}
                   data={messages}
-                  keyExtractor={(_, idx) => idx.toString()}
+                  keyExtractor={(item, index) => item.id || index.toString()} // id 사용 권장
                   renderItem={renderItem}
-                  contentContainerStyle={[
-                    styles.messagesContainer,
-                    messages.length > 0 && styles.messagesContainerWithContent
-                  ]}
+                  contentContainerStyle={[styles.messagesContainer, messages.length > 0 && styles.messagesContainerWithContent]}
                   showsVerticalScrollIndicator={false}
+
+                  // [✅ 수정] 스크롤 로직 변경
+                  onScroll={handleScroll}
+                  scrollEventThrottle={16}
                   onContentSizeChange={() => {
-                    if (scrollRef.current && messages.length > 0) {
-                      setTimeout(() => {
-                        scrollRef.current?.scrollToEnd({ animated: false });
-                      }, 50);
+                    // 사용자가 맨 아래에 있을 때만 자동 스크롤
+                    if (scrollRef.current && messages.length > 0 && isAtBottom.current) {
+                      scrollRef.current.scrollToEnd({ animated: false });
                     }
                   }}
-                  onLayout={() => {
-                    if (scrollRef.current && messages.length > 0) {
-                      setTimeout(() => {
-                        scrollRef.current?.scrollToEnd({ animated: false });
-                      }, 100);
-                    }
-                  }}
+
                   ListEmptyComponent={
-                    <View style={styles.emptyContainer}>
-                      <Text style={styles.emptyText}>아직 대화가 없습니다.</Text>
-                      <Text style={styles.emptySubText}>메시지를 입력해보세요!</Text>
-                    </View>
+                    <View style={styles.emptyContainer}><Text style={styles.emptyText}>아직 대화가 없습니다.</Text></View>
                   }
               />
           )}
-
           <View style={styles.inputContainer}>
-            <TextInput
-                value={input}
-                onChangeText={setInput}
-                placeholder="메시지를 입력하세요"
-                placeholderTextColor="#9CA3AF"
-                style={styles.input}
-            />
-            <TouchableOpacity
-                onPress={sendMessage}
-                style={styles.sendButton}
-            >
-              <Text style={styles.sendButtonText}>전송</Text>
-            </TouchableOpacity>
+            <TextInput value={input} onChangeText={setInput} placeholder="메시지를 입력하세요" placeholderTextColor="#9CA3AF" style={styles.input} />
+            <TouchableOpacity onPress={sendMessage} style={styles.sendButton}><Text style={styles.sendButtonText}>전송</Text></TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
 
