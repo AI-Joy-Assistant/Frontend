@@ -275,7 +275,7 @@ export default function ChatScreen() {
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
-    const paddingToBottom = 20;
+    const paddingToBottom = 100;
     // 맨 아래에 있는지 여부 판단 (오차 범위 20px)
     isAtBottom.current = layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
   };
@@ -288,6 +288,9 @@ export default function ChatScreen() {
     // 사용자 메시지는 즉시 추가하고 스크롤 내림
     setMessages((prev) => [...prev, { sender: "user", text: userText, timestamp: new Date().toISOString() }]);
     isAtBottom.current = true; // 내가 보냈으니 맨 아래로
+    setTimeout(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }, 100);
 
     const token = await AsyncStorage.getItem("accessToken");
     const res = await fetch(`${API_BASE}/chat/chat`, {

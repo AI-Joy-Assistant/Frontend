@@ -25,14 +25,14 @@ interface ProposalCardProps {
 }
 
 const ProposalCard: React.FC<ProposalCardProps> = ({
-                                                     proposal,
-                                                     onApprove,
-                                                     onReject,
-                                                     isApproved = false,
-                                                     isRejected = false,
-                                                     approvalStatus,
-                                                     timestamp,
-                                                   }) => {
+  proposal,
+  onApprove,
+  onReject,
+  isApproved = false,
+  isRejected = false,
+  approvalStatus,
+  timestamp,
+}) => {
   const [localApproved, setLocalApproved] = useState(isApproved);
   const [localRejected, setLocalRejected] = useState(isRejected);
 
@@ -71,106 +71,108 @@ const ProposalCard: React.FC<ProposalCardProps> = ({
   };
 
   const participantsText = proposal.participants.length > 0
-      ? proposal.participants.join(', ')
-      : '참여자';
+    ? proposal.participants.join(', ')
+    : '참여자';
 
   const showApprovalStatus = approvalStatus && approvalStatus.totalParticipants > 1;
 
   return (
-      <View style={[
-        styles.container,
-        localApproved && styles.approvedContainer,
-        localRejected && styles.rejectedContainer
-      ]}>
-        <View style={styles.header}>
-          <Ionicons
-              name={localApproved ? "checkmark-circle" : "calendar"}
-              size={24}
-              color={localApproved ? "#4CAF50" : "#4A90E2"}
-          />
-          <Text style={styles.headerText}>
-            {localApproved ? '일정 확정' : '일정 제안'}
-          </Text>
+    <View style={[
+      styles.container,
+      localApproved && styles.approvedContainer,
+      localRejected && styles.rejectedContainer
+    ]}>
+      <View style={styles.header}>
+        <Ionicons
+          name={localApproved ? "checkmark-circle" : "calendar"}
+          size={24}
+          color={localApproved ? "#4CAF50" : "#4A90E2"}
+        />
+        <Text style={styles.headerText}>
+          {localApproved ? '일정 확정' : '일정 제안'}
+        </Text>
+      </View>
+
+      <View style={styles.content}>
+        <View style={styles.infoRow}>
+          <Ionicons name="calendar-outline" size={18} color="#9CA3AF" />
+          {/* 백엔드에서 변환된 날짜 문자열이 들어옵니다 (예: 2025년 11월 27일) */}
+          <Text style={styles.infoText}>{proposal.date}</Text>
         </View>
 
-        <View style={styles.content}>
-          <View style={styles.infoRow}>
-            <Ionicons name="calendar-outline" size={18} color="#9CA3AF" />
-            {/* 백엔드에서 변환된 날짜 문자열이 들어옵니다 (예: 2025년 11월 27일) */}
-            <Text style={styles.infoText}>{proposal.date}</Text>
-          </View>
-
-          <View style={styles.infoRow}>
-            <Ionicons name="time-outline" size={18} color="#9CA3AF" />
-            <Text style={styles.infoText}>{proposal.time}</Text>
-          </View>
-
-          {proposal.location && (
-              <View style={styles.infoRow}>
-                <Ionicons name="location-outline" size={18} color="#9CA3AF" />
-                <Text style={styles.infoText}>{proposal.location}</Text>
-              </View>
-          )}
-
-          <View style={styles.infoRow}>
-            <Ionicons name="people-outline" size={18} color="#9CA3AF" />
-            <Text style={styles.infoText}>{participantsText}</Text>
-          </View>
-
-          {showApprovalStatus && (
-              <View style={styles.approvalStatusContainer}>
-                <Text style={styles.approvalStatusText}>
-                  승인: {approvalStatus.approvedBy.length} / {approvalStatus.totalParticipants}명
-                </Text>
-              </View>
-          )}
+        <View style={styles.infoRow}>
+          <Ionicons name="time-outline" size={18} color="#9CA3AF" />
+          <Text style={styles.infoText}>{proposal.time}</Text>
         </View>
 
-        {!localApproved && !localRejected && (
-            <View style={styles.actions}>
-              <TouchableOpacity
-                  style={[styles.button, styles.approveButton]}
-                  onPress={handleApprove}
-                  activeOpacity={0.7}
-              >
-                <Ionicons name="checkmark" size={18} color="#fff" />
-                <Text style={styles.buttonText}>승인</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                  style={[styles.button, styles.rejectButton]}
-                  onPress={handleReject}
-                  activeOpacity={0.7}
-              >
-                <Ionicons name="close" size={18} color="#fff" />
-                <Text style={styles.buttonText}>거절</Text>
-              </TouchableOpacity>
-            </View>
+        {proposal.location && (
+          <View style={styles.infoRow}>
+            <Ionicons name="location-outline" size={18} color="#9CA3AF" />
+            <Text style={styles.infoText}>{proposal.location}</Text>
+          </View>
         )}
 
-        {localApproved && (
-            <View style={styles.statusMessage}>
-              <Text style={styles.statusMessageText}>
-                ✓ 승인 완료. 다른 참여자의 승인을 기다리는 중입니다.
-              </Text>
-            </View>
-        )}
+        <View style={styles.infoRow}>
+          <Ionicons name="people-outline" size={18} color="#9CA3AF" />
+          <Text style={styles.infoText}>{participantsText}</Text>
+        </View>
 
-        {localRejected && (
-            <View style={styles.statusMessage}>
-              <Text style={styles.statusMessageText}>
-                다른 시간으로 재조율을 요청했습니다.
-              </Text>
-            </View>
-        )}
-
-        {/* [추가] 하단 타임스탬프 영역 */}
-        {timestamp && (
-            <View style={styles.footer}>
-              <Text style={styles.timestampText}>{formatTime(timestamp)}</Text>
-            </View>
+        {showApprovalStatus && (
+          <View style={styles.approvalStatusContainer}>
+            <Text style={styles.approvalStatusText}>
+              승인: {approvalStatus.approvedBy.length} / {approvalStatus.totalParticipants}명
+            </Text>
+          </View>
         )}
       </View>
+
+      {!localApproved && !localRejected && (
+        <View style={styles.actions}>
+          <TouchableOpacity
+            style={[styles.button, styles.approveButton]}
+            onPress={handleApprove}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="checkmark" size={18} color="#fff" />
+            <Text style={styles.buttonText}>승인</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, styles.rejectButton]}
+            onPress={handleReject}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="close" size={18} color="#fff" />
+            <Text style={styles.buttonText}>거절</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {localApproved && (
+        <View style={styles.statusMessage}>
+          <Text style={styles.statusMessageText}>
+            {approvalStatus && approvalStatus.approvedBy.length >= approvalStatus.totalParticipants
+              ? "✓ 일정 확정됨"
+              : "✓ 승인 완료. 다른 참여자의 승인을 기다리는 중입니다."}
+          </Text>
+        </View>
+      )}
+
+      {localRejected && (
+        <View style={styles.statusMessage}>
+          <Text style={styles.statusMessageText}>
+            다른 시간으로 재조율을 요청했습니다.
+          </Text>
+        </View>
+      )}
+
+      {/* [추가] 하단 타임스탬프 영역 */}
+      {timestamp && (
+        <View style={styles.footer}>
+          <Text style={styles.timestampText}>{formatTime(timestamp)}</Text>
+        </View>
+      )}
+    </View>
   );
 };
 
