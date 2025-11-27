@@ -72,8 +72,8 @@ const A2AScreen = () => {
 
         const mappedRooms: AgentChatRoom[] = sessions.map((session: any) => {
           const names = session.participant_names && session.participant_names.length > 0
-              ? session.participant_names
-              : ['대화상대'];
+            ? session.participant_names
+            : ['대화상대'];
 
           let status: AgentChatRoom['status'] = 'pending';
           if (session.status === 'completed') status = 'completed';
@@ -98,130 +98,163 @@ const A2AScreen = () => {
   };
 
   useFocusEffect(
-      useCallback(() => {
-        fetchAgentChatRooms();
-      }, [])
+    useCallback(() => {
+      fetchAgentChatRooms();
+    }, [])
   );
 
   const deleteChatRoom = async (roomId: string) => {
+    console.log("deleteChatRoom called with id:", roomId);
     try {
       const token = await AsyncStorage.getItem('accessToken');
-      if (!token) return;
+      if (!token) {
+        console.log("No access token found");
+        return;
+      }
+      console.log("Sending DELETE request to:", `${API_BASE}/a2a/room/${roomId}`);
       const res = await fetch(`${API_BASE}/a2a/room/${roomId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });
+      console.log("Delete response status:", res.status);
       if (res.ok) {
+        console.log("Delete successful, updating state");
         setChatRooms(prev => prev.filter(r => r.id !== roomId));
+      } else {
+        const errText = await res.text();
+        console.log("Delete failed:", errText);
+        Alert.alert("오류", "삭제에 실패했습니다.");
       }
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error("Delete error:", e);
+      Alert.alert("오류", "삭제 중 오류가 발생했습니다.");
+    }
   };
 
   const renderChatRoom = ({ item }: { item: AgentChatRoom }) => (
-      <View style={styles.chatRoomItem}>
-        {/* 목록 클릭 시 상세 화면(A2AChatDetail)으로 이동 */}
-        <TouchableOpacity
-            style={styles.chatRoomLeft}
-            onPress={() => {
-              navigation.navigate('A2AChatDetail', {
-                sessionId: item.sessionId,
-                title: item.agentNames.join(', ')
-              });
-            }}
-        >
-          <View style={styles.chatRoomIcon}>
-            <Ionicons name={item.agentNames.length > 1 ? "people" : "person"} size={24} color="#4A90E2" />
-          </View>
-          <View style={styles.chatRoomContent}>
-            <Text style={styles.chatRoomTitle} numberOfLines={1}>
-              {item.agentNames.join(', ')}
+    <View style={styles.chatRoomItem}>
+      {/* 목록 클릭 시 상세 화면(A2AChatDetail)으로 이동 */}
+      <TouchableOpacity
+        style={styles.chatRoomLeft}
+        onPress={() => {
+          navigation.navigate('A2AChatDetail', {
+            sessionId: item.sessionId,
+            title: item.agentNames.join(', ')
+          });
+        }}
+      >
+        <View style={styles.chatRoomIcon}>
+          <Ionicons name={item.agentNames.length > 1 ? "people" : "person"} size={24} color="#4A90E2" />
+        </View>
+        <View style={styles.chatRoomContent}>
+          <Text style={styles.chatRoomTitle} numberOfLines={1}>
+            {item.agentNames.join(', ')}
+          </Text>
+          <View style={styles.statusRow}>
+            <View style={[
+              styles.statusIndicator,
+              item.status === 'completed' ? styles.completedStatus :
+                item.status === 'in_progress' ? styles.inProgressStatus : styles.pendingStatus
+            ]} />
+            <Text style={styles.statusText}>
+              {item.status === 'completed' ? '완료' :
+                item.status === 'in_progress' ? '진행중' : '대기중'}
             </Text>
-            <View style={styles.statusRow}>
-              <View style={[
-                styles.statusIndicator,
-                item.status === 'completed' ? styles.completedStatus :
-                    item.status === 'in_progress' ? styles.inProgressStatus : styles.pendingStatus
-              ]} />
-              <Text style={styles.statusText}>
-                {item.status === 'completed' ? '완료' :
-                    item.status === 'in_progress' ? '진행중' : '대기중'}
-              </Text>
-              <Text style={styles.chatRoomTime}>
-                • {formatDate(item.lastMessageTime)} {formatTimestamp(item.lastMessageTime)}
-              </Text>
-            </View>
+            <Text style={styles.chatRoomTime}>
+              • {formatDate(item.lastMessageTime)} {formatTimestamp(item.lastMessageTime)}
+            </Text>
           </View>
-        </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
 
-        {/* 삭제 버튼 */}
-        <TouchableOpacity
-            style={styles.deleteButton}
-            onPress={() => {
-              Alert.alert("삭제", "채팅방을 삭제하시겠습니까?", [
-                { text: "취소", style: "cancel" },
-                { text: "삭제", style: "destructive", onPress: () => deleteChatRoom(item.id) }
-              ]);
-            }}
-        >
-          <Ionicons name="trash-outline" size={20} color="#EF4444" />
-        </TouchableOpacity>
-      </View>
+      {/* 삭제 버튼 */}
+      <TouchableOpacity
+        style={styles.deleteButton}
+        onPress={() => {
+          console.log("Delete button pressed for item:", item.id);
+
+          if (Platform.OS === 'web') {
+            // 웹 환경에서는 window.confirm 사용
+            const confirmed = window.confirm("채팅방을 삭제하시겠습니까?");
+            if (confirmed) {
+              console.log("Delete confirmed (Web)");
+              deleteChatRoom(item.id);
+            } else {
+              console.log("Delete cancelled (Web)");
+            }
+          } else {
+            // 네이티브 환경에서는 Alert.alert 사용
+            Alert.alert("삭제", "채팅방을 삭제하시겠습니까?", [
+              { text: "취소", style: "cancel", onPress: () => console.log("Delete cancelled") },
+              {
+                text: "삭제", style: "destructive", onPress: () => {
+                  console.log("Delete confirmed");
+                  deleteChatRoom(item.id);
+                }
+              }
+            ]);
+          }
+        }}
+      >
+        <Ionicons name="trash-outline" size={20} color="#EF4444" />
+      </TouchableOpacity>
+    </View>
   );
 
   return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <View style={styles.headerTitleContainer}>
-            <Text style={styles.headerTitle}>진행 중인 조율</Text>
-          </View>
-          <TouchableOpacity onPress={fetchAgentChatRooms} style={styles.refreshButton}>
-            <Ionicons name="refresh" size={24} color="#fff" />
-          </TouchableOpacity>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerTitle}>진행 중인 조율</Text>
         </View>
+        <TouchableOpacity onPress={fetchAgentChatRooms} style={styles.refreshButton}>
+          <Ionicons name="refresh" size={24} color="#fff" />
+        </TouchableOpacity>
+      </View>
 
-        <View style={styles.listContainer}>
-          {loadingRooms ? (
-              <ActivityIndicator style={{ marginTop: 50 }} color="#4A90E2" size="large" />
-          ) : (
-              <FlatList
-                  data={chatRooms}
-                  renderItem={renderChatRoom}
-                  keyExtractor={(item) => item.id}
-                  contentContainerStyle={styles.chatRoomsListContent}
-                  showsVerticalScrollIndicator={false}
-                  ListEmptyComponent={
-                    <View style={styles.emptyContainer}>
-                      <Text style={styles.emptyText}>진행 중인 조율이 없습니다.</Text>
-                    </View>
-                  }
-              />
-          )}
-        </View>
+      <View style={styles.listContainer}>
+        {loadingRooms ? (
+          <ActivityIndicator style={{ marginTop: 50 }} color="#4A90E2" size="large" />
+        ) : (
+          <FlatList
+            data={chatRooms}
+            renderItem={renderChatRoom}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.chatRoomsListContent}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>진행 중인 조율이 없습니다.</Text>
+              </View>
+            }
+          />
+        )}
+      </View>
 
-        {/* 하단 네비게이션 */}
-        <View style={styles.bottomNavigation}>
-          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Home')}>
-            <Ionicons name="home" size={24} color="#9CA3AF" />
-            <Text style={styles.navText}>Home</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Chat')}>
-            <Ionicons name="chatbubble" size={24} color="#9CA3AF" />
-            <Text style={styles.navText}>Chat</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Friends')}>
-            <Ionicons name="people" size={24} color="#9CA3AF" />
-            <Text style={styles.navText}>Friends</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-            <Ionicons name="person" size={24} color="#4A90E2" />
-            <Text style={[styles.navText, styles.activeNavText]}>A2A</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('User')}>
-            <Ionicons name="person-circle" size={24} color="#9CA3AF" />
-            <Text style={styles.navText}>User</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+      {/* 하단 네비게이션 */}
+      <View style={styles.bottomNavigation}>
+        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Home')}>
+          <Ionicons name="home" size={24} color="#9CA3AF" />
+          <Text style={styles.navText}>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Chat')}>
+          <Ionicons name="chatbubble" size={24} color="#9CA3AF" />
+          <Text style={styles.navText}>Chat</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Friends')}>
+          <Ionicons name="people" size={24} color="#9CA3AF" />
+          <Text style={styles.navText}>Friends</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
+          <Ionicons name="person" size={24} color="#4A90E2" />
+          <Text style={[styles.navText, styles.activeNavText]}>A2A</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('User')}>
+          <Ionicons name="person-circle" size={24} color="#9CA3AF" />
+          <Text style={styles.navText}>User</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
   );
 };
 

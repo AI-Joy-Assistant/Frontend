@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, SafeAreaView
 } from 'react-native';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -49,19 +49,48 @@ const A2AChatDetailScreen = () => {
     const [agentStatuses, setAgentStatuses] = useState<AgentStatus[]>([]);
     const [currentStep, setCurrentStep] = useState<number>(0);
 
-    useEffect(() => {
-        const init = async () => {
-            // 1. 내 정보와 친구 정보 먼저 로드
-            const myId = await fetchMe();
-            const fMap = await fetchFriendsMap();
+    // 폴링을 위한 ref
+    const myIdRef = useRef<string | null>(null);
+    const friendMapRef = useRef<Record<string, string>>({});
 
-            // 2. 메시지 로드 (내 ID가 필요함)
-            if (myId) {
-                await fetchAgentMessages(sessionId, myId, fMap || {});
-            }
-        };
-        init();
-    }, [sessionId]);
+    useFocusEffect(
+        useCallback(() => {
+            let isActive = true;
+
+            const init = async () => {
+                // 1. 내 정보와 친구 정보 먼저 로드 (최초 1회)
+                if (!myIdRef.current) {
+                    const myId = await fetchMe();
+                    myIdRef.current = myId;
+                }
+
+                // 친구 맵은 매번 갱신해도 되지만, 성능상 체크
+                if (Object.keys(friendMapRef.current).length === 0) {
+                    const fMap = await fetchFriendsMap();
+                    friendMapRef.current = fMap || {};
+                }
+
+                // 2. 메시지 로드 (내 ID가 필요함)
+                if (myIdRef.current && isActive) {
+                    await fetchAgentMessages(sessionId, myIdRef.current, friendMapRef.current, true);
+                }
+            };
+
+            init();
+
+            // 3. 폴링 설정 (3초마다)
+            const interval = setInterval(() => {
+                if (myIdRef.current && isActive) {
+                    fetchAgentMessages(sessionId, myIdRef.current, friendMapRef.current, false);
+                }
+            }, 3000);
+
+            return () => {
+                isActive = false;
+                clearInterval(interval);
+            };
+        }, [sessionId])
+    );
 
     const fetchMe = async () => {
         try {
@@ -101,8 +130,8 @@ const A2AChatDetailScreen = () => {
         return {};
     };
 
-    const fetchAgentMessages = async (sid: string, myId: string, fMap: Record<string, string>) => {
-        setLoadingMessages(true);
+    const fetchAgentMessages = async (sid: string, myId: string, fMap: Record<string, string>, showLoading: boolean = false) => {
+        if (showLoading) setLoadingMessages(true);
         try {
             const token = await AsyncStorage.getItem('accessToken');
             const res = await fetch(`${API_BASE}/a2a/session/${sid}/messages`, {
@@ -151,7 +180,7 @@ const A2AChatDetailScreen = () => {
                             isActive: false,
                             isCompleted: true
                         });
-                        if(msgObj.step > maxStep) maxStep = msgObj.step;
+                        if (msgObj.step > maxStep) maxStep = msgObj.step;
                         if (m.message_type === 'final' || msgObj.step >= 9) {
                             isFinalStep = true;
                         }
@@ -174,7 +203,7 @@ const A2AChatDetailScreen = () => {
         } catch (e) {
             console.error('fetchMessages error:', e);
         } finally {
-            setLoadingMessages(false);
+            if (showLoading) setLoadingMessages(false);
         }
     };
 
@@ -196,6 +225,8 @@ const A2AChatDetailScreen = () => {
             </View>
         </View>
     );
+
+    const flatListRef = useRef<FlatList>(null);
 
     return (
         <SafeAreaView style={styles.container}>
@@ -222,11 +253,14 @@ const A2AChatDetailScreen = () => {
                     <ActivityIndicator style={{ marginTop: 20 }} color="#4A90E2" />
                 ) : (
                     <FlatList
+                        ref={flatListRef}
                         data={messages}
                         renderItem={renderMessage}
                         keyExtractor={(item) => item.id}
                         style={styles.messagesList}
                         showsVerticalScrollIndicator={false}
+                        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+                        onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
                         ListEmptyComponent={
                             <Text style={{ color: '#666', textAlign: 'center', marginTop: 20 }}>
                                 대화 내용이 없습니다.
