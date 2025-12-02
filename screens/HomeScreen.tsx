@@ -4,7 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../types';
+import { RootStackParamList, Tab } from '../types';
+import BottomNav from '../components/BottomNav';
 import { CalendarEvent } from '../types/calendar';
 import CalendarHeader from '../components/Calendar/CalendarHeader';
 import CalendarGrid from '../components/Calendar/CalendarGrid';
@@ -47,7 +48,7 @@ export default function HomeScreen() {
 
   // 🔁 무한 루프 방지를 위해 useMemo 제거하고 일반 변수로 변경
   const selectedEvents = getEventsForDate(selectedDate);
-  
+
   // 디버깅을 위한 로그 (무한 루프 방지)
   if (selectedEvents.length > 0) {
     console.log('📅 selectedEvents 로드됨:', {
@@ -170,42 +171,8 @@ export default function HomeScreen() {
             onMonthChange={handleMonthChange}
           />
         </View>
-        {/* 하단 탭바 */}
-        <View style={styles.bottomNavigation}>
-          <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-            <Ionicons name="home" size={24} color="#4A90E2" />
-            <Text style={[styles.navText, styles.activeNavText]}>Home</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.navItem}
-            onPress={() => navigation.navigate('Chat')}
-          >
-            <Ionicons name="chatbubble" size={24} color="#9CA3AF" />
-            <Text style={styles.navText}>Chat</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.navItem}
-            onPress={() => navigation.navigate('Friends')}
-          >
-            <Ionicons name="people" size={24} color="#9CA3AF" />
-            <Text style={styles.navText}>Friends</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.navItem}
-            onPress={() => navigation.navigate('A2A')}
-          >
-            <Ionicons name="person" size={24} color="#9CA3AF" />
-            <Text style={styles.navText}>A2A</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.navItem}
-            onPress={() => navigation.navigate('MyPage')}
-          >
-            <Ionicons name="person-circle" size={24} color="#9CA3AF" />
-            <Text style={styles.navText}>User</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+        <BottomNav activeTab={Tab.HOME} />
+      </SafeAreaView >
     );
   }
 
@@ -246,41 +213,7 @@ export default function HomeScreen() {
         selectedDate={selectedDate}
       />
 
-      {/* 하단 탭바 */}
-      <View style={styles.bottomNavigation}>
-        <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-          <Ionicons name="home" size={24} color="#4A90E2" />
-          <Text style={[styles.navText, styles.activeNavText]}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigation.navigate('Chat')}
-        >
-          <Ionicons name="chatbubble" size={24} color="#9CA3AF" />
-          <Text style={styles.navText}>Chat</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigation.navigate('Friends')}
-        >
-          <Ionicons name="people" size={24} color="#9CA3AF" />
-          <Text style={styles.navText}>Friends</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigation.navigate('A2A')}
-        >
-          <Ionicons name="person" size={24} color="#9CA3AF" />
-          <Text style={styles.navText}>A2A</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigation.navigate('User')}
-        >
-          <Ionicons name="person-circle" size={24} color="#9CA3AF" />
-          <Text style={styles.navText}>User</Text>
-        </TouchableOpacity>
-      </View>
+      <BottomNav activeTab={Tab.HOME} />
     </SafeAreaView>
   );
 }
@@ -303,29 +236,5 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#374151',
     marginVertical: 0,
-  },
-  bottomNavigation: {
-    flexDirection: 'row',
-    backgroundColor: '#0F111A',
-    borderTopColor: '#374151',
-    borderTopWidth: 2,
-    paddingVertical: 8,
-  },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  activeNavItem: {
-    // 활성 상태 스타일
-  },
-  navText: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginTop: 4,
-  },
-  activeNavText: {
-    color: '#4A90E2',
-    fontWeight: '600',
   },
 });

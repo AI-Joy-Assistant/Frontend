@@ -16,7 +16,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { RootStackParamList } from "../types";
+import { RootStackParamList, Tab } from "../types";
+import BottomNav from "../components/BottomNav";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "../constants/config";
 import ProposalCard, { Proposal } from "../components/ProposalCard";
@@ -159,8 +160,8 @@ export default function ChatScreen() {
                 });
               } else {
                 const proposalText = proposal.date && proposal.time
-                    ? `${proposal.date} ${proposal.time} 일정을 거절했습니다.`
-                    : "일정을 거절했습니다.";
+                  ? `${proposal.date} ${proposal.time} 일정을 거절했습니다.`
+                  : "일정을 거절했습니다.";
                 loadedMessages.push({
                   sender: "user",
                   text: proposalText,
@@ -234,12 +235,12 @@ export default function ChatScreen() {
         // 배열을 뒤에서부터(최신부터) 검사
         for (let i = loadedMessages.length - 1; i >= 0; i--) {
           const msg = loadedMessages[i];
-          
+
           // 카드형 메시지인 경우
           if (msg.shouldShowProposalCard && msg.threadId) {
             if (processedThreadIds.has(msg.threadId)) {
               // 이미 더 최신의 카드가 있으므로, 이 옛날 카드는 숨김(건너뜀)
-              continue; 
+              continue;
             } else {
               // 최신 카드이므로 등록
               processedThreadIds.add(msg.threadId);
@@ -264,13 +265,13 @@ export default function ChatScreen() {
 
   // [✅ 수정] useFocusEffect를 사용하여 화면이 보일 때만 폴링 동작
   useFocusEffect(
-      React.useCallback(() => {
-        loadChatHistory(true);
-        const interval = setInterval(() => {
-          loadChatHistory(false);
-        }, 3000);
-        return () => clearInterval(interval);
-      }, [currentUserId])
+    React.useCallback(() => {
+      loadChatHistory(true);
+      const interval = setInterval(() => {
+        loadChatHistory(false);
+      }, 3000);
+      return () => clearInterval(interval);
+    }, [currentUserId])
   );
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -330,12 +331,12 @@ export default function ChatScreen() {
 
   // 메시지 UI 추가
   const addMessage = (
-      sender: string,
-      text: string,
-      needsApproval?: boolean,
-      proposal?: any,
-      threadId?: string,
-      sessionIds?: string[]
+    sender: string,
+    text: string,
+    needsApproval?: boolean,
+    proposal?: any,
+    threadId?: string,
+    sessionIds?: string[]
   ) => {
     setMessages((prev) => [...prev, {
       sender,
@@ -377,35 +378,35 @@ export default function ChatScreen() {
       const result = await res.json();
 
       setMessages((prev) =>
-          prev.map((msg) => {
-            if (!msg.proposal) return msg;
+        prev.map((msg) => {
+          if (!msg.proposal) return msg;
 
-            const matchesThreadId = threadId && msg.threadId === threadId;
-            const matchesSessionIds = msg.sessionIds && sessionIds &&
-                msg.sessionIds.length > 0 && sessionIds.length > 0 &&
-                msg.sessionIds.some(sid => sessionIds.includes(sid));
+          const matchesThreadId = threadId && msg.threadId === threadId;
+          const matchesSessionIds = msg.sessionIds && sessionIds &&
+            msg.sessionIds.length > 0 && sessionIds.length > 0 &&
+            msg.sessionIds.some(sid => sessionIds.includes(sid));
 
-            const proposalMatches = proposal && msg.proposal &&
-                proposal.date === msg.proposal.date &&
-                proposal.time === msg.proposal.time;
+          const proposalMatches = proposal && msg.proposal &&
+            proposal.date === msg.proposal.date &&
+            proposal.time === msg.proposal.time;
 
-            if (proposalMatches && (matchesThreadId || matchesSessionIds)) {
-              const updatedApprovalStatus = result.all_approved !== undefined ? {
-                approvedBy: result.approved_by_list || [],
-                totalParticipants: msg.approvalStatus?.totalParticipants || 2,
-              } : msg.approvalStatus;
+          if (proposalMatches && (matchesThreadId || matchesSessionIds)) {
+            const updatedApprovalStatus = result.all_approved !== undefined ? {
+              approvedBy: result.approved_by_list || [],
+              totalParticipants: msg.approvalStatus?.totalParticipants || 2,
+            } : msg.approvalStatus;
 
-              return {
-                ...msg,
-                needsApproval: false,
-                isApproved: approved || result.all_approved,
-                isRejected: !approved && !result.all_approved,
-                allApproved: result.all_approved || false,
-                approvalStatus: updatedApprovalStatus,
-              };
-            }
-            return msg;
-          })
+            return {
+              ...msg,
+              needsApproval: false,
+              isApproved: approved || result.all_approved,
+              isRejected: !approved && !result.all_approved,
+              allApproved: result.all_approved || false,
+              approvalStatus: updatedApprovalStatus,
+            };
+          }
+          return msg;
+        })
       );
 
       if (approved) {
@@ -428,127 +429,94 @@ export default function ChatScreen() {
       const sessionIds = item.sessionIds || [];
 
       return (
-          <View style={styles.messageItem}>
-            <ProposalCard
-                proposal={item.proposal as Proposal}
-                onApprove={(proposal) => handleScheduleApproval(true, proposal, threadId, sessionIds)}
-                onReject={(proposal) => handleScheduleApproval(false, proposal, threadId, sessionIds)}
-                approvalStatus={item.approvalStatus}
-                isApproved={item.isApproved}
-                isRejected={item.isRejected}
-                timestamp={item.timestamp}
-            />
-          </View>
+        <View style={styles.messageItem}>
+          <ProposalCard
+            proposal={item.proposal as Proposal}
+            onApprove={(proposal) => handleScheduleApproval(true, proposal, threadId, sessionIds)}
+            onReject={(proposal) => handleScheduleApproval(false, proposal, threadId, sessionIds)}
+            approvalStatus={item.approvalStatus}
+            isApproved={item.isApproved}
+            isRejected={item.isRejected}
+            timestamp={item.timestamp}
+          />
+        </View>
       );
     }
 
     return (
-        <View
-            style={[
-              styles.messageItem,
-              item.sender === "user" ? styles.userMessage : styles.aiMessage,
-            ]}
-        >
-          <Text style={[
-            styles.messageText,
-            item.sender === "user" ? styles.userMessageText : styles.aiMessageText
-          ]}>
-            {item.text}
-          </Text>
-          <Text style={[
-            styles.timestampText,
-            item.sender === "user" ? styles.userTimestamp : styles.aiTimestamp
-          ]}>
-            {formatTime(item.timestamp)}
-          </Text>
-        </View>
+      <View
+        style={[
+          styles.messageItem,
+          item.sender === "user" ? styles.userMessage : styles.aiMessage,
+        ]}
+      >
+        <Text style={[
+          styles.messageText,
+          item.sender === "user" ? styles.userMessageText : styles.aiMessageText
+        ]}>
+          {item.text}
+        </Text>
+        <Text style={[
+          styles.timestampText,
+          item.sender === "user" ? styles.userTimestamp : styles.aiTimestamp
+        ]}>
+          {formatTime(item.timestamp)}
+        </Text>
+      </View>
     );
   };
 
   return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => navigation.goBack()}
-              activeOpacity={0.7}
-          >
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
-          <View style={styles.headerTitleContainer}>
-            <Text style={styles.headerTitle}>AI 채팅</Text>
-          </View>
-          <View style={styles.placeholder} />
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerTitle}>AI 채팅</Text>
         </View>
+        <View style={styles.placeholder} />
+      </View>
 
-        <KeyboardAvoidingView style={styles.chatContainer} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-          {loading ? (
-              <View style={styles.loadingContainer}><ActivityIndicator size="large" color="#4A90E2" /></View>
-          ) : (
-              <FlatList
-                  ref={scrollRef}
-                  data={messages}
-                  keyExtractor={(item, index) => item.id || index.toString()} // id 사용 권장
-                  renderItem={renderItem}
-                  contentContainerStyle={[styles.messagesContainer, messages.length > 0 && styles.messagesContainerWithContent]}
-                  showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView style={styles.chatContainer} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        {loading ? (
+          <View style={styles.loadingContainer}><ActivityIndicator size="large" color="#4A90E2" /></View>
+        ) : (
+          <FlatList
+            ref={scrollRef}
+            data={messages}
+            keyExtractor={(item, index) => item.id || index.toString()} // id 사용 권장
+            renderItem={renderItem}
+            contentContainerStyle={[styles.messagesContainer, messages.length > 0 && styles.messagesContainerWithContent]}
+            showsVerticalScrollIndicator={false}
 
-                  // [✅ 수정] 스크롤 로직 변경
-                  onScroll={handleScroll}
-                  scrollEventThrottle={16}
-                  onContentSizeChange={() => {
-                    // 사용자가 맨 아래에 있을 때만 자동 스크롤
-                    if (scrollRef.current && messages.length > 0 && isAtBottom.current) {
-                      scrollRef.current.scrollToEnd({ animated: false });
-                    }
-                  }}
+            // [✅ 수정] 스크롤 로직 변경
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            onContentSizeChange={() => {
+              // 사용자가 맨 아래에 있을 때만 자동 스크롤
+              if (scrollRef.current && messages.length > 0 && isAtBottom.current) {
+                scrollRef.current.scrollToEnd({ animated: false });
+              }
+            }}
 
-                  ListEmptyComponent={
-                    <View style={styles.emptyContainer}><Text style={styles.emptyText}>아직 대화가 없습니다.</Text></View>
-                  }
-              />
-          )}
-          <View style={styles.inputContainer}>
-            <TextInput value={input} onChangeText={setInput} placeholder="메시지를 입력하세요" placeholderTextColor="#9CA3AF" style={styles.input} />
-            <TouchableOpacity onPress={sendMessage} style={styles.sendButton}><Text style={styles.sendButtonText}>전송</Text></TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-
-        <View style={styles.bottomNavigation}>
-          <TouchableOpacity
-              style={styles.navItem}
-              onPress={() => navigation.navigate('Home')}
-          >
-            <Ionicons name="home" size={24} color="#9CA3AF" />
-            <Text style={styles.navText}>Home</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-            <Ionicons name="chatbubble" size={24} color="#4A90E2" />
-            <Text style={[styles.navText, styles.activeNavText]}>Chat</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-              style={styles.navItem}
-              onPress={() => navigation.navigate('Friends')}
-          >
-            <Ionicons name="people" size={24} color="#9CA3AF" />
-            <Text style={styles.navText}>Friends</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-              style={styles.navItem}
-              onPress={() => navigation.navigate('A2A')}
-          >
-            <Ionicons name="person" size={24} color="#9CA3AF" />
-            <Text style={styles.navText}>A2A</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-              style={styles.navItem}
-              onPress={() => navigation.navigate('User')}
-          >
-            <Ionicons name="person-circle" size={24} color="#9CA3AF" />
-            <Text style={styles.navText}>User</Text>
-          </TouchableOpacity>
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}><Text style={styles.emptyText}>아직 대화가 없습니다.</Text></View>
+            }
+          />
+        )}
+        <View style={styles.inputContainer}>
+          <TextInput value={input} onChangeText={setInput} placeholder="메시지를 입력하세요" placeholderTextColor="#9CA3AF" style={styles.input} />
+          <TouchableOpacity onPress={sendMessage} style={styles.sendButton}><Text style={styles.sendButtonText}>전송</Text></TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </KeyboardAvoidingView>
+
+      <BottomNav activeTab={Tab.CHAT} />
+    </SafeAreaView>
   );
 }
 
@@ -628,30 +596,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: 'bold',
     fontSize: 16,
-  },
-  bottomNavigation: {
-    flexDirection: 'row',
-    backgroundColor: '#0F111A',
-    borderTopColor: '#374151',
-    borderTopWidth: 2,
-    paddingVertical: 8,
-  },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  activeNavItem: {
-    // 활성 상태 스타일
-  },
-  navText: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginTop: 4,
-  },
-  activeNavText: {
-    color: '#4A90E2',
-    fontWeight: '600',
   },
   messageItem: {
     marginVertical: 6,
