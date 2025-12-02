@@ -1,16 +1,40 @@
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, Image, TouchableOpacity, Modal, TextInput, Alert,
+  View, Text, StyleSheet, Image, TouchableOpacity, Modal, TextInput, Alert, ScrollView, Platform
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../types';
+import { RootStackParamList, Tab } from '../types';
+import BottomNav from '../components/BottomNav';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { API_BASE } from '../constants/config';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Bot, Settings, LogOut, Trash2, ChevronRight, User as UserIcon } from 'lucide-react-native';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+// Colors from FriendsScreen.tsx for consistency
+const COLORS = {
+  primaryMain: '#3730A3',
+  primaryLight: '#818CF8',
+  primaryDark: '#0E004E',
+  primaryBg: '#EEF2FF',
+
+  neutralSlate: '#334155',
+  neutralGray: '#CBD5E1',
+  neutralLight: '#F8FAFC',
+
+  neutral100: '#F1F5F9',
+  neutral200: '#E2E8F0',
+  neutral300: '#CBD5E1',
+  neutral400: '#94A3B8',
+  neutral500: '#64748B',
+
+  white: '#FFFFFF',
+  red400: '#F87171',
+  red50: '#FEF2F2',
+  green500: '#22C55E',
+};
 
 const MyPageScreen = () => {
   const navigation = useNavigation<NavigationProp>();
@@ -45,11 +69,6 @@ const MyPageScreen = () => {
 
       if (response.ok) {
         const userData = await response.json();
-        console.log('=== MY_PAGE_DEBUG ===');
-        console.log('전체 사용자 데이터:', userData);
-        console.log('프로필 이미지 URL:', userData.profile_image);
-        console.log('이름:', userData.name);
-        console.log('이메일:', userData.email);
         setUserInfo(userData);
         setNickname(userData.name || '');
       } else {
@@ -95,7 +114,7 @@ const MyPageScreen = () => {
         setNicknameModalVisible(false);
         setNewNickname('');
         Alert.alert('성공', '닉네임이 업데이트되었습니다.');
-        
+
         // 사용자 정보 다시 불러오기
         await fetchUserInfo();
       } else {
@@ -153,82 +172,84 @@ const MyPageScreen = () => {
 
   if (!userInfo) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, styles.loadingContainer]}>
         <Text style={styles.loadingText}>로딩 중...</Text>
       </View>
     );
   }
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
-          <View style={styles.searchContainer}>
-            <Text style={styles.headerTitle}>마이페이지</Text>
-          </View>
+  const SettingItem = ({ icon: Icon, label, isDanger, onPress }: { icon: any, label: string, isDanger?: boolean, onPress?: () => void }) => (
+    <TouchableOpacity
+      style={styles.settingItem}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={styles.settingItemLeft}>
+        <View style={[
+          styles.iconContainer,
+          isDanger ? styles.dangerIconContainer : styles.normalIconContainer
+        ]}>
+          <Icon size={18} color={isDanger ? COLORS.red400 : '#525252'} />
         </View>
-
-        <View style={styles.profileSection}>
-          <Image 
-            source={{ 
-              uri: userInfo.profile_image ? `${API_BASE}/auth/profile-image/${userInfo.id}?t=${Date.now()}` : undefined,
-              cache: 'reload'
-            }} 
-            style={styles.profileImage}
-            resizeMode="cover"
-            onLoad={() => console.log('=== IMAGE_SUCCESS === 프로필 이미지 로드 성공:', userInfo.profile_image)}
-            onError={(error) => {
-              console.log('=== IMAGE_ERROR === 프로필 이미지 로드 실패:', error.nativeEvent.error);
-              console.log('=== IMAGE_ERROR === 시도한 URL:', `${API_BASE}/auth/profile-image/${userInfo.id}`);
-            }}
-          />
-          <Text style={styles.name}>{userInfo.name}</Text>
-          <Text style={styles.email}>{userInfo.email}</Text>
-          <Text style={styles.nickname}>챗봇이름: {nickname}님의 JOY</Text>
-        </View>
-
-        <View style={styles.menuSection}>
-          <TouchableOpacity 
-            style={styles.menuItem}
-            onPress={() => setNicknameModalVisible(true)}
-          >
-            <Ionicons name="person" size={24} color="white" />
-            <Text style={styles.menuText}>닉네임 변경</Text>
-            <Ionicons name="chevron-forward" size={24} color="#9CA3AF" />
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.menuItem}
-            onPress={handleLogout}
-          >
-            <Ionicons name="log-out" size={24} color="white" />
-            <Text style={styles.menuText}>로그아웃</Text>
-            <Ionicons name="chevron-forward" size={24} color="#9CA3AF" />
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.menuItem}
-            onPress={() => setWithdrawModalVisible(true)}
-          >
-            <Ionicons name="trash" size={24} color="#EF4444" />
-            <Text style={[styles.menuText, styles.deleteText]}>회원탈퇴</Text>
-            <Ionicons name="chevron-forward" size={24} color="#9CA3AF" />
-          </TouchableOpacity>
-        </View>
+        <Text style={[
+          styles.settingLabel,
+          isDanger ? styles.dangerLabel : styles.normalLabel
+        ]}>{label}</Text>
       </View>
+      <ChevronRight size={18} color={COLORS.neutral300} />
+    </TouchableOpacity>
+  );
+
+  const Divider = () => <View style={styles.divider} />;
+
+  return (
+    <View style={styles.container}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: 100 }}>
+        {/* Profile Header */}
+        <LinearGradient
+          colors={[COLORS.primaryLight, COLORS.primaryMain]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.headerGradient}
+        >
+          <View style={styles.headerOverlay} />
+          <View style={styles.avatarContainer}>
+            {userInfo.profile_image ? (
+              <Image
+                source={{ uri: `${API_BASE}/auth/profile-image/${userInfo.id}?t=${Date.now()}` }}
+                style={styles.avatarImage}
+              />
+            ) : (
+              <UserIcon size={48} color={COLORS.primaryMain} />
+            )}
+          </View>
+          <Text style={styles.userName}>{userInfo.name}</Text>
+          <Text style={styles.userEmail}>{userInfo.email}</Text>
+        </LinearGradient>
+
+        {/* Settings List */}
+        <View style={styles.settingsContainer}>
+          <View style={styles.settingsCard}>
+            <SettingItem icon={Bot} label="AI 설정" onPress={() => Alert.alert('알림', '준비 중인 기능입니다.')} />
+            <Divider />
+            <SettingItem icon={Settings} label="앱 설정" onPress={() => setNicknameModalVisible(true)} />
+            <Divider />
+            <SettingItem icon={LogOut} label="로그아웃" isDanger onPress={handleLogout} />
+            <Divider />
+            <SettingItem icon={Trash2} label="탈퇴" isDanger onPress={() => setWithdrawModalVisible(true)} />
+          </View>
+
+          <Text style={styles.versionText}>
+            Version 1.0.2 • AI Scheduler App
+          </Text>
+        </View>
+      </ScrollView>
 
       {/* 닉네임 변경 모달 */}
       <Modal
         visible={nicknameModalVisible}
         transparent={true}
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setNicknameModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
@@ -237,6 +258,7 @@ const MyPageScreen = () => {
             <TextInput
               style={styles.input}
               placeholder="새 닉네임을 입력하세요"
+              placeholderTextColor={COLORS.neutral400}
               value={newNickname}
               onChangeText={setNewNickname}
             />
@@ -265,17 +287,18 @@ const MyPageScreen = () => {
       <Modal
         visible={withdrawModalVisible}
         transparent={true}
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setWithdrawModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
+            <View style={styles.modalIconContainer}>
+              <Trash2 size={24} color={COLORS.red400} />
+            </View>
             <Text style={styles.modalTitle}>회원탈퇴</Text>
             <Text style={styles.modalMessage}>
-              탈퇴 시 데이터가 삭제되며 복구할 수 없습니다.
-            </Text>
-            <Text style={[styles.modalMessage, styles.secondMessage]}>
-              정말 탈퇴하시겠습니까?
+              탈퇴 시 데이터가 삭제되며 복구할 수 없습니다.{'\n'}
+              <Text style={{ fontWeight: 'bold' }}>정말 탈퇴하시겠습니까?</Text>
             </Text>
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -285,271 +308,248 @@ const MyPageScreen = () => {
                 <Text style={styles.cancelButtonText}>취소</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.confirmButton}
+                style={styles.deleteButton}
                 onPress={handleWithdraw}
               >
-                <Text style={styles.confirmButtonText}>탈퇴</Text>
+                <Text style={styles.deleteButtonText}>탈퇴</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* 하단 탭바 */}
-      <View style={styles.bottomNavigation}>
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => navigation.navigate('Home')}
-        >
-          <Ionicons name="home" size={24} color="#9CA3AF" />
-          <Text style={styles.navText}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => navigation.navigate('Chat')}
-        >
-          <Ionicons name="chatbubble" size={24} color="#9CA3AF" />
-          <Text style={styles.navText}>Chat</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => navigation.navigate('Friends')}
-        >
-          <Ionicons name="people" size={24} color="#9CA3AF" />
-          <Text style={styles.navText}>Friends</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => navigation.navigate('A2A')}
-        >
-          <Ionicons name="person" size={24} color="#9CA3AF" />
-          <Text style={styles.navText}>A2A</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-          <Ionicons name="person-circle" size={24} color="#4A90E2" />
-          <Text style={[styles.navText, styles.activeNavText]}>User</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+      <BottomNav activeTab={Tab.USER} />
+    </View>
   );
 };
-
-export default MyPageScreen;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F111A',
-    height: '100%',
+    backgroundColor: COLORS.neutralLight,
   },
-  content: {
-    flex: 1,
-    width: '100%',
-  },
-  header: {
-    backgroundColor: '#0F111A',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    borderBottomWidth: 2,
-    borderBottomColor: '#374151',
-    height: 60,
-  },
-  backButton: {
-    padding: 4,
+  loadingContainer: {
     justifyContent: 'center',
     alignItems: 'center',
-    width: 32,
-    height: 32,
-  },
-  searchContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 12,
-  },
-  headerTitleContainer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  placeholder: {
-    width: 40,
-  },
-  profileSection: {
-    alignItems: 'center',
-    marginTop: 50,
-    marginBottom: 20,
-    paddingHorizontal: 20,
-  },
-  profileImage: {
-    width: 135,
-    height: 135,
-    borderRadius: 67.5,
-    marginBottom: 10,
-  },
-  defaultAvatar: {
-    backgroundColor: '#4A90E2',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  defaultAvatarText: {
-    color: 'white',
-    fontSize: 50,
-    fontWeight: 'bold',
-  },
-  name: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  email: {
-    color: '#fff',
-    fontSize: 14,
-    marginBottom: 4,
-  },
-  nickname: {
-    color: '#fff',
-    fontSize: 14,
-    marginBottom: 20,
-  },
-  menuSection: {
-    width: '100%',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#1F2937',
-    borderRadius: 7,
-    paddingVertical: 12,
-    paddingHorizontal: 15,
-    marginBottom: 15,
-    width: '40%',
-  },
-  menuText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    flex: 1,
-    marginLeft: 10,
-  },
-  deleteText: {
-    color: '#EF4444',
   },
   loadingText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
+    color: COLORS.neutralSlate,
+    fontSize: 16,
   },
-  modalOverlay: {
+  scrollView: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  headerGradient: {
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: 40,
+    paddingHorizontal: 24,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+    alignItems: 'center',
+    marginBottom: 24,
+    position: 'relative',
+    overflow: 'hidden',
+    shadowColor: COLORS.primaryMain,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  headerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  avatarContainer: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: COLORS.white,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+    zIndex: 10,
+  },
+  avatarImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+  },
+  userName: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: COLORS.white,
+    marginBottom: 4,
+    zIndex: 10,
+  },
+  userEmail: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.8)',
+    zIndex: 10,
+  },
+  settingsContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+  },
+  settingsCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.neutral100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  settingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+  },
+  settingItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  normalIconContainer: {
+    backgroundColor: COLORS.neutral100,
+  },
+  dangerIconContainer: {
+    backgroundColor: COLORS.red50,
+  },
+  settingLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  normalLabel: {
+    color: COLORS.neutralSlate,
+  },
+  dangerLabel: {
+    color: COLORS.red400,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.neutral100,
+    marginHorizontal: 16,
+  },
+  versionText: {
+    textAlign: 'center',
+    fontSize: 12,
+    color: COLORS.neutral400,
+    marginTop: 24,
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
   modalContent: {
-    width: 350,
-    backgroundColor: '#1F2937',
-    borderRadius: 10,
-    padding: 20,
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 320,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  modalIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORS.red50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   modalTitle: {
     fontSize: 18,
-    color: '#fff',
-    marginBottom: 25,
+    fontWeight: 'bold',
+    color: COLORS.neutralSlate,
+    marginBottom: 16,
+  },
+  modalMessage: {
+    fontSize: 14,
+    color: COLORS.neutral500,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
   },
   input: {
     width: '100%',
-    backgroundColor: '#fff',
-    padding: 10,
-    borderRadius: 5,
-    marginBottom: 30,
-    color: '#000',
+    backgroundColor: COLORS.neutral100,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 24,
+    color: COLORS.neutralSlate,
+    fontSize: 14,
   },
   modalButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
     width: '100%',
+    gap: 12,
   },
   cancelButton: {
-    backgroundColor: '#6B7280',
+    flex: 1,
     paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 7,
-    width: '40%',
+    borderRadius: 12,
+    backgroundColor: COLORS.neutral100,
+    alignItems: 'center',
   },
   cancelButtonText: {
-    color: '#fff',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    textAlign: 'center',
+    color: COLORS.neutral500,
   },
   confirmButton: {
-    backgroundColor: '#4A90E2',
+    flex: 1,
     paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 7,
-    width: '40%',
+    borderRadius: 12,
+    backgroundColor: COLORS.primaryMain,
+    alignItems: 'center',
   },
   confirmButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  modalMessage: {
-    color: '#fff',
     fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 5,
-  },
-  secondMessage: {
-    marginTop: -5,
-    marginBottom: 30,
-  },
-  bottomNavigation: {
-    flexDirection: 'row',
-    backgroundColor: '#0F111A',
-    borderTopColor: '#374151',
-    borderTopWidth: 2,
-    paddingVertical: 8,
-  },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  activeNavItem: {
-    // 활성 상태 스타일
-  },
-  navText: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginTop: 4,
-  },
-  activeNavText: {
-    color: '#4A90E2',
     fontWeight: '600',
+    color: 'white',
   },
-  debugText: {
-    color: '#9CA3AF',
-    fontSize: 12,
-    marginTop: 5,
+  deleteButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.red400,
+    alignItems: 'center',
+  },
+  deleteButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'white',
   },
 });
+
+export default MyPageScreen;
