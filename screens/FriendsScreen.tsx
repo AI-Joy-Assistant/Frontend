@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { UserPlus } from 'lucide-react-native';
+import { UserPlus, Check, X } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -17,13 +17,14 @@ import {
   ActivityIndicator,
   Modal,
   TouchableWithoutFeedback,
-  Pressable
+  Pressable,
+  Platform
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
-import { API_BASE } from '../constants/config';
+import { getBackendUrl } from '../utils/environment';
 
 // Colors
 const COLORS = {
@@ -76,6 +77,7 @@ const FriendsScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [isAdding, setIsAdding] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState<'friends' | 'requests'>('friends');
 
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -87,12 +89,21 @@ const FriendsScreen = () => {
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<{ id: string; name: string } | null>(null);
 
+  // Web-compatible alert function
+  const showAlert = (title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}\n\n${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
+
   // Fetch User Info for "My ID" card
   const fetchUserInfo = async () => {
     try {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) return;
-      const response = await fetch(`${API_BASE}/auth/me`, {
+      const response = await fetch(`${getBackendUrl()}/auth/me`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (response.ok) {
@@ -109,13 +120,20 @@ const FriendsScreen = () => {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) return;
 
-      const response = await fetch(`${API_BASE}/friends/requests`, {
+      console.log('친구 요청 목록 조회 시작...');
+      const response = await fetch(`${getBackendUrl()}/friends/requests`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
+      console.log('친구 요청 응답 상태:', response.status);
+
       if (response.ok) {
         const data = await response.json();
+        console.log('친구 요청 데이터:', data);
         setFriendRequests(data.requests || []);
+      } else {
+        const errorData = await response.json();
+        console.error('친구 요청 조회 실패:', errorData);
       }
     } catch (error) {
       console.error('Error fetching friend requests:', error);
@@ -127,7 +145,7 @@ const FriendsScreen = () => {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) return;
 
-      const response = await fetch(`${API_BASE}/friends/list`, {
+      const response = await fetch(`${getBackendUrl()}/friends/list`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
@@ -153,7 +171,7 @@ const FriendsScreen = () => {
 
   const handleAddFriend = async () => {
     if (!searchTerm.trim()) {
-      Alert.alert('오류', '이메일을 입력해주세요.');
+      showAlert('오류', '이메일을 입력해주세요.');
       return;
     }
 
@@ -161,7 +179,7 @@ const FriendsScreen = () => {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) return;
 
-      const response = await fetch(`${API_BASE}/friends/add`, {
+      const response = await fetch(`${getBackendUrl()}/friends/add`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -170,16 +188,20 @@ const FriendsScreen = () => {
         body: JSON.stringify({ email: searchTerm.trim() }),
       });
 
+      console.log('친구 추가 응답 상태:', response.status);
+
       if (response.ok) {
-        Alert.alert('성공', '친구 요청을 보냈습니다.');
+        showAlert('성공', '친구 요청을 보냈습니다.');
         setSearchTerm('');
         setIsAdding(false);
       } else {
         const errorData = await response.json();
-        Alert.alert('오류', errorData.detail || '친구 추가에 실패했습니다.');
+        console.log('친구 추가 에러 응답:', errorData);
+        showAlert('오류', errorData.detail || errorData.error || '친구 추가에 실패했습니다.');
       }
     } catch (error) {
-      Alert.alert('오류', '친구 추가 중 오류가 발생했습니다.');
+      console.error('친구 추가 예외:', error);
+      showAlert('오류', '친구 추가 중 오류가 발생했습니다.');
     }
   };
 
@@ -195,7 +217,7 @@ const FriendsScreen = () => {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) return;
 
-      const response = await fetch(`${API_BASE}/friends/${selectedFriend.id}`, {
+      const response = await fetch(`${getBackendUrl()}/friends/${selectedFriend.id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });
@@ -205,17 +227,60 @@ const FriendsScreen = () => {
         setDeleteModalVisible(false);
         setSelectedFriend(null);
       } else {
-        Alert.alert('오류', '삭제 실패');
+        showAlert('오류', '삭제 실패');
       }
     } catch (e) {
-      Alert.alert('오류', '삭제 중 오류 발생');
+      showAlert('오류', '삭제 중 오류 발생');
+    }
+  };
+
+  const handleAcceptRequest = async (requestId: string) => {
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) return;
+
+      const response = await fetch(`${getBackendUrl()}/friends/requests/${requestId}/accept`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        showAlert('성공', '친구 요청을 수락했습니다.');
+        fetchFriendRequests();
+        fetchFriends();
+      } else {
+        showAlert('오류', '요청 수락에 실패했습니다.');
+      }
+    } catch (e) {
+      showAlert('오류', '요청 처리 중 오류가 발생했습니다.');
+    }
+  };
+
+  const handleRejectRequest = async (requestId: string) => {
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) return;
+
+      const response = await fetch(`${getBackendUrl()}/friends/requests/${requestId}/reject`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        showAlert('성공', '친구 요청을 거절했습니다.');
+        fetchFriendRequests();
+      } else {
+        showAlert('오류', '요청 거절에 실패했습니다.');
+      }
+    } catch (e) {
+      showAlert('오류', '요청 처리 중 오류가 발생했습니다.');
     }
   };
 
   const copyToClipboard = async () => {
     if (userInfo?.email) {
       await Clipboard.setStringAsync(userInfo.email);
-      Alert.alert('복사됨', '아이디(이메일)가 복사되었습니다.');
+      showAlert('복사됨', '아이디(이메일)가 복사되었습니다.');
     }
   };
 
@@ -306,22 +371,43 @@ const FriendsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.mainSearchBox}>
-          <Ionicons name="search" size={18} color={COLORS.neutral400} style={styles.mainSearchIcon} />
-          <TextInput
-            style={styles.mainSearchInput}
-            placeholder="친구 검색..."
-            placeholderTextColor={COLORS.neutral400}
-          // Implement local filter if needed
-          />
+        {/* Tab Switcher */}
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'friends' && styles.activeTab]}
+            onPress={() => setActiveTab('friends')}
+          >
+            <Text style={[styles.tabText, activeTab === 'friends' && styles.activeTabText]}>
+              친구 목록
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'requests' && styles.activeTab]}
+            onPress={() => setActiveTab('requests')}
+          >
+            <Text style={[styles.tabText, activeTab === 'requests' && styles.activeTabText]}>
+              받은 요청 {friendRequests.length > 0 && `(${friendRequests.length})`}
+            </Text>
+          </TouchableOpacity>
         </View>
+
+        {activeTab === 'friends' && (
+          <View style={styles.mainSearchBox}>
+            <Ionicons name="search" size={18} color={COLORS.neutral400} style={styles.mainSearchIcon} />
+            <TextInput
+              style={styles.mainSearchInput}
+              placeholder="친구 검색..."
+              placeholderTextColor={COLORS.neutral400}
+            />
+          </View>
+        )}
       </View>
 
       {/* List */}
       <View style={styles.listContainer}>
         {loading ? (
           <ActivityIndicator size="large" color={COLORS.primaryMain} style={{ marginTop: 20 }} />
-        ) : (
+        ) : activeTab === 'friends' ? (
           <FlatList
             data={friends}
             keyExtractor={(item) => item.id}
@@ -353,6 +439,49 @@ const FriendsScreen = () => {
             ListEmptyComponent={
               <View style={styles.emptyState}>
                 <Text style={styles.emptyText}>친구가 없습니다.</Text>
+              </View>
+            }
+          />
+        ) : (
+          <FlatList
+            data={friendRequests}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={{ paddingBottom: 100 }}
+            renderItem={({ item }) => (
+              <View style={styles.requestItem}>
+                <View style={styles.friendInfo}>
+                  <View style={styles.avatarContainer}>
+                    <View style={styles.avatarRing}>
+                      <Image
+                        source={{ uri: item.from_user.picture || 'https://via.placeholder.com/150' }}
+                        style={styles.avatarImage}
+                      />
+                    </View>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.friendName}>{item.from_user.name}</Text>
+                    <Text style={styles.friendEmail}>{item.from_user.email}</Text>
+                  </View>
+                </View>
+                <View style={styles.requestActions}>
+                  <TouchableOpacity
+                    style={styles.acceptButton}
+                    onPress={() => handleAcceptRequest(item.id)}
+                  >
+                    <Check size={18} color={COLORS.white} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.rejectButton}
+                    onPress={() => handleRejectRequest(item.id)}
+                  >
+                    <X size={18} color={COLORS.red400} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyText}>받은 친구 요청이 없습니다.</Text>
               </View>
             }
           />
@@ -670,6 +799,69 @@ const styles = StyleSheet.create({
   emptyText: {
     color: COLORS.neutral400,
     fontSize: 16,
+  },
+  // Tab Styles
+  tabContainer: {
+    flexDirection: 'row',
+    marginTop: 16,
+    marginBottom: 12,
+    gap: 8,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    backgroundColor: COLORS.neutralLight,
+  },
+  activeTab: {
+    backgroundColor: COLORS.primaryMain,
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.neutral500,
+  },
+  activeTabText: {
+    color: COLORS.white,
+  },
+  // Request Item Styles
+  requestItem: {
+    backgroundColor: COLORS.white,
+    padding: 12,
+    borderRadius: 16,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: COLORS.neutral100,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  requestActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  acceptButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.green500,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rejectButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.red50,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   // Modal Styles
   modalOverlay: {
