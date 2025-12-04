@@ -1,41 +1,32 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Dimensions, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Calendar, Sparkles } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
 import * as Linking from 'expo-linking';
 import { COLORS } from '../constants/Colors';
 import { getBackendUrl, isWeb } from '../utils/environment';
 
-const { width, height } = Dimensions.get('window');
+const { height } = Dimensions.get('window');
 
 const LoginScreen = () => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
     const handleGoogleLogin = async () => {
         try {
-            console.log('🔐 Google 로그인 시작...');
-
-            // 웹 환경에서는 postMessage 리스너 등록
             if (isWeb()) {
                 const messageHandler = async (event: MessageEvent) => {
-                    console.log('📨 [Web] postMessage 수신:', event.data);
-
                     if (event.data.type === 'GOOGLE_LOGIN_SUCCESS') {
                         window.removeEventListener('message', messageHandler);
-                        const token = event.data.token;
-                        await AsyncStorage.setItem('accessToken', token);
-                        console.log('✅ [Web] 로그인 성공, 토큰 저장 완료');
+                        await AsyncStorage.setItem('accessToken', event.data.token);
                         navigation.navigate('Home');
                     } else if (event.data.type === 'GOOGLE_REGISTER_REQUIRED') {
                         window.removeEventListener('message', messageHandler);
-                        console.log('📝 [Web] 회원가입 필요 -> RegisterScreen 이동');
                         navigation.navigate('Register', {
                             register_token: event.data.register_token,
                             email: event.data.email,
@@ -44,20 +35,13 @@ const LoginScreen = () => {
                         });
                     }
                 };
-
                 window.addEventListener('message', messageHandler);
-                console.log('🎧 [Web] postMessage 리스너 등록 완료');
             }
 
-            // 백엔드 URL (환경에 따라 자동 선택)
             const BACKEND_URL = getBackendUrl();
-
-            // 현재 환경에 맞는 리다이렉트 URI 생성
             let redirectUri = Linking.createURL('auth-success', { scheme: 'frontend' });
 
-            // 웹이 아닌 경우에만 exp:// 스킴으로 변환
             if (!isWeb()) {
-                // Expo Go 개발 환경 보정: http -> exp, localhost -> IP
                 if (redirectUri.startsWith('http')) {
                     redirectUri = redirectUri.replace(/^http(s)?/, 'exp');
                 }
@@ -65,106 +49,58 @@ const LoginScreen = () => {
                     redirectUri = redirectUri.replace('localhost', '192.168.45.131');
                 }
             }
-            // 웹 환경에서는 http://localhost 그대로 유지
 
-            console.log('🔗 생성된 Redirect URI:', redirectUri);
-            console.log('🌐 백엔드 URL:', BACKEND_URL);
-
-            // Google OAuth URL로 브라우저 열기
             const authUrl = `${BACKEND_URL}/auth/google?redirect_scheme=${encodeURIComponent(redirectUri)}`;
-            console.log('🌐 브라우저에서 Google 로그인 열기:', authUrl);
+            const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
 
-            const result = await WebBrowser.openAuthSessionAsync(
-                authUrl,
-                redirectUri
-            );
+            if (isWeb()) return;
 
-            console.log('🔍 로그인 결과:', result);
+            const finalUrl = (result as any)?.url || '';
 
-            // 웹 환경에서는 postMessage로 처리하므로 여기서 종료
-            if (isWeb()) {
-                console.log('🌐 [Web] postMessage로 처리 중, WebBrowser 결과 무시');
+            // 회원가입 딥링크
+            if (finalUrl.includes('auth-register')) {
+                const params = new URLSearchParams(finalUrl.split('?')[1]);
+                navigation.navigate('Register', {
+                    register_token: params.get('register_token'),
+                    email: params.get('email') || '',
+                    name: params.get('name') || '',
+                    picture: params.get('picture') || ''
+                });
                 return;
             }
 
-            if (result.type === 'success' || result.type === 'dismiss') {
-                // 성공 또는 dismiss(자동 창 닫기) 모두 성공으로 처리
-                console.log('✅ Google 로그인 성공!');
-
-                // 1) 모바일/네이티브: 앱 스킴으로 리다이렉트된 URL에서 토큰 파싱 시도
-                const finalUrl = (result as any)?.url || '';
-                console.log('🔍 [DEBUG] finalUrl:', finalUrl);
-                console.log('🔍 [DEBUG] result object:', JSON.stringify(result, null, 2));
-
-                // 회원가입 필요 시 (auth-register 또는 auth_action=register)
-                if (finalUrl.includes('auth-register') || finalUrl.includes('auth_action=register')) {
-                    const params = new URLSearchParams(finalUrl.split('?')[1]);
-                    const register_token = params.get('register_token');
-                    const email = params.get('email');
-                    const name = params.get('name');
-                    const picture = params.get('picture');
-
-                    if (register_token) {
-                        console.log('📝 회원가입 필요 -> RegisterScreen 이동');
-                        navigation.navigate('Register', {
-                            register_token,
-                            email: email || '',
-                            name: name || '',
-                            picture: picture || ''
-                        });
-                        return;
-                    }
-                }
-
-                // 로그인 성공 시 (auth-success)
-                const tokenMatch = /[?&]token=([^&#]+)/.exec(finalUrl);
-                if (tokenMatch && tokenMatch[1]) {
-                    const token = decodeURIComponent(tokenMatch[1]);
-                    await AsyncStorage.setItem('accessToken', token);
-                    console.log('💾 토큰 저장 완료(딥링크)');
-                    navigation.navigate('Home');
-                    return;
-                }
-
-                // 2) 웹/로컬 환경 등 쿠키 공유 가능한 경우: 백엔드 세션에서 토큰 조회
-                try {
-                    console.log('🔑 백엔드에서 토큰 받아오는 중...');
-                    const tokenResponse = await fetch(`${BACKEND_URL}/auth/token`, {
-                        method: 'GET',
-                        credentials: 'include',
-                        headers: { 'Content-Type': 'application/json' },
-                    });
-
-                    if (tokenResponse.ok) {
-                        const tokenData = await tokenResponse.json();
-                        await AsyncStorage.setItem('accessToken', tokenData.accessToken);
-                        console.log('💾 토큰 저장 완료(세션)');
-                        navigation.navigate('Home');
-                    } else {
-                        console.log('❌ 토큰 받아오기 실패:', tokenResponse.status);
-                        throw new Error(`토큰 받아오기 실패: ${tokenResponse.status}`);
-                    }
-                } catch (tokenError) {
-                    console.error('❌ 토큰 받아오기 오류:', tokenError);
-                    Alert.alert('로그인 실패', '토큰을 받아오는데 실패했습니다. 다시 시도해 주세요.');
-                    return;
-                }
-            } else if (result.type === 'cancel') {
-                console.log('❌ 사용자가 로그인을 취소했습니다.');
-                Alert.alert('로그인 취소', '로그인이 취소되었습니다.');
-            } else {
-                console.log('❌ 로그인 실패:', result);
-                Alert.alert('로그인 실패', '다시 시도해 주세요.');
+            // 토큰 딥링크
+            const tokenMatch = /[?&]token=([^&#]+)/.exec(finalUrl);
+            if (tokenMatch && tokenMatch[1]) {
+                const token = decodeURIComponent(tokenMatch[1]);
+                await AsyncStorage.setItem('accessToken', token);
+                navigation.navigate('Home');
+                return;
             }
+
+            // 세션 기반 토큰 조회
+            const tokenResponse = await fetch(`${BACKEND_URL}/auth/token`, {
+                method: 'GET',
+                credentials: 'include',
+            });
+
+            if (tokenResponse.ok) {
+                const tokenData = await tokenResponse.json();
+                await AsyncStorage.setItem('accessToken', tokenData.accessToken);
+                navigation.navigate('Home');
+                return;
+            }
+
+            Alert.alert('로그인 실패', '토큰을 받아오지 못했습니다. 다시 시도해 주세요.');
         } catch (error) {
-            console.error('❌ Google 로그인 오류:', error);
-            Alert.alert('로그인 실패', '로그인 중 오류가 발생했습니다. 다시 시도해 주세요.');
+            console.error('Google 로그인 오류:', error);
+            Alert.alert('로그인 실패', '로그인 중 오류가 발생했습니다.');
         }
     };
 
     return (
         <View style={styles.container}>
-            {/* Header Graphic */}
+            {/* HEADER 영역 */}
             <View style={styles.headerContainer}>
                 <LinearGradient
                     colors={[COLORS.primaryLight, COLORS.primaryDark]}
@@ -172,31 +108,37 @@ const LoginScreen = () => {
                     end={{ x: 1, y: 1 }}
                     style={styles.headerGradient}
                 >
-                    {/* Decorative Blobs */}
+                    {/* 장식 블롭 */}
                     <View style={styles.blob1} />
                     <View style={styles.blob2} />
 
-                    <Animated.View
-                        entering={FadeInUp.duration(1000)}
-                        style={styles.logoContainer}
-                    >
+                    {/* 로고 + 타이틀 */}
+                    <Animated.View entering={FadeInUp.duration(1000)} style={styles.logoContainer}>
                         <View style={styles.logoWrapper}>
-                            <Calendar size={48} color={COLORS.primaryMain} strokeWidth={2.5} />
-                            <View style={styles.sparkleBadge}>
-                                <Sparkles size={16} color={COLORS.white} fill={COLORS.white} />
-                            </View>
+                            {/* 여기 로고가 '다 커진 상태' 느낌으로 고정 */}
+                            <Svg width={80} height={80} viewBox="0 0 100 100">
+                                {/* 왼쪽 머리 */}
+                                <Circle cx="38" cy="32" r="11" fill="#312E81" />
+                                {/* 오른쪽 머리 */}
+                                <Circle cx="62" cy="32" r="11" fill="#818CF8" />
+
+                                {/* 목 */}
+                                <Rect x="44" y="42" width="4" height="11" rx={2} fill="#312E81" />
+                                <Rect x="52" y="42" width="4" height="11" rx={2} fill="#312E81" />
+
+                                {/* 몸통 */}
+                                <Rect x="30" y="52" width="40" height="26" rx={9} fill="#312E81" />
+                            </Svg>
                         </View>
+
                         <Text style={styles.title}>JOYNER</Text>
                         <Text style={styles.subtitle}>Your AI Scheduling Assistant</Text>
                     </Animated.View>
                 </LinearGradient>
             </View>
 
-            {/* Action Section */}
-            <Animated.View
-                entering={FadeInDown.duration(1000).delay(200)}
-                style={styles.actionContainer}
-            >
+            {/* MAIN / ACTION 영역 */}
+            <Animated.View entering={FadeInDown.duration(1000).delay(200)} style={styles.actionContainer}>
                 <View style={styles.welcomeTextContainer}>
                     <Text style={styles.welcomeTitle}>환영합니다! 👋</Text>
                     <Text style={styles.welcomeDescription}>
@@ -204,6 +146,7 @@ const LoginScreen = () => {
                     </Text>
                 </View>
 
+                {/* Google 로그인 버튼 */}
                 <TouchableOpacity
                     style={styles.googleButton}
                     onPress={handleGoogleLogin}
@@ -250,10 +193,6 @@ const styles = StyleSheet.create({
         borderBottomLeftRadius: 48,
         borderBottomRightRadius: 48,
         overflow: 'hidden',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.1,
-        shadowRadius: 20,
         elevation: 10,
     },
     headerGradient: {
@@ -290,21 +229,8 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 24,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.2,
-        shadowRadius: 20,
-        elevation: 10,
-    },
-    sparkleBadge: {
-        position: 'absolute',
-        top: -8,
-        right: -8,
-        backgroundColor: COLORS.primaryLight,
-        padding: 6,
-        borderRadius: 20,
-        borderWidth: 3,
-        borderColor: COLORS.primaryMain,
+        // 스플래시에서 "다 커진" 느낌을 주기 위해 살짝 확대
+        transform: [{ scale: 1.1 }],
     },
     title: {
         fontSize: 36,
@@ -315,9 +241,8 @@ const styles = StyleSheet.create({
     },
     subtitle: {
         fontSize: 14,
-        color: 'rgba(255, 255, 255, 0.8)',
+        color: 'rgba(255, 255, 255, 0.85)',
         fontWeight: '500',
-        letterSpacing: 0.5,
     },
     actionContainer: {
         flex: 1,
@@ -350,10 +275,6 @@ const styles = StyleSheet.create({
         borderColor: COLORS.neutral200,
         paddingVertical: 16,
         borderRadius: 16,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
         elevation: 2,
         marginBottom: 32,
     },

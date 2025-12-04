@@ -1,31 +1,54 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Calendar, Sparkles } from 'lucide-react-native';
-import Animated, { FadeInUp, ZoomIn } from 'react-native-reanimated';
-import { COLORS } from '../constants/Colors';
+import Animated, {
+    FadeInUp,
+    ZoomIn,
+    withRepeat,
+    withTiming,
+    useSharedValue,
+    useAnimatedStyle,
+    Easing
+} from 'react-native-reanimated';
+import Svg, { Circle, Rect, Path, Defs, LinearGradient as SvgLinear, Stop } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { COLORS } from '../constants/Colors';
 import { getBackendUrl } from '../utils/environment';
 
 const SplashScreen = ({ navigation }: { navigation: any }) => {
+
+    // 🔥 Pulse Animation (Tailwind animate-ping 대체)
+    const pulse = useSharedValue(1);
+    const pulseOpacity = useSharedValue(0.2);
+
+    const pulseStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: pulse.value }],
+        opacity: pulseOpacity.value,
+    }));
+
+    useEffect(() => {
+        pulse.value = withRepeat(
+            withTiming(1.4, { duration: 1200, easing: Easing.out(Easing.ease) }),
+            -1,
+            true
+        );
+        pulseOpacity.value = withRepeat(
+            withTiming(0, { duration: 1200 }),
+            -1,
+            true
+        );
+    }, []);
+
+    // 🔥 자동 로그인 로직
     useEffect(() => {
         const checkLogin = async () => {
             try {
-                console.log('🚀 [SplashScreen] 자동 로그인 확인 시작');
-
-                // 최소 2초 대기 (스플래시 효과)
                 await new Promise(resolve => setTimeout(resolve, 2000));
-
                 const token = await AsyncStorage.getItem('accessToken');
-                console.log('🔑 [SplashScreen] 저장된 토큰:', token ? '있음' : '없음');
 
                 if (token) {
-                    // 토큰 유효성 검증 (백엔드에 사용자 존재 여부 확인)
                     try {
                         const BACKEND_URL = getBackendUrl();
-                        console.log('🌐 [SplashScreen] 백엔드 URL:', BACKEND_URL);
-                        console.log('📡 [SplashScreen] /auth/me 요청 시작...');
-
                         const response = await fetch(`${BACKEND_URL}/auth/me`, {
                             method: 'GET',
                             headers: {
@@ -34,32 +57,19 @@ const SplashScreen = ({ navigation }: { navigation: any }) => {
                             },
                         });
 
-                        console.log('📡 [SplashScreen] /auth/me 응답 상태:', response.status);
-
                         if (response.ok) {
-                            const userData = await response.json();
-                            console.log('✅ [SplashScreen] 자동 로그인 성공. 사용자:', userData.email);
                             navigation.replace('Home');
                         } else {
-                            console.log('❌ [SplashScreen] 토큰 검증 실패 (상태 코드:', response.status, ')');
-                            console.log('🗑️ [SplashScreen] 토큰 삭제 및 로그인 화면으로 이동');
                             await AsyncStorage.removeItem('accessToken');
                             navigation.replace('Login');
                         }
-                    } catch (error) {
-                        console.error('❌ [SplashScreen] 토큰 검증 중 네트워크 오류:', error);
-                        // 네트워크 오류 시에도 일단 로그인 화면으로 보내거나, 
-                        // 오프라인 모드가 있다면 홈으로 보낼 수도 있음. 
-                        // 여기서는 안전하게 로그인 화면으로 이동.
-                        console.log('🔄 [SplashScreen] 로그인 화면으로 이동');
+                    } catch {
                         navigation.replace('Login');
                     }
                 } else {
-                    console.log('ℹ️ [SplashScreen] 토큰 없음 -> 로그인 화면으로 이동');
                     navigation.replace('Login');
                 }
-            } catch (e) {
-                console.error('❌ [SplashScreen] 자동 로그인 확인 실패:', e);
+            } catch {
                 navigation.replace('Login');
             }
         };
@@ -74,25 +84,57 @@ const SplashScreen = ({ navigation }: { navigation: any }) => {
                 style={StyleSheet.absoluteFill}
             />
 
-            {/* Background Decoration */}
-            <Animated.View
-                entering={ZoomIn.duration(1500)}
-                style={styles.decorationCircle}
-            />
+            {/* Background circle */}
+            <Animated.View entering={ZoomIn.duration(1500)} style={styles.decorationCircle} />
 
-            <Animated.View
-                entering={FadeInUp.duration(1000).springify()}
-                style={styles.contentContainer}
-            >
-                <View style={styles.logoWrapper}>
-                    <Calendar size={48} color={COLORS.primaryMain} strokeWidth={2.5} />
-                    <View style={styles.sparkleBadge}>
-                        <Sparkles size={16} color={COLORS.white} fill={COLORS.white} />
-                    </View>
-                </View>
+            {/* LOGO AREA */}
+            <Animated.View entering={FadeInUp.duration(1000).springify()} style={styles.logoContainer}>
 
+                {/* 🔥 Pulse Background */}
+                <Animated.View style={[styles.pulseCircle, pulseStyle]} />
+
+                {/* 🔥 Rotating + Scaling Logo Box */}
+                <Animated.View
+                    entering={ZoomIn.duration(800)}
+                    style={styles.logoWrapper}
+                >
+                    <Svg width={64} height={64} viewBox="0 0 64 64">
+                        <Defs>
+                            <SvgLinear id="grad1" x1="12" y1="16" x2="28" y2="32">
+                                <Stop offset="0%" stopColor="#3730A3" />
+                                <Stop offset="100%" stopColor="#818CF8" />
+                            </SvgLinear>
+                            <SvgLinear id="grad2" x1="36" y1="16" x2="52" y2="32">
+                                <Stop offset="0%" stopColor="#818CF8" />
+                                <Stop offset="100%" stopColor="#3730A3" />
+                            </SvgLinear>
+                            <SvgLinear id="grad3" x1="28" y1="24" x2="36" y2="24">
+                                <Stop offset="0%" stopColor="#3730A3" />
+                                <Stop offset="100%" stopColor="#818CF8" />
+                            </SvgLinear>
+                            <SvgLinear id="grad4" x1="16" y1="38" x2="48" y2="58">
+                                <Stop offset="0%" stopColor="#3730A3" />
+                                <Stop offset="100%" stopColor="#818CF8" />
+                            </SvgLinear>
+                        </Defs>
+
+                        <Circle cx="20" cy="24" r="8" fill="url(#grad1)" />
+                        <Circle cx="44" cy="24" r="8" fill="url(#grad2)" />
+
+                        <Path d="M28 24 L36 24" stroke="url(#grad3)" strokeWidth="3" strokeLinecap="round" />
+
+                        <Rect x="16" y="38" width="32" height="20" rx="4" fill="url(#grad4)" />
+
+                        <Rect x="20" y="34" width="4" height="6" rx="2" fill="#3730A3" />
+                        <Rect x="40" y="34" width="4" height="6" rx="2" fill="#3730A3" />
+                    </Svg>
+                </Animated.View>
+
+                {/* App Name */}
                 <Text style={styles.title}>JOYNER</Text>
-                <Text style={styles.subtitle}>Your AI Scheduling Assistant</Text>
+
+                {/* Tagline */}
+                <Text style={styles.subtitle}>AI Scheduler</Text>
             </Animated.View>
 
             <View style={styles.footer}>
@@ -103,12 +145,8 @@ const SplashScreen = ({ navigation }: { navigation: any }) => {
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: COLORS.primaryMain,
-    },
+    container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
     decorationCircle: {
         position: 'absolute',
         top: -100,
@@ -120,10 +158,9 @@ const styles = StyleSheet.create({
         opacity: 0.3,
         transform: [{ scale: 1.5 }],
     },
-    contentContainer: {
-        alignItems: 'center',
-        zIndex: 10,
-    },
+
+    logoContainer: { alignItems: 'center', zIndex: 10 },
+
     logoWrapper: {
         width: 96,
         height: 96,
@@ -132,22 +169,18 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 24,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.2,
-        shadowRadius: 20,
         elevation: 10,
     },
-    sparkleBadge: {
+
+    pulseCircle: {
         position: 'absolute',
-        top: -8,
-        right: -8,
-        backgroundColor: COLORS.primaryLight,
-        padding: 6,
-        borderRadius: 20,
-        borderWidth: 3,
-        borderColor: COLORS.primaryMain,
+        width: 96,
+        height: 96,
+        borderRadius: 24,
+        backgroundColor: COLORS.white,
+        opacity: 0.2,
     },
+
     title: {
         fontSize: 36,
         fontWeight: 'bold',
@@ -155,16 +188,14 @@ const styles = StyleSheet.create({
         marginBottom: 8,
         letterSpacing: 1,
     },
+
     subtitle: {
         fontSize: 14,
-        color: 'rgba(255, 255, 255, 0.8)',
-        fontWeight: '500',
+        color: 'rgba(255,255,255,0.9)',
         letterSpacing: 0.5,
     },
-    footer: {
-        position: 'absolute',
-        bottom: 50,
-    },
+
+    footer: { position: 'absolute', bottom: 50 },
 });
 
 export default SplashScreen;
