@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator, Image } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
@@ -76,7 +76,11 @@ const RegisterScreen = () => {
             {/* Header */}
             <View style={styles.header}>
                 <View style={styles.iconContainer}>
-                    <Sparkles size={24} color={COLORS.primaryMain} />
+                    <Image
+                        source={require('../assets/images/register-icon.png')}
+                        style={styles.iconImage}
+                        resizeMode="contain"
+                    />
                 </View>
                 <Text style={styles.title}>회원가입</Text>
                 <Text style={styles.subtitle}>
@@ -173,9 +177,13 @@ const styles = StyleSheet.create({
         height: 48,
         backgroundColor: COLORS.primaryBg,
         borderRadius: 16,
-        alignItems: 'center',
         justifyContent: 'center',
+        alignItems: 'center',
         marginBottom: 24,
+    },
+    iconImage: {
+        width: 24,
+        height: 24,
     },
     title: {
         fontSize: 30,
