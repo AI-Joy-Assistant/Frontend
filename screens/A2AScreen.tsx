@@ -94,7 +94,8 @@ const A2AScreen = () => {
                     id: session.id,
                     title: session.title || "일정 조율",
                     status: session.status === 'completed' ? 'COMPLETED' : 'IN_PROGRESS',
-                    summary: session.summary || `${session.participant_names?.join(', ')}`,
+                    // [✅ 수정] 요약에는 참여자 이름만 표시 (이모지 옆 텍스트)
+                    summary: session.participant_names?.join(', ') || "참여자 없음",
                     timeRange: session.details?.proposedTime || "미정",
                     createdAt: session.created_at,
                     details: session.details
