@@ -339,6 +339,8 @@ export default function ChatScreen() {
     if (!input.trim()) return;
     const userText = input;
     setInput("");
+    // 메시지 전송 후 선택된 친구 초기화 (선택 사항)
+    // setSelectedFriends([]);
     // 사용자 메시지는 즉시 추가하고 스크롤 내림
     setMessages((prev) => [...prev, { sender: "user", text: userText, timestamp: new Date().toISOString() }]);
     isAtBottom.current = true; // 내가 보냈으니 맨 아래로
@@ -350,7 +352,11 @@ export default function ChatScreen() {
     const res = await fetch(`${API_BASE}/chat/chat`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ message: userText, date: pendingDate ?? undefined }),
+      body: JSON.stringify({
+        message: userText,
+        date: pendingDate ?? undefined,
+        selected_friends: selectedFriends.length > 0 ? selectedFriends : undefined
+      }),
     });
 
     if (!res.ok) {
