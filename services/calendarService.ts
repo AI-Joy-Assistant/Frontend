@@ -7,7 +7,7 @@ const API_BASE_URL = API_BASE;
 class CalendarService {
   private async getStoredAccessToken(): Promise<string | null> {
     try {
-      return await AsyncStorage.getItem('access_token');
+      return await AsyncStorage.getItem('accessToken');
     } catch (error) {
       console.error('액세스 토큰 조회 실패:', error);
       return null;
@@ -16,7 +16,7 @@ class CalendarService {
 
   private async storeAccessToken(token: string): Promise<void> {
     try {
-      await AsyncStorage.setItem('access_token', token);
+      await AsyncStorage.setItem('accessToken', token);
     } catch (error) {
       console.error('액세스 토큰 저장 실패:', error);
     }
@@ -76,7 +76,6 @@ class CalendarService {
       }
 
       const params = new URLSearchParams({
-        access_token: accessToken,
         calendar_id: calendarId,
       });
 
@@ -87,13 +86,18 @@ class CalendarService {
         params.append('time_max', timeMax.toISOString());
       }
 
-      const response = await fetch(`${API_BASE_URL}/calendar/events?${params}`);
-      
+      const response = await fetch(`${API_BASE_URL}/calendar/events?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+
       if (!response.ok) {
         throw new Error('캘린더 이벤트 조회 실패');
       }
 
-      return await response.json();
+      const data = await response.json();
+      return data.events || [];
     } catch (error) {
       console.error('캘린더 이벤트 조회 실패:', error);
       throw error;
@@ -111,7 +115,6 @@ class CalendarService {
       }
 
       const params = new URLSearchParams({
-        access_token: accessToken,
         calendar_id: calendarId,
       });
 
@@ -119,6 +122,7 @@ class CalendarService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
         },
         body: JSON.stringify(eventData),
       });
@@ -145,12 +149,14 @@ class CalendarService {
       }
 
       const params = new URLSearchParams({
-        access_token: accessToken,
         calendar_id: calendarId,
       });
 
       const response = await fetch(`${API_BASE_URL}/calendar/events/${eventId}?${params}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
       });
 
       return response.ok;
@@ -167,11 +173,11 @@ class CalendarService {
 
   async logout(): Promise<void> {
     try {
-      await AsyncStorage.removeItem('access_token');
+      await AsyncStorage.removeItem('accessToken');
     } catch (error) {
       console.error('로그아웃 실패:', error);
     }
   }
 }
 
-export const calendarService = new CalendarService(); 
+export const calendarService = new CalendarService();
