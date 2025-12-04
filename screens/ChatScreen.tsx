@@ -11,6 +11,9 @@ import {
   ActivityIndicator,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  Modal,
+  TouchableWithoutFeedback,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,6 +24,20 @@ import BottomNav from "../components/BottomNav";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "../constants/config";
 import ProposalCard, { Proposal } from "../components/ProposalCard";
+import { LinearGradient } from 'expo-linear-gradient';
+import { Send, Sparkles, X, Search, Check } from 'lucide-react-native';
+import { COLORS } from '../constants/Colors';
+
+interface Friend {
+  id: string;
+  friend: {
+    id: string;
+    name: string;
+    email: string;
+    picture?: string;
+  };
+  created_at: string;
+}
 
 export default function ChatScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -46,8 +63,44 @@ export default function ChatScreen() {
   const [pendingDate, setPendingDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [showFriendModal, setShowFriendModal] = useState(false);
+  const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [friendSearchQuery, setFriendSearchQuery] = useState('');
 
   const isAtBottom = useRef(true);
+
+  const toggleFriendSelection = (id: string) => {
+    setSelectedFriends(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(fid => fid !== id);
+      } else {
+        return [...prev, id];
+      }
+    });
+  };
+
+  const fetchFriends = async () => {
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) return;
+
+      const response = await fetch(`${API_BASE}/friends/list`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setFriends(data.friends || []);
+      }
+    } catch (error) {
+      console.error('Error fetching friends:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchFriends();
+  }, []);
 
   const formatTime = (isoString?: string) => {
     if (!isoString) return "";
@@ -450,72 +503,221 @@ export default function ChatScreen() {
           item.sender === "user" ? styles.userMessage : styles.aiMessage,
         ]}
       >
-        <Text style={[
-          styles.messageText,
-          item.sender === "user" ? styles.userMessageText : styles.aiMessageText
+        {item.sender === 'ai' && (
+          <View style={styles.aiAvatar}>
+            <Sparkles size={14} color={COLORS.primaryMain} />
+          </View>
+        )}
+        <View style={[
+          styles.messageBubble,
+          item.sender === 'user' ? styles.userBubble : styles.aiBubble
         ]}>
-          {item.text}
-        </Text>
-        <Text style={[
-          styles.timestampText,
-          item.sender === "user" ? styles.userTimestamp : styles.aiTimestamp
-        ]}>
-          {formatTime(item.timestamp)}
-        </Text>
+          <Text style={[
+            styles.messageText,
+            item.sender === "user" ? styles.userMessageText : styles.aiMessageText
+          ]}>
+            {item.text}
+          </Text>
+          <Text style={[
+            styles.timestampText,
+            item.sender === "user" ? styles.userTimestamp : styles.aiTimestamp
+          ]}>
+            {formatTime(item.timestamp)}
+          </Text>
+        </View>
       </View>
     );
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>AI 채팅</Text>
+      {/* Header */}
+      <LinearGradient
+        colors={[COLORS.primaryLight, COLORS.primaryMain]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
+        <View style={styles.headerDecor} />
+        <View style={styles.headerContent}>
+          <View style={styles.headerIconContainer}>
+            <Sparkles size={22} color={COLORS.primaryMain} />
+          </View>
+          <View>
+            <Text style={styles.headerTitle}>내 AI 비서</Text>
+          </View>
         </View>
-        <View style={styles.placeholder} />
-      </View>
+      </LinearGradient>
 
       <KeyboardAvoidingView style={styles.chatContainer} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         {loading ? (
-          <View style={styles.loadingContainer}><ActivityIndicator size="large" color="#4A90E2" /></View>
+          <View style={styles.loadingContainer}>
+            <View style={styles.loadingAvatar}>
+              <Sparkles size={14} color={COLORS.primaryMain} />
+            </View>
+            <View style={styles.loadingBubble}>
+              <View style={[styles.loadingDot, { opacity: 0.4 }]} />
+              <View style={[styles.loadingDot, { opacity: 0.6 }]} />
+              <View style={[styles.loadingDot, { opacity: 1.0 }]} />
+            </View>
+          </View>
         ) : (
           <FlatList
             ref={scrollRef}
             data={messages}
-            keyExtractor={(item, index) => item.id || index.toString()} // id 사용 권장
+            keyExtractor={(item, index) => item.id || index.toString()}
             renderItem={renderItem}
             contentContainerStyle={[styles.messagesContainer, messages.length > 0 && styles.messagesContainerWithContent]}
             showsVerticalScrollIndicator={false}
-
-            // [✅ 수정] 스크롤 로직 변경
             onScroll={handleScroll}
             scrollEventThrottle={16}
             onContentSizeChange={() => {
-              // 사용자가 맨 아래에 있을 때만 자동 스크롤
               if (scrollRef.current && messages.length > 0 && isAtBottom.current) {
                 scrollRef.current.scrollToEnd({ animated: false });
               }
             }}
-
             ListEmptyComponent={
               <View style={styles.emptyContainer}><Text style={styles.emptyText}>아직 대화가 없습니다.</Text></View>
             }
+            style={{ flexGrow: 1 }}
           />
         )}
-        <View style={styles.inputContainer}>
-          <TextInput value={input} onChangeText={setInput} placeholder="메시지를 입력하세요" placeholderTextColor="#9CA3AF" style={styles.input} />
-          <TouchableOpacity onPress={sendMessage} style={styles.sendButton}><Text style={styles.sendButtonText}>전송</Text></TouchableOpacity>
+
+        <View style={styles.inputWrapper}>
+          {/* Friend Selection Area */}
+          <View style={styles.friendSelectionArea}>
+            <TouchableOpacity
+              onPress={() => setShowFriendModal(true)}
+              style={styles.friendSelectButton}
+            >
+              <Text style={styles.friendSelectButtonText}>친구 선택</Text>
+            </TouchableOpacity>
+
+            <FlatList
+              data={selectedFriends}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => {
+                const friendData = friends.find(f => f.friend.id === item);
+                if (!friendData) return null;
+                return (
+                  <View style={styles.selectedFriendChip}>
+                    <Image source={{ uri: friendData.friend.picture || 'https://via.placeholder.com/150' }} style={styles.chipAvatar} />
+                    <Text style={styles.chipName}>{friendData.friend.name}</Text>
+                    <TouchableOpacity onPress={() => toggleFriendSelection(item)}>
+                      <X size={12} color={COLORS.neutral400} />
+                    </TouchableOpacity>
+                  </View>
+                );
+              }}
+              style={styles.selectedFriendsList}
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <TextInput
+              value={input}
+              onChangeText={setInput}
+              placeholder="AI에게 메시지 보내기..."
+              placeholderTextColor={COLORS.neutral400}
+              style={styles.input}
+            />
+            <TouchableOpacity
+              onPress={sendMessage}
+              disabled={!input.trim()}
+              style={[styles.sendButton, !input.trim() && styles.sendButtonDisabled]}
+            >
+              <Send size={18} color={input.trim() ? 'white' : COLORS.neutral400} />
+            </TouchableOpacity>
+          </View>
         </View>
       </KeyboardAvoidingView>
 
       <BottomNav activeTab={Tab.CHAT} />
+
+      {/* Friend Selection Modal */}
+      <Modal
+        visible={showFriendModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowFriendModal(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowFriendModal(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHandle} />
+
+                <View style={styles.modalHeader}>
+                  <View>
+                    <Text style={styles.modalTitle}>친구 선택</Text>
+                    <Text style={styles.modalSubtitle}>일정을 잡을 친구를 선택하세요</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setShowFriendModal(false)}>
+                    <X size={24} color={COLORS.neutral400} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.modalSearch}>
+                  <Search size={18} color={COLORS.neutral400} style={styles.modalSearchIcon} />
+                  <TextInput
+                    placeholder="친구 검색"
+                    placeholderTextColor={COLORS.neutral400}
+                    style={styles.modalSearchInput}
+                    value={friendSearchQuery}
+                    onChangeText={setFriendSearchQuery}
+                  />
+                </View>
+
+                <FlatList
+                  data={friends.filter(f =>
+                    friendSearchQuery === '' ||
+                    f.friend.name.toLowerCase().includes(friendSearchQuery.toLowerCase()) ||
+                    f.friend.email.toLowerCase().includes(friendSearchQuery.toLowerCase())
+                  )}
+                  keyExtractor={(item) => item.friend.id}
+                  renderItem={({ item }) => {
+                    const isSelected = selectedFriends.includes(item.friend.id);
+                    return (
+                      <TouchableOpacity
+                        onPress={() => toggleFriendSelection(item.friend.id)}
+                        style={[styles.friendListItem, isSelected && styles.friendListItemSelected]}
+                      >
+                        <View style={styles.friendListInfo}>
+                          <View style={styles.friendListAvatarContainer}>
+                            <Image source={{ uri: item.friend.picture || 'https://via.placeholder.com/150' }} style={styles.friendListAvatar} />
+
+                          </View>
+                          <View>
+                            <Text style={[styles.friendListName, isSelected && styles.friendListNameSelected]}>{item.friend.name}</Text>
+                            <Text style={styles.friendListEmail}>{item.friend.email}</Text>
+                          </View>
+                        </View>
+                        <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+                          {isSelected && <Check size={14} color="white" />}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  }}
+                  style={styles.friendList}
+                />
+
+                <View style={styles.modalFooter}>
+                  <TouchableOpacity
+                    onPress={() => setShowFriendModal(false)}
+                    style={styles.modalDoneButton}
+                  >
+                    <Text style={styles.modalDoneButtonText}>
+                      완료 {selectedFriends.length > 0 && `(${selectedFriends.length})`}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -523,113 +725,169 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F111A',
-    height: '100%',
+    backgroundColor: COLORS.neutralLight,
   },
   header: {
-    backgroundColor: '#0F111A',
+    paddingTop: 20,
+    paddingBottom: 24,
+    paddingHorizontal: 24,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+    shadowColor: COLORS.primaryMain,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  headerDecor: {
+    position: 'absolute',
+    top: -40,
+    right: -40,
+    width: 128,
+    height: 128,
+    backgroundColor: 'white',
+    opacity: 0.1,
+    borderRadius: 64,
+  },
+  headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    borderBottomWidth: 2,
-    borderBottomColor: '#374151',
-    height: 60,
+    zIndex: 1,
   },
-  backButton: {
-    padding: 4,
+  headerIconContainer: {
+    width: 44,
+    height: 44,
+    backgroundColor: 'white',
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    width: 32,
-    height: 32,
-  },
-  headerTitleContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    marginRight: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   headerTitle: {
-    color: '#fff',
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  placeholder: {
-    width: 32,
+    color: 'white',
   },
   chatContainer: {
     flex: 1,
-    padding: 12,
   },
   messagesContainer: {
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 20,
   },
   messagesContainerWithContent: {
     flexGrow: 1,
-    justifyContent: 'flex-end',
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    marginTop: 12,
-    paddingBottom: 8,
-  },
-  input: {
-    flex: 1,
-    borderColor: '#374151',
-    borderWidth: 1,
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: '#1F2937',
-    color: '#fff',
-    fontSize: 16,
-  },
-  sendButton: {
-    backgroundColor: '#4A90E2',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    marginLeft: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sendButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 16,
   },
   messageItem: {
-    marginVertical: 6,
-    padding: 12,
-    borderRadius: 12,
-    maxWidth: '75%',
+    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
   },
   userMessage: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#4A90E2',
+    justifyContent: 'flex-end',
   },
   aiMessage: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#1F2937',
+    justifyContent: 'flex-start',
+  },
+  aiAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'white',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: COLORS.neutral100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  messageBubble: {
+    maxWidth: '75%',
+    padding: 14,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  userBubble: {
+    backgroundColor: COLORS.primaryMain,
+    borderTopRightRadius: 4,
+  },
+  aiBubble: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: COLORS.neutral100,
   },
   messageText: {
-    fontSize: 16,
+    fontSize: 15,
     lineHeight: 22,
   },
   userMessageText: {
-    color: '#fff',
+    color: 'white',
   },
   aiMessageText: {
-    color: '#fff',
+    color: COLORS.neutralSlate,
+  },
+  timestampText: {
+    fontSize: 10,
+    marginTop: 6,
+    alignSelf: 'flex-end',
+  },
+  userTimestamp: {
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  aiTimestamp: {
+    color: COLORS.neutral400,
   },
   loadingContainer: {
-    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    marginBottom: 20,
+  },
+  loadingAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'white',
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: COLORS.neutral100,
   },
-  loadingText: {
-    color: '#9CA3AF',
-    marginTop: 12,
-    fontSize: 16,
+  loadingBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    padding: 12,
+    borderRadius: 20,
+    borderTopLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: COLORS.neutral100,
+    height: 40,
+  },
+  loadingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.neutral400,
+    marginHorizontal: 2,
   },
   emptyContainer: {
     flex: 1,
@@ -638,24 +896,258 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
   },
   emptyText: {
-    color: '#9CA3AF',
-    fontSize: 18,
-    fontWeight: '600',
+    color: COLORS.neutral400,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  inputWrapper: {
+    backgroundColor: 'white',
+    borderTopWidth: 1,
+    borderTopColor: COLORS.neutral100,
+    paddingBottom: Platform.OS === 'ios' ? 90 : 80,
+    paddingTop: 12,
+  },
+  friendSelectionArea: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  friendSelectButton: {
+    backgroundColor: COLORS.neutral100,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 12,
+  },
+  friendSelectButtonText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.neutral500,
+  },
+  selectedFriendsList: {
+    flexGrow: 0,
+  },
+  selectedFriendChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: COLORS.neutral200,
+    paddingLeft: 4,
+    paddingRight: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+    marginRight: 8,
+  },
+  chipAvatar: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    marginRight: 6,
+  },
+  chipName: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.neutral500,
+    marginRight: 6,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    backgroundColor: COLORS.neutralLight,
+    borderRadius: 24,
+    padding: 6,
+    borderWidth: 1,
+    borderColor: COLORS.neutral200,
+  },
+  input: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: COLORS.neutralSlate,
+    maxHeight: 100,
+  },
+  sendButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.primaryMain,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: COLORS.primaryMain,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sendButtonDisabled: {
+    backgroundColor: COLORS.neutral200,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  sendButtonText: {
+    display: 'none',
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    height: '85%',
+    paddingBottom: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 20,
+  },
+  modalHandle: {
+    width: 48,
+    height: 6,
+    backgroundColor: COLORS.neutral200,
+    borderRadius: 3,
+    alignSelf: 'center',
+    marginTop: 12,
+    marginBottom: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: 24,
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.neutralSlate,
+    marginBottom: 4,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: COLORS.neutral500,
+  },
+  modalSearch: {
+    marginHorizontal: 24,
+    marginBottom: 20,
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  modalSearchIcon: {
+    position: 'absolute',
+    left: 16,
+    zIndex: 1,
+  },
+  modalSearchInput: {
+    backgroundColor: COLORS.neutralLight,
+    borderRadius: 16,
+    paddingLeft: 44,
+    paddingRight: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: COLORS.neutralSlate,
+  },
+  friendList: {
+    flex: 1,
+    paddingHorizontal: 24,
+  },
+  friendListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 16,
     marginBottom: 8,
+    backgroundColor: 'transparent',
   },
-  emptySubText: {
-    color: '#9CA3AF',
-    fontSize: 14,
+  friendListItemSelected: {
+    backgroundColor: COLORS.primaryBg,
   },
-  timestampText: {
-    fontSize: 10,
-    marginTop: 4,
-    alignSelf: 'flex-end',
+  friendListInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  userTimestamp: {
-    color: 'rgba(255, 255, 255, 0.7)',
+  friendListAvatarContainer: {
+    position: 'relative',
+    marginRight: 16,
   },
-  aiTimestamp: {
-    color: 'rgba(255, 255, 255, 0.5)',
+  friendListAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: COLORS.neutral100,
+  },
+  statusIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: 'white',
+  },
+  statusOnline: {
+    backgroundColor: COLORS.success,
+  },
+  statusOffline: {
+    backgroundColor: COLORS.neutral300,
+  },
+  friendListName: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: COLORS.neutralSlate,
+    marginBottom: 2,
+  },
+  friendListNameSelected: {
+    color: COLORS.primaryMain,
+  },
+  friendListEmail: {
+    fontSize: 12,
+    color: COLORS.neutral400,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: COLORS.neutral300,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxSelected: {
+    backgroundColor: COLORS.primaryMain,
+    borderColor: COLORS.primaryMain,
+  },
+  modalFooter: {
+    padding: 24,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.neutral100,
+  },
+  modalDoneButton: {
+    backgroundColor: COLORS.primaryMain,
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: COLORS.primaryMain,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  modalDoneButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
