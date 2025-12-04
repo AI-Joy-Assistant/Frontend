@@ -284,6 +284,8 @@ const FriendsScreen = () => {
     }
   };
 
+
+
   // --- Render Views ---
 
   if (isAdding) {
@@ -412,6 +414,42 @@ const FriendsScreen = () => {
             data={friends}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingBottom: 100 }}
+            ListHeaderComponent={
+              friendRequests.length > 0 ? (
+                <View style={styles.requestsContainer}>
+                  <Text style={styles.sectionTitle}>받은 친구 요청 ({friendRequests.length})</Text>
+                  {friendRequests.map((request) => (
+                    <View key={request.id} style={styles.requestItem}>
+                      <View style={styles.requestInfo}>
+                        <Image
+                          source={{ uri: request.from_user.picture || 'https://via.placeholder.com/150' }}
+                          style={styles.requestAvatar}
+                        />
+                        <View>
+                          <Text style={styles.requestName}>{request.from_user.name}</Text>
+                          <Text style={styles.requestEmail}>{request.from_user.email}</Text>
+                        </View>
+                      </View>
+                      <View style={styles.requestActions}>
+                        <TouchableOpacity
+                          style={styles.acceptButton}
+                          onPress={() => handleAcceptRequest(request.id)}
+                        >
+                          <Text style={styles.acceptButtonText}>수락</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.rejectButton}
+                          onPress={() => handleRejectRequest(request.id)}
+                        >
+                          <Ionicons name="close" size={20} color={COLORS.neutral500} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+                  <View style={styles.divider} />
+                </View>
+              ) : null
+            }
             renderItem={({ item }) => (
               <View style={styles.friendItem}>
                 <View style={styles.friendInfo}>
@@ -937,6 +975,82 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: 'white',
+  },
+  // Friend Request Styles
+  requestsContainer: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.neutralSlate,
+    marginBottom: 12,
+    marginLeft: 4,
+  },
+  requestItem: {
+    backgroundColor: COLORS.white,
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: COLORS.neutral100,
+  },
+  requestInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  requestAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginRight: 12,
+    backgroundColor: COLORS.neutral100,
+  },
+  requestName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.neutralSlate,
+    marginBottom: 2,
+  },
+  requestEmail: {
+    fontSize: 12,
+    color: COLORS.neutral500,
+  },
+  requestActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  acceptButton: {
+    backgroundColor: COLORS.primaryMain,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  acceptButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  rejectButton: {
+    backgroundColor: COLORS.neutral100,
+    padding: 8,
+    borderRadius: 20,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.neutral200,
+    marginVertical: 12,
+    marginHorizontal: 4,
   },
 });
 
