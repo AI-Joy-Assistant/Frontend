@@ -10,34 +10,41 @@ import {
     TextInput,
     SafeAreaView,
     ActivityIndicator,
-    Dimensions,
-    ScrollView
+    ScrollView,
+    Platform
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import {
+    CheckCircle2,
+    Clock,
+    ChevronRight,
+    X,
+    MapPin,
+    Calendar,
+    CalendarCheck,
+    ArrowLeft
+} from 'lucide-react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList, A2ALog, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
-
-// API Configuration
-const API_BASE = 'http://127.0.0.1:8000'; // Android Emulator: 10.0.2.2
+import { API_BASE } from '../constants/config';
 
 // Colors based on the provided React/Tailwind code
 const COLORS = {
-    primaryMain: '#5B4DFF', // text-primary-main (Approximate from previous context/screenshot)
-    primaryLight: '#8B80FF',
-    primaryDark: '#4338CA',
-    primaryBg: '#EEF2FF',   // bg-primary-bg
-    neutralLight: '#F9FAFB', // bg-neutral-light
-    neutral50: '#F9FAFB',    // Alias
-    neutralSlate: '#1F2937', // text-neutral-slate
-    neutral100: '#F3F4F6',   // border-neutral-100
+    primaryMain: '#3730A3',
+    primaryLight: '#818CF8',
+    primaryDark: '#0E004E',
+    primaryBg: '#EEF2FF',
+    neutralLight: '#F9FAFB',
+    neutral50: '#F9FAFB',
+    neutralSlate: '#1F2937',
+    neutral100: '#F3F4F6',
     neutral200: '#E5E7EB',
     neutral300: '#D1D5DB',
-    neutral400: '#9CA3AF',   // text-neutral-400
-    neutral500: '#6B7280',   // text-neutral-500
+    neutral400: '#9CA3AF',
+    neutral500: '#6B7280',
     neutral600: '#4B5563',
     white: '#FFFFFF',
     green600: '#16A34A',
@@ -46,9 +53,7 @@ const COLORS = {
     amber600: '#D97706',
     amber50: '#FFFBEB',
     amber100: '#FEF3C7',
-    background: '#F9FAFB', // bg-neutral-light
-    cardBg: '#FFFFFF',     // bg-white
-    approveBtn: '#0E004E'  // The dark blue button color from the snippet
+    approveBtn: '#3730A3'
 };
 
 const A2AScreen = () => {
@@ -96,7 +101,6 @@ const A2AScreen = () => {
                 }));
                 setLogs(mappedLogs);
 
-                // Handle deep link if present
                 if (initialLogId) {
                     const targetLog = mappedLogs.find(l => l.id === initialLogId);
                     if (targetLog) {
@@ -133,7 +137,6 @@ const A2AScreen = () => {
         setIsConfirmed(false);
         setIsRescheduling(false);
 
-        // Fetch full details including process
         try {
             const token = await AsyncStorage.getItem('accessToken');
             const res = await fetch(`${API_BASE}/a2a/session/${log.id}`, {
@@ -141,14 +144,16 @@ const A2AScreen = () => {
             });
             if (res.ok) {
                 const data = await res.json();
-                // Merge details
-                const newDetails = data.details;
-                // Preserve proposer name if backend returns "알 수 없음" but we have it in list (though list might not have it either)
+                const newDetails = data.details || {};
+
                 if (newDetails.proposer === "알 수 없음" && log.details?.proposer) {
                     newDetails.proposer = log.details.proposer;
                 }
 
-                setSelectedLog((prev: A2ALog | null) => prev ? { ...prev, details: newDetails } : null);
+                setSelectedLog((prev: A2ALog | null) => prev ? {
+                    ...prev,
+                    details: { ...(prev.details || {}), ...newDetails }
+                } : null);
             }
         } catch (e) {
             console.error("Failed to fetch log details:", e);
@@ -175,7 +180,7 @@ const A2AScreen = () => {
             });
             if (res.ok) {
                 setIsConfirmed(true);
-                fetchA2ALogs(); // Refresh list
+                fetchA2ALogs();
             } else {
                 console.error("Approve failed");
             }
@@ -243,12 +248,11 @@ const A2AScreen = () => {
                     styles.statusBadge,
                     item.status === 'COMPLETED' ? styles.statusCompleted : styles.statusInProgress
                 ]}>
-                    <Ionicons
-                        name={item.status === 'COMPLETED' ? "checkmark-circle" : "time"}
-                        size={12}
-                        color={item.status === 'COMPLETED' ? COLORS.green600 : COLORS.amber600}
-                        style={{ marginRight: 4 }}
-                    />
+                    {item.status === 'COMPLETED' ? (
+                        <CheckCircle2 size={12} color={COLORS.green600} style={{ marginRight: 4 }} />
+                    ) : (
+                        <Clock size={12} color={COLORS.amber600} style={{ marginRight: 4 }} />
+                    )}
                     <Text style={[
                         styles.statusText,
                         { color: item.status === 'COMPLETED' ? COLORS.green600 : COLORS.amber600 }
@@ -264,7 +268,7 @@ const A2AScreen = () => {
 
             <View style={styles.logFooter}>
                 <Text style={styles.logTime}>{item.timeRange}</Text>
-                <Ionicons name="chevron-forward" size={16} color={COLORS.neutral300} />
+                <ChevronRight size={16} color={COLORS.neutral300} />
             </View>
         </TouchableOpacity>
     );
@@ -279,7 +283,7 @@ const A2AScreen = () => {
             {/* List */}
             <View style={styles.listContainer}>
                 {loading && logs.length === 0 ? (
-                    <ActivityIndicator size="large" color={COLORS.primaryMain} style={{ marginTop: 20 }} />
+                    <ActivityIndicator size="large" color={COLORS.primaryDark} style={{ marginTop: 20 }} />
                 ) : (
                     <FlatList
                         data={logs}
@@ -311,11 +315,11 @@ const A2AScreen = () => {
                             /* --- CONFIRMATION VIEW --- */
                             <View style={styles.confirmationContainer}>
                                 <TouchableOpacity onPress={handleClose} style={styles.closeButtonAbsolute}>
-                                    <Ionicons name="close" size={24} color={COLORS.neutral400} />
+                                    <X size={24} color={COLORS.neutral400} />
                                 </TouchableOpacity>
 
                                 <View style={styles.confirmIconContainer}>
-                                    <Ionicons name="calendar" size={40} color={COLORS.primaryMain} />
+                                    <CalendarCheck size={40} color={COLORS.primaryDark} />
                                 </View>
 
                                 <Text style={styles.confirmTitle}>It's Official!</Text>
@@ -359,7 +363,7 @@ const A2AScreen = () => {
                                 </View>
 
                                 <TouchableOpacity style={styles.viewCalendarBtn} onPress={handleClose}>
-                                    <Ionicons name="calendar-outline" size={18} color="rgba(255,255,255,0.8)" style={{ marginRight: 8 }} />
+                                    <Calendar size={18} color="rgba(255,255,255,0.8)" style={{ marginRight: 8 }} />
                                     <Text style={styles.viewCalendarText}>View in Calendar</Text>
                                 </TouchableOpacity>
                             </View>
@@ -372,7 +376,7 @@ const A2AScreen = () => {
                                         <Text style={styles.rescheduleSub}>AI가 자동으로 재협상을 시작합니다</Text>
                                     </View>
                                     <TouchableOpacity onPress={handleClose}>
-                                        <Ionicons name="close" size={24} color={COLORS.neutral400} />
+                                        <X size={24} color={COLORS.neutral400} />
                                     </TouchableOpacity>
                                 </View>
 
@@ -417,7 +421,7 @@ const A2AScreen = () => {
                                     <View style={styles.section}>
                                         <Text style={styles.sectionLabel}>희망 시간 (선택)</Text>
                                         <View style={styles.inputWrapper}>
-                                            <Ionicons name="time-outline" size={18} color={COLORS.neutral400} style={styles.inputIcon} />
+                                            <Clock size={18} color={COLORS.neutral400} style={styles.inputIcon} />
                                             <TextInput
                                                 style={styles.textInput}
                                                 placeholder="예: 내일 오후 8시, 이번주 금요일 저녁"
@@ -456,7 +460,7 @@ const A2AScreen = () => {
                                 >
                                     <View style={styles.detailHeaderContent}>
                                         <View style={styles.detailHeaderIcon}>
-                                            <Ionicons name="checkmark-circle-outline" size={20} color="white" />
+                                            <CheckCircle2 size={20} color="white" />
                                         </View>
                                         <View>
                                             <Text style={styles.detailHeaderSub}>새로운 일정 요청</Text>
@@ -464,7 +468,7 @@ const A2AScreen = () => {
                                         </View>
                                     </View>
                                     <TouchableOpacity onPress={handleClose} style={styles.detailCloseBtn}>
-                                        <Ionicons name="close" size={24} color="white" />
+                                        <X size={24} color="white" />
                                     </TouchableOpacity>
                                 </LinearGradient>
 
@@ -483,18 +487,18 @@ const A2AScreen = () => {
                                             {/* Info Cards */}
                                             <View style={styles.infoStack}>
                                                 <View style={styles.infoCard}>
-                                                    <View style={styles.infoIconBox}>
-                                                        <Ionicons name="restaurant-outline" size={20} color={COLORS.neutral400} />
+                                                    <View style={[styles.infoIconBox, { backgroundColor: COLORS.primaryBg }]}>
+                                                        <Calendar size={20} color={COLORS.primaryMain} />
                                                     </View>
                                                     <View>
-                                                        <Text style={styles.infoLabel}>약속 목적</Text>
+                                                        <Text style={styles.infoLabel}>내용</Text>
                                                         <Text style={styles.infoValue}>{selectedLog.details.purpose}</Text>
                                                     </View>
                                                 </View>
 
                                                 <View style={styles.infoCard}>
                                                     <View style={[styles.infoIconBox, { backgroundColor: COLORS.primaryBg }]}>
-                                                        <Ionicons name="time-outline" size={20} color={COLORS.primaryMain} />
+                                                        <Clock size={20} color={COLORS.primaryMain} />
                                                     </View>
                                                     <View>
                                                         <Text style={styles.infoLabel}>Proposed Time</Text>
@@ -504,7 +508,7 @@ const A2AScreen = () => {
 
                                                 <View style={styles.infoCard}>
                                                     <View style={[styles.infoIconBox, { backgroundColor: COLORS.primaryBg }]}>
-                                                        <Ionicons name="location-outline" size={20} color={COLORS.primaryMain} />
+                                                        <MapPin size={20} color={COLORS.primaryMain} />
                                                     </View>
                                                     <View>
                                                         <Text style={styles.infoLabel}>Location</Text>
@@ -518,9 +522,6 @@ const A2AScreen = () => {
                                                 <Text style={styles.attendeesLabel}>Attendees</Text>
                                                 <View style={styles.attendeeStack}>
                                                     <Image source={{ uri: selectedLog.details.proposerAvatar }} style={styles.attendeeAvatar} />
-                                                    {/* Dynamic Attendees: For now, just show You + Proposer.
-                                                        If we had more info, we would map them.
-                                                        Assuming 1:1 for now based on typical A2A. */}
                                                     <View style={[styles.attendeeAvatar, styles.attendeeYou]}>
                                                         <Text style={styles.attendeeYouText}>You</Text>
                                                     </View>
@@ -534,8 +535,7 @@ const A2AScreen = () => {
                                                     onPress={() => setIsProcessExpanded(!isProcessExpanded)}
                                                 >
                                                     <Text style={styles.processTitle}>A2A 협상 과정 보기</Text>
-                                                    <Ionicons
-                                                        name="chevron-forward"
+                                                    <ChevronRight
                                                         size={16}
                                                         color={COLORS.neutral300}
                                                         style={{ transform: [{ rotate: isProcessExpanded ? '90deg' : '0deg' }] }}
@@ -567,7 +567,7 @@ const A2AScreen = () => {
                                             <Text style={styles.rescheduleButtonText}>재조율</Text>
                                         </TouchableOpacity>
                                         <TouchableOpacity onPress={handleApproveClick} style={styles.approveButton}>
-                                            <Ionicons name="checkmark-circle-outline" size={16} color="white" style={{ marginRight: 6 }} />
+                                            <CheckCircle2 size={16} color="white" style={{ marginRight: 6 }} />
                                             <Text style={styles.approveButtonText}>승인</Text>
                                         </TouchableOpacity>
                                     </View>
@@ -746,7 +746,7 @@ const styles = StyleSheet.create({
     buttonRow: { flexDirection: 'row', gap: 12 },
     rescheduleButton: { flex: 1, paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: COLORS.neutral200, alignItems: 'center' },
     rescheduleButtonText: { color: COLORS.neutralSlate, fontWeight: 'bold', fontSize: 14 },
-    approveButton: { flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: COLORS.primaryMain, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', shadowColor: COLORS.primaryMain, shadowOpacity: 0.3, shadowRadius: 8 },
+    approveButton: { flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: COLORS.approveBtn, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', shadowColor: COLORS.approveBtn, shadowOpacity: 0.3, shadowRadius: 8 },
     approveButtonText: { color: 'white', fontWeight: 'bold', fontSize: 14 },
 });
 
