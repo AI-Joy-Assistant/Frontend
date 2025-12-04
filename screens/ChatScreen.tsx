@@ -60,6 +60,7 @@ export default function ChatScreen() {
   }>>([]);
   const [input, setInput] = useState("");
   const scrollRef = useRef<FlatList>(null);
+  const inputRef = useRef<TextInput>(null);
   const [pendingDate, setPendingDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -97,9 +98,28 @@ export default function ChatScreen() {
       console.error('Error fetching friends:', error);
     }
   };
+  const [userName, setUserName] = useState("User");
+
+  const fetchUserProfile = async () => {
+    try {
+      const token = await AsyncStorage.getItem("accessToken");
+      if (!token) return;
+
+      const res = await fetch(`${API_BASE}/auth/me`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUserName(data.name || data.nickname || "User");
+      }
+    } catch (e) {
+      console.error("Failed to fetch user profile", e);
+    }
+  };
 
   useEffect(() => {
     fetchFriends();
+    fetchUserProfile();
   }, []);
 
   const formatTime = (isoString?: string) => {
@@ -160,12 +180,10 @@ export default function ChatScreen() {
         },
       });
 
-      // [401 인증 만료 처리]
       if (res.status === 401) {
         console.log("인증 토큰 만료됨 - 폴링 중단");
         if (showLoadingUI) setLoading(false);
         await AsyncStorage.removeItem("accessToken");
-        // 필요 시 로그인 화면 이동: navigation.reset(...)
         return;
       }
 
@@ -231,7 +249,6 @@ export default function ChatScreen() {
           }
           // AI 응답
           if (log.response_text) {
-            // [✅ 수정] schedule_approval 타입은 무조건 카드 데이터로만 변환 (텍스트 렌더링 방지)
             if (log.message_type === 'schedule_approval') {
               const metadata = log.metadata || {};
               const approvedByList = metadata.approved_by_list || [];
@@ -246,7 +263,7 @@ export default function ChatScreen() {
 
               loadedMessages.push({
                 sender: "ai",
-                text: log.response_text, // 텍스트 데이터는 있지만 렌더링에선 무시됨
+                text: log.response_text,
                 needsApproval: needsApproval,
                 proposal: metadata.proposal,
                 threadId: metadata.thread_id,
@@ -258,13 +275,12 @@ export default function ChatScreen() {
                 isApproved: currentUserApproved || allApproved,
                 isRejected: isRejected,
                 allApproved: allApproved,
-                shouldShowProposalCard: true, // 이 플래그가 중요
+                shouldShowProposalCard: true,
                 timestamp: log.created_at,
-                id: log.id // 키 중복 방지용
+                id: log.id
               });
             }
             else {
-              // 일반 메시지 (ai_response, system 등)
               loadedMessages.push({
                 sender: "ai",
                 text: log.response_text,
@@ -275,35 +291,12 @@ export default function ChatScreen() {
           }
         });
 
-        // 시간순 정렬
         loadedMessages.sort((a, b) => {
           const timeA = new Date(a.timestamp || 0).getTime();
           const timeB = new Date(b.timestamp || 0).getTime();
           return timeA - timeB;
         });
-        // 2. [✅ 핵심 수정] 중복 카드 제거 (같은 일정은 최신 상태 하나만 보여주기)
-        const uniqueMessages: typeof loadedMessages = [];
-        const processedThreadIds = new Set<string>();
 
-        // 배열을 뒤에서부터(최신부터) 검사
-        for (let i = loadedMessages.length - 1; i >= 0; i--) {
-          const msg = loadedMessages[i];
-
-          // 카드형 메시지인 경우
-          if (msg.shouldShowProposalCard && msg.threadId) {
-            if (processedThreadIds.has(msg.threadId)) {
-              // 이미 더 최신의 카드가 있으므로, 이 옛날 카드는 숨김(건너뜀)
-              continue;
-            } else {
-              // 최신 카드이므로 등록
-              processedThreadIds.add(msg.threadId);
-              uniqueMessages.unshift(msg); // 앞에 추가 (순서 유지)
-            }
-          } else {
-            // 일반 메시지는 무조건 추가
-            uniqueMessages.unshift(msg);
-          }
-        }
         setMessages(loadedMessages);
       } else {
         setMessages([]);
@@ -316,7 +309,6 @@ export default function ChatScreen() {
     }
   };
 
-  // [✅ 수정] useFocusEffect를 사용하여 화면이 보일 때만 폴링 동작
   useFocusEffect(
     React.useCallback(() => {
       loadChatHistory(true);
@@ -330,11 +322,9 @@ export default function ChatScreen() {
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
     const paddingToBottom = 100;
-    // 맨 아래에 있는지 여부 판단 (오차 범위 20px)
     isAtBottom.current = layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
   };
 
-  // 메시지 전송
   const sendMessage = async () => {
     if (!input.trim()) return;
     const userText = input;
@@ -343,7 +333,7 @@ export default function ChatScreen() {
     // setSelectedFriends([]);
     // 사용자 메시지는 즉시 추가하고 스크롤 내림
     setMessages((prev) => [...prev, { sender: "user", text: userText, timestamp: new Date().toISOString() }]);
-    isAtBottom.current = true; // 내가 보냈으니 맨 아래로
+    isAtBottom.current = true;
     setTimeout(() => {
       scrollRef.current?.scrollToEnd({ animated: true });
     }, 100);
@@ -360,7 +350,7 @@ export default function ChatScreen() {
     });
 
     if (!res.ok) {
-      if (res.status === 401) return; // 401이면 자동 폴링에서 처리됨
+      if (res.status === 401) return;
       const errorData = await res.json().catch(() => ({ detail: '서버 오류가 발생했습니다.' }));
       addMessage("system", `❌ 오류: ${errorData.detail || '알 수 없는 오류'}`);
       return;
@@ -371,9 +361,6 @@ export default function ChatScreen() {
 
     const aiResponse = data.ai_response || data.response;
     const scheduleInfo = data.schedule_info || {};
-    const intent = scheduleInfo.intent;
-    const hasScheduleRequest = scheduleInfo.has_schedule_request || false;
-    const calendarEvent = data.calendar_event;
     const needsApproval = scheduleInfo.needs_approval || false;
     const proposal = scheduleInfo.proposal;
     const threadId = scheduleInfo.thread_id;
@@ -388,7 +375,6 @@ export default function ChatScreen() {
     }
   };
 
-  // 메시지 UI 추가
   const addMessage = (
     sender: string,
     text: string,
@@ -408,7 +394,6 @@ export default function ChatScreen() {
     }]);
   };
 
-  // 승인 처리
   const handleScheduleApproval = async (approved: boolean, proposal: any, threadId: string, sessionIds: string[]) => {
     try {
       const token = await AsyncStorage.getItem("accessToken");
@@ -509,11 +494,8 @@ export default function ChatScreen() {
           item.sender === "user" ? styles.userMessage : styles.aiMessage,
         ]}
       >
-        {item.sender === 'ai' && (
-          <View style={styles.aiAvatar}>
-            <Sparkles size={14} color={COLORS.primaryMain} />
-          </View>
-        )}
+        {/* 👇 AI 로고(아바타) 완전히 제거 */}
+
         <View style={[
           styles.messageBubble,
           item.sender === 'user' ? styles.userBubble : styles.aiBubble
@@ -561,7 +543,6 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
       <LinearGradient
         colors={[COLORS.primaryLight, COLORS.primaryMain]}
         start={{ x: 0, y: 0 }}
@@ -571,10 +552,14 @@ export default function ChatScreen() {
         <View style={styles.headerDecor} />
         <View style={styles.headerContent}>
           <View style={styles.headerIconContainer}>
-            <Sparkles size={22} color={COLORS.primaryMain} />
+            <Image
+              source={require('../assets/images/ai agent.png')}
+              style={styles.headerIconImage}
+              resizeMode="contain"
+            />
           </View>
           <View>
-            <Text style={styles.headerTitle}>내 AI 비서</Text>
+            <Text style={styles.headerTitle}>{userName}님의 비서</Text>
           </View>
         </View>
       </LinearGradient>
@@ -647,11 +632,18 @@ export default function ChatScreen() {
 
           <View style={styles.inputContainer}>
             <TextInput
+              ref={inputRef}
               value={input}
               onChangeText={setInput}
               placeholder="AI에게 메시지 보내기..."
               placeholderTextColor={COLORS.neutral400}
-              style={styles.input}
+              style={[
+                styles.input,
+                // @ts-ignore
+                Platform.OS === 'web' && { outlineStyle: 'none' }
+              ]}
+              underlineColorAndroid="transparent"
+              selectionColor={COLORS.primaryMain}
             />
             <TouchableOpacity
               onPress={sendMessage}
@@ -666,7 +658,6 @@ export default function ChatScreen() {
 
       <BottomNav activeTab={Tab.CHAT} />
 
-      {/* Friend Selection Modal */}
       <Modal
         visible={showFriendModal}
         transparent={true}
@@ -758,8 +749,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.neutralLight,
   },
   header: {
-    paddingTop: 20,
-    paddingBottom: 24,
+    paddingTop: 14,
+    paddingBottom: 14,
     paddingHorizontal: 24,
     borderBottomLeftRadius: 32,
     borderBottomRightRadius: 32,
@@ -800,10 +791,15 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  headerIconImage: {
+    width: 26,
+    height: 26,
+  },
   headerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: 'white',
+    marginTop: 4,
   },
   chatContainer: {
     flex: 1,
@@ -826,22 +822,6 @@ const styles = StyleSheet.create({
   },
   aiMessage: {
     justifyContent: 'flex-start',
-  },
-  aiAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'white',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: COLORS.neutral100,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
   messageBubble: {
     maxWidth: '75%',
@@ -985,7 +965,7 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 16,
+    marginHorizontal: 24,
     backgroundColor: COLORS.neutralLight,
     borderRadius: 24,
     padding: 6,
@@ -994,11 +974,13 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    paddingHorizontal: 16,
+    paddingLeft: 8,
+    paddingRight: 12,
     paddingVertical: 10,
     fontSize: 15,
     color: COLORS.neutralSlate,
     maxHeight: 100,
+    marginRight: 8,
   },
   sendButton: {
     width: 36,
@@ -1021,7 +1003,6 @@ const styles = StyleSheet.create({
   sendButtonText: {
     display: 'none',
   },
-  // Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',

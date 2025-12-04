@@ -172,12 +172,17 @@ const styles = StyleSheet.create({
         elevation: 10,
     },
 
+    logoImage: {
+        width: 64,
+        height: 64,
+    },
+
     pulseCircle: {
         position: 'absolute',
         width: 96,
         height: 96,
         borderRadius: 24,
-        backgroundColor: COLORS.white,
+        backgroundColor: 'rgba(255,255,255,0.1)',
         opacity: 0.2,
     },
 
