@@ -339,6 +339,8 @@ export default function ChatScreen() {
     if (!input.trim()) return;
     const userText = input;
     setInput("");
+    // 메시지 전송 후 선택된 친구 초기화 (선택 사항)
+    // setSelectedFriends([]);
     // 사용자 메시지는 즉시 추가하고 스크롤 내림
     setMessages((prev) => [...prev, { sender: "user", text: userText, timestamp: new Date().toISOString() }]);
     isAtBottom.current = true; // 내가 보냈으니 맨 아래로
@@ -350,7 +352,11 @@ export default function ChatScreen() {
     const res = await fetch(`${API_BASE}/chat/chat`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ message: userText, date: pendingDate ?? undefined }),
+      body: JSON.stringify({
+        message: userText,
+        date: pendingDate ?? undefined,
+        selected_friends: selectedFriends.length > 0 ? selectedFriends : undefined
+      }),
     });
 
     if (!res.ok) {
@@ -529,6 +535,30 @@ export default function ChatScreen() {
     );
   };
 
+  // [✅ 추가] 키보드 상태 감지
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const keyboardShowEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const keyboardHideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const keyboardDidShowListener = import("react-native").then(({ Keyboard }) => {
+      const showSubscription = Keyboard.addListener(keyboardShowEvent, () => {
+        setKeyboardVisible(true);
+      });
+      const hideSubscription = Keyboard.addListener(keyboardHideEvent, () => {
+        setKeyboardVisible(false);
+      });
+
+      return () => {
+        showSubscription.remove();
+        hideSubscription.remove();
+      };
+    });
+  }, []);
+
+  // ... (existing code)
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -549,17 +579,14 @@ export default function ChatScreen() {
         </View>
       </LinearGradient>
 
-      <KeyboardAvoidingView style={styles.chatContainer} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <View style={styles.loadingAvatar}>
-              <Sparkles size={14} color={COLORS.primaryMain} />
-            </View>
-            <View style={styles.loadingBubble}>
-              <View style={[styles.loadingDot, { opacity: 0.4 }]} />
-              <View style={[styles.loadingDot, { opacity: 0.6 }]} />
-              <View style={[styles.loadingDot, { opacity: 1.0 }]} />
-            </View>
+      <KeyboardAvoidingView
+        style={styles.chatContainer}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0} // 필요 시 조정
+      >
+        {loading && messages.length === 0 ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size="large" color={COLORS.primaryMain} />
           </View>
         ) : (
           <FlatList
@@ -579,11 +606,14 @@ export default function ChatScreen() {
             ListEmptyComponent={
               <View style={styles.emptyContainer}><Text style={styles.emptyText}>아직 대화가 없습니다.</Text></View>
             }
-            style={{ flexGrow: 1 }}
+            style={{ flex: 1 }}
           />
         )}
 
-        <View style={styles.inputWrapper}>
+        <View style={[
+          styles.inputWrapper,
+          { paddingBottom: isKeyboardVisible ? 10 : (Platform.OS === 'ios' ? 90 : 80) }
+        ]}>
           {/* Friend Selection Area */}
           <View style={styles.friendSelectionArea}>
             <TouchableOpacity
@@ -1149,5 +1179,10 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
