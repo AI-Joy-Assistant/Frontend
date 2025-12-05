@@ -421,7 +421,7 @@ const FriendsScreen = () => {
                   <View style={styles.avatarContainer}>
                     <View style={styles.avatarRing}>
                       <Image
-                        source={{ uri: item.friend.picture || 'https://via.placeholder.com/150' }}
+                        source={{ uri: item.friend.picture || 'https://picsum.photos/150' }}
                         style={styles.avatarImage}
                       />
                     </View>
@@ -456,7 +456,7 @@ const FriendsScreen = () => {
                   <View style={styles.avatarContainer}>
                     <View style={styles.avatarRing}>
                       <Image
-                        source={{ uri: item.from_user.picture || 'https://via.placeholder.com/150' }}
+                        source={{ uri: item.from_user.picture || 'https://picsum.photos/150' }}
                         style={styles.avatarImage}
                       />
                     </View>

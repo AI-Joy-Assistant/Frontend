@@ -171,6 +171,7 @@ const A2AScreen = () => {
 
     const handleApproveClick = async () => {
         if (!selectedLog) return;
+        console.log('🔵 승인 버튼 클릭 - session_id:', selectedLog.id);
         try {
             const token = await AsyncStorage.getItem('accessToken');
             const res = await fetch(`${API_BASE}/a2a/session/${selectedLog.id}/approve`, {
@@ -179,14 +180,29 @@ const A2AScreen = () => {
                     'Authorization': `Bearer ${token}`,
                 }
             });
+            console.log('🔵 승인 API 응답 상태:', res.status);
+            const data = await res.json();
+            console.log('🔵 승인 API 응답 데이터:', data);
+
             if (res.ok) {
-                setIsConfirmed(true);
-                fetchA2ALogs();
+                // 전원 승인 완료 시에만 It's Official 화면 표시
+                if (data.all_approved) {
+                    console.log('🔵 전원 승인 완료 - It\'s Official 화면 표시');
+                    setIsConfirmed(true);
+                    // It's Official 화면을 유지하기 위해 fetchA2ALogs를 호출하지 않음
+                } else {
+                    // 아직 다른 참여자 승인 대기 중
+                    alert(`승인 완료! 남은 승인 대기: ${data.approved_by_list ? 2 - data.approved_by_list.length : 1}명`);
+                    handleClose();
+                    fetchA2ALogs();
+                }
             } else {
-                console.error("Approve failed");
+                console.error("Approve failed:", data);
+                alert(data.detail || data.error || "승인 처리에 실패했습니다.");
             }
         } catch (e) {
             console.error("Approve error", e);
+            alert("승인 처리 중 오류가 발생했습니다.");
         }
     };
 
@@ -315,7 +331,7 @@ const A2AScreen = () => {
                         {isConfirmed ? (
                             /* --- CONFIRMATION VIEW --- */
                             <View style={styles.confirmationContainer}>
-                                <TouchableOpacity onPress={handleClose} style={styles.closeButtonAbsolute}>
+                                <TouchableOpacity onPress={() => { handleClose(); fetchA2ALogs(); }} style={styles.closeButtonAbsolute}>
                                     <X size={24} color={COLORS.neutral400} />
                                 </TouchableOpacity>
 
@@ -337,33 +353,33 @@ const A2AScreen = () => {
                                     <View style={styles.ticketHeader}>
                                         <View>
                                             <Text style={styles.ticketLabel}>DATE</Text>
-                                            <Text style={styles.ticketValue}>Dec 01</Text>
-                                            <Text style={styles.ticketSub}>Monday</Text>
+                                            <Text style={styles.ticketValue}>
+                                                {selectedLog?.details?.proposedTime?.split(' ')[0] || selectedLog?.timeRange?.split(' ')[0] || '날짜 미정'}
+                                            </Text>
                                         </View>
                                         <View style={{ alignItems: 'flex-end' }}>
                                             <Text style={styles.ticketLabel}>TIME</Text>
-                                            <Text style={[styles.ticketValue, { color: COLORS.primaryMain }]}>7:00 PM</Text>
+                                            <Text style={[styles.ticketValue, { color: COLORS.primaryMain }]}>
+                                                {selectedLog?.details?.proposedTime?.split(' ').slice(1).join(' ') || selectedLog?.timeRange?.split(' ').slice(1).join(' ') || '시간 미정'}
+                                            </Text>
                                         </View>
                                     </View>
 
                                     <View style={styles.ticketFooter}>
                                         <View>
-                                            <Text style={styles.ticketLocationTitle}>{selectedLog?.details?.location?.split(',')[0] || 'Location'}</Text>
-                                            <Text style={styles.ticketLocationSub}>{selectedLog?.details?.location?.split(',')[1] || 'Downtown Area'}</Text>
+                                            <Text style={styles.ticketLocationTitle}>{selectedLog?.details?.location?.split(',')[0] || selectedLog?.details?.purpose || '약속'}</Text>
+                                            <Text style={styles.ticketLocationSub}>{selectedLog?.details?.location?.split(',')[1] || ''}</Text>
                                         </View>
                                         <View style={styles.attendeeStack}>
-                                            <Image source={{ uri: selectedLog?.details?.proposerAvatar || 'https://via.placeholder.com/150' }} style={styles.attendeeAvatar} />
+                                            <Image source={{ uri: selectedLog?.details?.proposerAvatar || 'https://picsum.photos/150' }} style={styles.attendeeAvatar} />
                                             <View style={[styles.attendeeAvatar, styles.attendeeYou]}>
                                                 <Text style={styles.attendeeYouText}>You</Text>
-                                            </View>
-                                            <View style={[styles.attendeeAvatar, styles.attendeePlus]}>
-                                                <Text style={styles.attendeePlusText}>+1</Text>
                                             </View>
                                         </View>
                                     </View>
                                 </View>
 
-                                <TouchableOpacity style={styles.viewCalendarBtn} onPress={handleClose}>
+                                <TouchableOpacity style={styles.viewCalendarBtn} onPress={() => { handleClose(); navigation.navigate('Home'); }}>
                                     <Calendar size={18} color="rgba(255,255,255,0.8)" style={{ marginRight: 8 }} />
                                     <Text style={styles.viewCalendarText}>View in Calendar</Text>
                                 </TouchableOpacity>
@@ -567,10 +583,12 @@ const A2AScreen = () => {
                                         <TouchableOpacity onPress={handleRescheduleClick} style={styles.rescheduleButton}>
                                             <Text style={styles.rescheduleButtonText}>재조율</Text>
                                         </TouchableOpacity>
-                                        <TouchableOpacity onPress={handleApproveClick} style={styles.approveButton}>
-                                            <CheckCircle2 size={16} color="white" style={{ marginRight: 6 }} />
-                                            <Text style={styles.approveButtonText}>승인</Text>
-                                        </TouchableOpacity>
+                                        {selectedLog?.status !== 'COMPLETED' && (
+                                            <TouchableOpacity onPress={handleApproveClick} style={styles.approveButton}>
+                                                <CheckCircle2 size={16} color="white" style={{ marginRight: 6 }} />
+                                                <Text style={styles.approveButtonText}>승인</Text>
+                                            </TouchableOpacity>
+                                        )}
                                     </View>
                                 </View>
                             </View>
