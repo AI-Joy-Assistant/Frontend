@@ -38,4 +38,5 @@ export interface A2ALog {
     location: string;
     process: { step: string; description: string }[];
   };
+  initiator_user_id?: string;
 }

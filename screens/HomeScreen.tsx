@@ -562,7 +562,7 @@ export default function HomeScreen() {
           {/* Calendar Section  */}
           <View style={[
             styles.calendarContainer,
-            visibleRequests.length > 0 ? styles.calendarContainerRounded : styles.calendarContainerTopRounded
+            styles.calendarContainerRounded
           ]}>
 
             {/* Calendar Header */}
@@ -1050,7 +1050,6 @@ const styles = StyleSheet.create({
   requestCardContainer: {
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 10,
   },
   requestCard: {
     backgroundColor: 'white',
@@ -1132,6 +1131,7 @@ const styles = StyleSheet.create({
   calendarContainer: {
     backgroundColor: 'white',
     marginHorizontal: 20,
+    marginTop: 20,
     marginBottom: 20,
     padding: 20,
     shadowColor: "#000",

@@ -124,12 +124,33 @@ export default function ChatScreen() {
 
   const formatTime = (isoString?: string) => {
     if (!isoString) return "";
-    const date = new Date(isoString);
-    return date.toLocaleTimeString('ko-KR', {
+
+    // ISO 문자열에 타임존 정보('Z' 또는 '+/-HH:mm')가 없으면 UTC로 간주하여 'Z' 추가
+    let timeValue = isoString;
+    if (!isoString.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(isoString)) {
+      timeValue += 'Z';
+    }
+
+    const date = new Date(timeValue);
+    const now = new Date();
+
+    const isToday = date.getDate() === now.getDate() &&
+      date.getMonth() === now.getMonth() &&
+      date.getFullYear() === now.getFullYear();
+
+    const timeStr = date.toLocaleTimeString('ko-KR', {
       hour: '2-digit',
       minute: '2-digit',
       hour12: true
     });
+
+    if (isToday) {
+      return timeStr;
+    } else {
+      // 날짜 포맷: M월 D일 오전/오후 h:mm
+      const dateStr = `${date.getMonth() + 1}월 ${date.getDate()}일`;
+      return `${dateStr} ${timeStr}`;
+    }
   };
 
   // 현재 사용자 ID 가져오기
@@ -465,28 +486,7 @@ export default function ChatScreen() {
   };
 
   const renderItem = ({ item }: { item: any }) => {
-    // ProposalCard 비활성화 - 일정 확정 카드를 표시하지 않음
-    const hasProposal = false; // item.proposal && (item.proposal.date || item.proposal.time);
-    const canShowProposal = false; // item.shouldShowProposalCard || (hasProposal && (item.needsApproval || item.isApproved || item.isRejected));
 
-    if (canShowProposal) {
-      const threadId = item.threadId || (item.sessionIds && item.sessionIds.length > 0 ? item.sessionIds[0] : null);
-      const sessionIds = item.sessionIds || [];
-
-      return (
-        <View style={styles.messageItem}>
-          <ProposalCard
-            proposal={item.proposal as Proposal}
-            onApprove={(proposal) => handleScheduleApproval(true, proposal, threadId, sessionIds)}
-            onReject={(proposal) => handleScheduleApproval(false, proposal, threadId, sessionIds)}
-            approvalStatus={item.approvalStatus}
-            isApproved={item.isApproved}
-            isRejected={item.isRejected}
-            timestamp={item.timestamp}
-          />
-        </View>
-      );
-    }
 
     return (
       <View

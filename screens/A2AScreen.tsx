@@ -70,6 +70,23 @@ const A2AScreen = () => {
     const [isProcessExpanded, setIsProcessExpanded] = useState(false);
     const [manualInput, setManualInput] = useState('');
     const [preferredTime, setPreferredTime] = useState('');
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+    const fetchCurrentUser = async () => {
+        try {
+            const token = await AsyncStorage.getItem('accessToken');
+            if (!token) return;
+            const res = await fetch(`${API_BASE}/auth/me`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setCurrentUserId(data.id);
+            }
+        } catch (e) {
+            console.error("Failed to fetch current user", e);
+        }
+    };
 
     const fetchA2ALogs = useCallback(async () => {
         setLoading(true);
@@ -98,7 +115,8 @@ const A2AScreen = () => {
                     summary: session.participant_names?.join(', ') || "참여자 없음",
                     timeRange: session.details?.proposedTime || "미정",
                     createdAt: session.created_at,
-                    details: session.details
+                    details: session.details,
+                    initiator_user_id: session.initiator_user_id
                 }));
                 setLogs(mappedLogs);
 
@@ -119,6 +137,7 @@ const A2AScreen = () => {
     }, [initialLogId]);
 
     useEffect(() => {
+        fetchCurrentUser();
         fetchA2ALogs();
     }, [fetchA2ALogs]);
 
@@ -587,7 +606,7 @@ const A2AScreen = () => {
                                         <TouchableOpacity onPress={handleRescheduleClick} style={styles.rescheduleButton}>
                                             <Text style={styles.rescheduleButtonText}>재조율</Text>
                                         </TouchableOpacity>
-                                        {selectedLog?.status !== 'COMPLETED' && (
+                                        {selectedLog?.status !== 'COMPLETED' && currentUserId !== selectedLog?.initiator_user_id && (
                                             <TouchableOpacity onPress={handleApproveClick} style={styles.approveButton}>
                                                 <CheckCircle2 size={16} color="white" style={{ marginRight: 6 }} />
                                                 <Text style={styles.approveButtonText}>승인</Text>

@@ -77,6 +77,7 @@ const FriendsScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [isAdding, setIsAdding] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [friendSearchQuery, setFriendSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'friends' | 'requests'>('friends');
 
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
@@ -400,6 +401,8 @@ const FriendsScreen = () => {
               style={styles.mainSearchInput}
               placeholder="친구 검색..."
               placeholderTextColor={COLORS.neutral400}
+              value={friendSearchQuery}
+              onChangeText={setFriendSearchQuery}
             />
           </View>
         )}
@@ -411,7 +414,12 @@ const FriendsScreen = () => {
           <ActivityIndicator size="large" color={COLORS.primaryMain} style={{ marginTop: 20 }} />
         ) : activeTab === 'friends' ? (
           <FlatList
-            data={friends.filter(f => !friendRequests.some(req => req.from_user.id === f.friend.id))}
+            data={friends.filter(f =>
+              !friendRequests.some(req => req.from_user.id === f.friend.id) &&
+              (friendSearchQuery === '' ||
+                f.friend.name.toLowerCase().includes(friendSearchQuery.toLowerCase()) ||
+                f.friend.email.toLowerCase().includes(friendSearchQuery.toLowerCase()))
+            )}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingBottom: 100 }}
             ListHeaderComponent={null}
