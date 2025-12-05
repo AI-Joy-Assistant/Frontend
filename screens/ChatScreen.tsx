@@ -486,27 +486,7 @@ export default function ChatScreen() {
   };
 
   const renderItem = ({ item }: { item: any }) => {
-    const hasProposal = item.proposal && (item.proposal.date || item.proposal.time);
-    const canShowProposal = item.shouldShowProposalCard || (hasProposal && (item.needsApproval || item.isApproved || item.isRejected));
 
-    if (canShowProposal) {
-      const threadId = item.threadId || (item.sessionIds && item.sessionIds.length > 0 ? item.sessionIds[0] : null);
-      const sessionIds = item.sessionIds || [];
-
-      return (
-        <View style={styles.messageItem}>
-          <ProposalCard
-            proposal={item.proposal as Proposal}
-            onApprove={(proposal) => handleScheduleApproval(true, proposal, threadId, sessionIds)}
-            onReject={(proposal) => handleScheduleApproval(false, proposal, threadId, sessionIds)}
-            approvalStatus={item.approvalStatus}
-            isApproved={item.isApproved}
-            isRejected={item.isRejected}
-            timestamp={item.timestamp}
-          />
-        </View>
-      );
-    }
 
     return (
       <View
@@ -639,7 +619,7 @@ export default function ChatScreen() {
                 if (!friendData) return null;
                 return (
                   <View style={styles.selectedFriendChip}>
-                    <Image source={{ uri: friendData.friend.picture || 'https://via.placeholder.com/150' }} style={styles.chipAvatar} />
+                    <Image source={{ uri: friendData.friend.picture || 'https://picsum.photos/150' }} style={styles.chipAvatar} />
                     <Text style={styles.chipName}>{friendData.friend.name}</Text>
                     <TouchableOpacity onPress={() => toggleFriendSelection(item)}>
                       <X size={12} color={COLORS.neutral400} />
@@ -728,7 +708,7 @@ export default function ChatScreen() {
                       >
                         <View style={styles.friendListInfo}>
                           <View style={styles.friendListAvatarContainer}>
-                            <Image source={{ uri: item.friend.picture || 'https://via.placeholder.com/150' }} style={styles.friendListAvatar} />
+                            <Image source={{ uri: item.friend.picture || 'https://picsum.photos/150' }} style={styles.friendListAvatar} />
 
                           </View>
                           <View>
