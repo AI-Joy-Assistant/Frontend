@@ -519,7 +519,11 @@ const A2AScreen = () => {
                                                     </View>
                                                     <View>
                                                         <Text style={styles.infoLabel}>Proposed Time</Text>
-                                                        <Text style={styles.infoValue}>{selectedLog.details.proposedTime}</Text>
+                                                        <Text style={styles.infoValue}>
+                                                            {selectedLog.details.proposedDate
+                                                                ? `${selectedLog.details.proposedDate} ${selectedLog.details.proposedTime}`
+                                                                : selectedLog.details.proposedTime}
+                                                        </Text>
                                                     </View>
                                                 </View>
 

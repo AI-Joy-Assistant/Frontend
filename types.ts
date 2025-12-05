@@ -33,6 +33,7 @@ export interface A2ALog {
     proposer: string;
     proposerAvatar: string;
     purpose: string;
+    proposedDate: string;
     proposedTime: string;
     location: string;
     process: { step: string; description: string }[];
