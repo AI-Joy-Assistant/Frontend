@@ -15,7 +15,7 @@ export default function TimePickerModal({ visible, onClose, onSelect, initialTim
     const [selectedMinute, setSelectedMinute] = useState(initialTime ? initialTime.getMinutes() : 0);
 
     const hours = Array.from({ length: 24 }, (_, i) => i);
-    const minutes = Array.from({ length: 12 }, (_, i) => i * 5); // 0, 5, 10...
+    const minutes = Array.from({ length: 60 }, (_, i) => i); // 0, 1, 2... 59
 
     const handleConfirm = () => {
         const date = new Date();

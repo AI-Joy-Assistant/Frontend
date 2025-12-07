@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+﻿import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,9 @@ import {
   Modal,
   TouchableWithoutFeedback,
   Image,
+  Animated,
+  Dimensions,
+  Keyboard // Fixed: Static import
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -25,8 +28,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "../constants/config";
 import ProposalCard, { Proposal } from "../components/ProposalCard";
 import { LinearGradient } from 'expo-linear-gradient';
-import { Send, Sparkles, X, Search, Check } from 'lucide-react-native';
+import { Send, Sparkles, X, Search, Check, Menu, MoreHorizontal, Edit2, Trash2, Plus, MessageSquare } from 'lucide-react-native';
 import { COLORS } from '../constants/Colors';
+import { BlurView } from 'expo-blur';
 
 interface Friend {
   id: string;
@@ -39,28 +43,58 @@ interface Friend {
   created_at: string;
 }
 
+// --- Types for Chat Management ---
+interface Message {
+  sender: string;
+  text: string;
+  needsApproval?: boolean;
+  proposal?: any;
+  threadId?: string;
+  sessionIds?: string[];
+  approvalStatus?: {
+    approvedBy: string[];
+    totalParticipants: number;
+  };
+  isApproved?: boolean;
+  isRejected?: boolean;
+  allApproved?: boolean;
+  shouldShowProposalCard?: boolean;
+  timestamp?: string;
+  id?: string;
+}
+
+interface ChatSession {
+  id: string;
+  title: string;
+  messages: Message[];
+  updatedAt: Date;
+}
+
 export default function ChatScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const [messages, setMessages] = useState<Array<{
-    sender: string;
-    text: string;
-    needsApproval?: boolean;
-    proposal?: any;
-    threadId?: string;
-    sessionIds?: string[];
-    approvalStatus?: {
-      approvedBy: string[];
-      totalParticipants: number;
-    };
-    isApproved?: boolean;
-    isRejected?: boolean;
-    allApproved?: boolean;
-    shouldShowProposalCard?: boolean;
-    timestamp?: string;
-  }>>([]);
+
+  // --- Chat Session State (from dlrbals#28) ---
+  const [sessions, setSessions] = useState<ChatSession[]>([
+    {
+      id: 'session-1',
+      title: '새 채팅',
+      updatedAt: new Date(),
+      messages: []
+    }
+  ]);
+
+  const [currentSessionId, setCurrentSessionId] = useState<string>('session-1');
+
+  // UI State for Management (from dlrbals#28)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [activeMenuSessionId, setActiveMenuSessionId] = useState<string | null>(null);
+
+  // Modals (from dlrbals#28)
+  const [renameModal, setRenameModal] = useState<{ isOpen: boolean; sessionId: string | null; currentTitle: string }>({ isOpen: false, sessionId: null, currentTitle: '' });
+  const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; sessionId: string | null }>({ isOpen: false, sessionId: null });
+
+  // Chat State (from develop)
   const [input, setInput] = useState("");
-  const scrollRef = useRef<FlatList>(null);
-  const inputRef = useRef<TextInput>(null);
   const [pendingDate, setPendingDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -68,8 +102,13 @@ export default function ChatScreen() {
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [friendSearchQuery, setFriendSearchQuery] = useState('');
+  const [userName, setUserName] = useState("User");
 
   const isAtBottom = useRef(true);
+  const messagesEndRef = useRef<FlatList>(null);
+  const inputRef = useRef<TextInput>(null);
+
+  // --- Helpers ---
 
   const toggleFriendSelection = (id: string) => {
     setSelectedFriends(prev => {
@@ -98,7 +137,6 @@ export default function ChatScreen() {
       console.error('Error fetching friends:', error);
     }
   };
-  const [userName, setUserName] = useState("User");
 
   const fetchUserProfile = async () => {
     try {
@@ -122,38 +160,134 @@ export default function ChatScreen() {
     fetchUserProfile();
   }, []);
 
+  // Fixed formatTime (Safe version)
   const formatTime = (isoString?: string) => {
     if (!isoString) return "";
+    try {
+      let timeValue = isoString;
+      if (!isoString.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(isoString)) {
+        timeValue += 'Z';
+      }
+      const date = new Date(timeValue);
+      if (isNaN(date.getTime())) return "";
 
-    // ISO 문자열에 타임존 정보('Z' 또는 '+/-HH:mm')가 없으면 UTC로 간주하여 'Z' 추가
-    let timeValue = isoString;
-    if (!isoString.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(isoString)) {
-      timeValue += 'Z';
-    }
+      const now = new Date();
+      const isToday = date.getDate() === now.getDate() &&
+        date.getMonth() === now.getMonth() &&
+        date.getFullYear() === now.getFullYear();
 
-    const date = new Date(timeValue);
-    const now = new Date();
+      const timeStr = date.toLocaleTimeString('ko-KR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
 
-    const isToday = date.getDate() === now.getDate() &&
-      date.getMonth() === now.getMonth() &&
-      date.getFullYear() === now.getFullYear();
-
-    const timeStr = date.toLocaleTimeString('ko-KR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
-    });
-
-    if (isToday) {
-      return timeStr;
-    } else {
-      // 날짜 포맷: M월 D일 오전/오후 h:mm
-      const dateStr = `${date.getMonth() + 1}월 ${date.getDate()}일`;
-      return `${dateStr} ${timeStr}`;
+      if (isToday) {
+        return timeStr;
+      } else {
+        const dateStr = `${date.getMonth() + 1}월 ${date.getDate()}일`;
+        return `${dateStr} ${timeStr}`;
+      }
+    } catch (e) {
+      return "";
     }
   };
 
-  // 현재 사용자 ID 가져오기
+  // --- Session Management Logic (from dlrbals#28) ---
+
+  const currentMessages = useMemo(() => {
+    return sessions.find(s => s.id === currentSessionId)?.messages || [];
+  }, [sessions, currentSessionId]);
+
+  const createNewSession = () => {
+    const newId = Date.now().toString();
+    const now = new Date();
+    const newSession: ChatSession = {
+      id: newId,
+      title: `새 채팅`,
+      updatedAt: now,
+      messages: [{
+        id: 'init',
+        sender: 'ai',
+        text: '새로운 대화를 시작합니다. 무엇을 도와드릴까요?',
+        timestamp: now.toISOString()
+      }]
+    };
+    setSessions(prev => [newSession, ...prev]);
+    setCurrentSessionId(newId);
+    setIsSidebarOpen(false);
+  };
+
+  const updateSessionTitle = () => {
+    if (renameModal.sessionId && renameModal.currentTitle.trim()) {
+      setSessions(prev => prev.map(s =>
+        s.id === renameModal.sessionId
+          ? { ...s, title: renameModal.currentTitle }
+          : s
+      ));
+      setRenameModal({ isOpen: false, sessionId: null, currentTitle: '' });
+      setActiveMenuSessionId(null);
+    }
+  };
+
+  const deleteSession = () => {
+    if (deleteModal.sessionId) {
+      const newSessions = sessions.filter(s => s.id !== deleteModal.sessionId);
+      setSessions(newSessions);
+
+      if (currentSessionId === deleteModal.sessionId) {
+        if (newSessions.length > 0) {
+          setCurrentSessionId(newSessions[0].id);
+        } else {
+          const newId = Date.now().toString();
+          const now = new Date();
+          setSessions([{
+            id: newId,
+            title: '새 채팅',
+            updatedAt: now,
+            messages: []
+          }]);
+          setCurrentSessionId(newId);
+        }
+      }
+      setDeleteModal({ isOpen: false, sessionId: null });
+      setActiveMenuSessionId(null);
+    }
+  };
+
+  const groupedSessions = useMemo(() => {
+    const today = new Date();
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const startOfWeek = startOfToday - (today.getDay() * 24 * 60 * 60 * 1000);
+
+    const groups = {
+      today: [] as ChatSession[],
+      thisWeek: [] as ChatSession[],
+      older: [] as ChatSession[]
+    };
+
+    sessions.forEach(session => {
+      const date = new Date(session.updatedAt);
+      const time = isNaN(date.getTime()) ? 0 : date.getTime();
+
+      if (time >= startOfToday) {
+        groups.today.push(session);
+      } else if (time >= startOfWeek) {
+        groups.thisWeek.push(session);
+      } else {
+        groups.older.push(session);
+      }
+    });
+
+    groups.today.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    groups.thisWeek.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    groups.older.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+
+    return groups;
+  }, [sessions]);
+
+  // --- Chat Logic (from develop, adapted to sessions) ---
+
   const getCurrentUserId = async (): Promise<string | null> => {
     try {
       const token = await AsyncStorage.getItem("accessToken");
@@ -178,7 +312,6 @@ export default function ChatScreen() {
     }
   };
 
-  // 채팅 기록 불러오기
   const loadChatHistory = async (showLoadingUI = true) => {
     try {
       if (showLoadingUI) setLoading(true);
@@ -202,42 +335,22 @@ export default function ChatScreen() {
       });
 
       if (res.status === 401) {
-        console.log("인증 토큰 만료됨 - 폴링 중단");
         if (showLoadingUI) setLoading(false);
         await AsyncStorage.removeItem("accessToken");
         return;
       }
 
       if (!res.ok) {
-        console.log("채팅 기록 조회 실패:", res.status);
         if (showLoadingUI) setLoading(false);
         return;
       }
 
       const chatLogs = await res.json();
-
-      const loadedMessages: Array<{
-        sender: string;
-        text: string;
-        needsApproval?: boolean;
-        proposal?: any;
-        threadId?: string;
-        sessionIds?: string[];
-        approvalStatus?: {
-          approvedBy: string[];
-          totalParticipants: number;
-        };
-        isApproved?: boolean;
-        isRejected?: boolean;
-        allApproved?: boolean;
-        shouldShowProposalCard?: boolean;
-        timestamp?: string;
-        id?: string;
-      }> = [];
+      const loadedMessages: Message[] = [];
 
       if (Array.isArray(chatLogs)) {
         chatLogs.forEach((log: any) => {
-          // 사용자 메시지
+          // User Message
           if (log.request_text) {
             if (log.message_type === "schedule_approval_response") {
               const metadata = log.metadata || {};
@@ -268,7 +381,7 @@ export default function ChatScreen() {
               });
             }
           }
-          // AI 응답
+          // AI Response
           if (log.response_text) {
             if (log.message_type === 'schedule_approval') {
               const metadata = log.metadata || {};
@@ -318,9 +431,12 @@ export default function ChatScreen() {
           return timeA - timeB;
         });
 
-        setMessages(loadedMessages);
-      } else {
-        setMessages([]);
+        // Update current session with loaded messages
+        setSessions(prev => prev.map(s =>
+          s.id === currentSessionId
+            ? { ...s, messages: loadedMessages, updatedAt: new Date() }
+            : s
+        ));
       }
 
     } catch (error) {
@@ -337,63 +453,13 @@ export default function ChatScreen() {
         loadChatHistory(false);
       }, 3000);
       return () => clearInterval(interval);
-    }, [currentUserId])
+    }, [currentUserId, currentSessionId])
   );
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
     const paddingToBottom = 100;
     isAtBottom.current = layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
-  };
-
-  const sendMessage = async () => {
-    if (!input.trim()) return;
-    const userText = input;
-    setInput("");
-    // 메시지 전송 후 선택된 친구 초기화 (선택 사항)
-    // setSelectedFriends([]);
-    // 사용자 메시지는 즉시 추가하고 스크롤 내림
-    setMessages((prev) => [...prev, { sender: "user", text: userText, timestamp: new Date().toISOString() }]);
-    isAtBottom.current = true;
-    setTimeout(() => {
-      scrollRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-
-    const token = await AsyncStorage.getItem("accessToken");
-    const res = await fetch(`${API_BASE}/chat/chat`, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: userText,
-        date: pendingDate ?? undefined,
-        selected_friends: selectedFriends.length > 0 ? selectedFriends : undefined
-      }),
-    });
-
-    if (!res.ok) {
-      if (res.status === 401) return;
-      const errorData = await res.json().catch(() => ({ detail: '서버 오류가 발생했습니다.' }));
-      addMessage("system", `❌ 오류: ${errorData.detail || '알 수 없는 오류'}`);
-      return;
-    }
-
-    const response = await res.json();
-    const data = response.data || response;
-
-    const aiResponse = data.ai_response || data.response;
-    const scheduleInfo = data.schedule_info || {};
-    const needsApproval = scheduleInfo.needs_approval || false;
-    const proposal = scheduleInfo.proposal;
-    const threadId = scheduleInfo.thread_id;
-    const sessionIds = scheduleInfo.session_ids || [];
-
-    if (aiResponse) {
-      if (needsApproval && proposal) {
-        addMessage("ai", aiResponse, true, proposal, threadId, sessionIds);
-      } else {
-        addMessage("ai", aiResponse);
-      }
-    }
   };
 
   const addMessage = (
@@ -404,7 +470,8 @@ export default function ChatScreen() {
     threadId?: string,
     sessionIds?: string[]
   ) => {
-    setMessages((prev) => [...prev, {
+    const newMsg: Message = {
+      id: Date.now().toString(),
       sender,
       text,
       needsApproval,
@@ -412,7 +479,91 @@ export default function ChatScreen() {
       threadId,
       sessionIds,
       timestamp: new Date().toISOString()
-    }]);
+    };
+
+    setSessions(prev => prev.map(s =>
+      s.id === currentSessionId
+        ? { ...s, messages: [...s.messages, newMsg], updatedAt: new Date() }
+        : s
+    ));
+  };
+
+  const sendMessage = async () => {
+    if (!input.trim()) return;
+    const userText = input;
+    setInput("");
+
+    // Optimistic update
+    const userMsg: Message = {
+      sender: "user",
+      text: userText,
+      timestamp: new Date().toISOString(),
+      id: Date.now().toString()
+    };
+
+    setSessions(prev => prev.map(s => {
+      if (s.id === currentSessionId) {
+        // Update title if it's new chat
+        const isFirstUserMsg = s.messages.length <= 1;
+        let newTitle = s.title;
+        if (isFirstUserMsg && s.title === '새 채팅') {
+          newTitle = userText.length > 15 ? userText.substring(0, 15) + '...' : userText;
+        }
+        return {
+          ...s,
+          title: newTitle,
+          updatedAt: new Date(),
+          messages: [...s.messages, userMsg]
+        };
+      }
+      return s;
+    }));
+
+    isAtBottom.current = true;
+    setTimeout(() => {
+      messagesEndRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+
+    try {
+      const token = await AsyncStorage.getItem("accessToken");
+      const res = await fetch(`${API_BASE}/chat/chat`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: userText,
+          date: pendingDate ?? undefined,
+          selected_friends: selectedFriends.length > 0 ? selectedFriends : undefined
+        }),
+      });
+
+      if (!res.ok) {
+        // if (res.status === 401) return; // Don't fail silently
+        const errorData = await res.json().catch(() => ({ detail: `서버 오류 (${res.status})` }));
+        addMessage("system", `❌ 오류: ${errorData.detail || '알 수 없는 오류'}`);
+        return;
+      }
+
+      const response = await res.json();
+      const data = response.data || response;
+
+      const aiResponse = data.ai_response || data.response;
+      const scheduleInfo = data.schedule_info || {};
+      const needsApproval = scheduleInfo.needs_approval || false;
+      const proposal = scheduleInfo.proposal;
+      const threadId = scheduleInfo.thread_id;
+      const sessionIds = scheduleInfo.session_ids || [];
+
+      if (aiResponse) {
+        if (needsApproval && proposal) {
+          addMessage("ai", aiResponse, true, proposal, threadId, sessionIds);
+        } else {
+          addMessage("ai", aiResponse);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      addMessage("system", "❌ 메시지 전송 중 오류가 발생했습니다.");
+    }
   };
 
   const handleScheduleApproval = async (approved: boolean, proposal: any, threadId: string, sessionIds: string[]) => {
@@ -442,8 +593,10 @@ export default function ChatScreen() {
 
       const result = await res.json();
 
-      setMessages((prev) =>
-        prev.map((msg) => {
+      setSessions(prev => prev.map(s => {
+        if (s.id !== currentSessionId) return s;
+
+        const updatedMessages = s.messages.map(msg => {
           if (!msg.proposal) return msg;
 
           const matchesThreadId = threadId && msg.threadId === threadId;
@@ -471,8 +624,10 @@ export default function ChatScreen() {
             };
           }
           return msg;
-        })
-      );
+        });
+
+        return { ...s, messages: updatedMessages };
+      }));
 
       if (approved) {
         addMessage("ai", result.message || "일정이 확정되어 모든 참여자 캘린더에 추가되었습니다.");
@@ -485,8 +640,28 @@ export default function ChatScreen() {
     }
   };
 
-  const renderItem = ({ item }: { item: any }) => {
+  const renderItem = ({ item }: { item: Message }) => {
+    const hasProposal = item.proposal && (item.proposal.date || item.proposal.time);
+    const canShowProposal = item.shouldShowProposalCard || (hasProposal && (item.needsApproval || item.isApproved || item.isRejected));
 
+    if (canShowProposal) {
+      const threadId = item.threadId || (item.sessionIds && item.sessionIds.length > 0 ? item.sessionIds[0] : null);
+      const sessionIds = item.sessionIds || [];
+
+      return (
+        <View style={styles.messageItem}>
+          <ProposalCard
+            proposal={item.proposal as Proposal}
+            onApprove={(proposal) => handleScheduleApproval(true, proposal, threadId!, sessionIds)}
+            onReject={(proposal) => handleScheduleApproval(false, proposal, threadId!, sessionIds)}
+            approvalStatus={item.approvalStatus}
+            isApproved={item.isApproved}
+            isRejected={item.isRejected}
+            timestamp={item.timestamp}
+          />
+        </View>
+      );
+    }
 
     return (
       <View
@@ -495,8 +670,6 @@ export default function ChatScreen() {
           item.sender === "user" ? styles.userMessage : styles.aiMessage,
         ]}
       >
-        {/* 👇 AI 로고(아바타) 완전히 제거 */}
-
         <View style={[
           styles.messageBubble,
           item.sender === 'user' ? styles.userBubble : styles.aiBubble
@@ -518,32 +691,29 @@ export default function ChatScreen() {
     );
   };
 
-  // [✅ 추가] 키보드 상태 감지
+  // Keyboard Visibility (Fixed: Static import)
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
 
   useEffect(() => {
     const keyboardShowEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const keyboardHideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
-    const keyboardDidShowListener = import("react-native").then(({ Keyboard }) => {
-      const showSubscription = Keyboard.addListener(keyboardShowEvent, () => {
-        setKeyboardVisible(true);
-      });
-      const hideSubscription = Keyboard.addListener(keyboardHideEvent, () => {
-        setKeyboardVisible(false);
-      });
-
-      return () => {
-        showSubscription.remove();
-        hideSubscription.remove();
-      };
+    const showSubscription = Keyboard.addListener(keyboardShowEvent, () => {
+      setKeyboardVisible(true);
     });
-  }, []);
+    const hideSubscription = Keyboard.addListener(keyboardHideEvent, () => {
+      setKeyboardVisible(false);
+    });
 
-  // ... (existing code)
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* 1. Header (Merged: develop style + dlrbals#28 menu) */}
       <LinearGradient
         colors={[COLORS.primaryLight, COLORS.primaryMain]}
         start={{ x: 0, y: 0 }}
@@ -552,41 +722,143 @@ export default function ChatScreen() {
       >
         <View style={styles.headerDecor} />
         <View style={styles.headerContent}>
-          <View style={styles.headerIconContainer}>
-            <Image
-              source={require('../assets/images/ai agent.png')}
-              style={styles.headerIconImage}
-              resizeMode="contain"
-            />
+          <View style={styles.headerLeft}>
+            <View style={styles.headerIconContainer}>
+              <Image
+                source={require('../assets/images/ai agent.png')}
+                style={styles.headerIconImage}
+                resizeMode="contain"
+              />
+            </View>
+            <View>
+              <Text style={styles.headerTitle}>{userName}님의 비서</Text>
+              <View style={styles.onlineIndicator}>
+                <View style={styles.onlineDot} />
+                <Text style={styles.onlineText}>온라인</Text>
+              </View>
+            </View>
           </View>
-          <View>
-            <Text style={styles.headerTitle}>{userName}님의 비서</Text>
-          </View>
+
+          <TouchableOpacity
+            onPress={() => setIsSidebarOpen(true)}
+            style={styles.menuButton}
+          >
+            <Menu size={24} color="white" />
+          </TouchableOpacity>
         </View>
       </LinearGradient>
 
-      <KeyboardAvoidingView
-        style={styles.chatContainer}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0} // 필요 시 조정
-      >
-        {loading && messages.length === 0 ? (
-          <View style={styles.centerContainer}>
+      {/* 2. Chat Sidebar (Overlay) (from dlrbals#28) */}
+      {isSidebarOpen && (
+        <View style={styles.sidebarOverlay}>
+          <TouchableWithoutFeedback onPress={() => setIsSidebarOpen(false)}>
+            <BlurView intensity={20} style={StyleSheet.absoluteFill} tint="dark" />
+          </TouchableWithoutFeedback>
+
+          <View style={styles.sidebarPanel}>
+            <View style={styles.sidebarHeader}>
+              <Text style={styles.sidebarTitle}>채팅방</Text>
+              <TouchableOpacity
+                onPress={createNewSession}
+                style={styles.newChatButton}
+              >
+                <Plus size={20} color={COLORS.primaryMain} />
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={['today', 'thisWeek', 'older']}
+              keyExtractor={(item) => item}
+              renderItem={({ item: groupKey }) => {
+                const groupItems = groupedSessions[groupKey as keyof typeof groupedSessions];
+                if (groupItems.length === 0) return null;
+
+                let label = '';
+                if (groupKey === 'today') label = '오늘';
+                else if (groupKey === 'thisWeek') label = '이번 주';
+                else label = '이전';
+
+                return (
+                  <View style={styles.sessionGroup}>
+                    <Text style={styles.sessionGroupLabel}>{label}</Text>
+                    {groupItems.map(session => {
+                      const isActive = session.id === currentSessionId;
+                      return (
+                        <TouchableOpacity
+                          key={session.id}
+                          style={[styles.sessionItem, isActive && styles.sessionItemActive]}
+                          onPress={() => {
+                            setCurrentSessionId(session.id);
+                            setIsSidebarOpen(false);
+                          }}
+                        >
+                          <MessageSquare size={16} color={isActive ? COLORS.primaryMain : COLORS.neutral400} style={{ marginRight: 12 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.sessionTitle, isActive && styles.sessionTitleActive]} numberOfLines={1}>
+                              {session.title}
+                            </Text>
+                          </View>
+
+                          <TouchableOpacity
+                            style={styles.sessionOptionButton}
+                            onPress={(e) => {
+                              setActiveMenuSessionId(activeMenuSessionId === session.id ? null : session.id);
+                            }}
+                          >
+                            <MoreHorizontal size={16} color={COLORS.neutral400} />
+                          </TouchableOpacity>
+
+                          {/* Context Menu */}
+                          {activeMenuSessionId === session.id && (
+                            <View style={styles.contextMenu}>
+                              <TouchableOpacity
+                                onPress={() => setRenameModal({ isOpen: true, sessionId: session.id, currentTitle: session.title })}
+                                style={styles.contextMenuItem}
+                              >
+                                <Edit2 size={14} color={COLORS.neutral600} style={{ marginRight: 8 }} />
+                                <Text style={styles.contextMenuText}>이름 변경</Text>
+                              </TouchableOpacity>
+                              <View style={styles.contextMenuDivider} />
+                              <TouchableOpacity
+                                onPress={() => setDeleteModal({ isOpen: true, sessionId: session.id })}
+                                style={styles.contextMenuItem}
+                              >
+                                <Trash2 size={14} color="#EF4444" style={{ marginRight: 8 }} />
+                                <Text style={[styles.contextMenuText, { color: '#EF4444' }]}>삭제</Text>
+                              </TouchableOpacity>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                );
+              }}
+              style={styles.sidebarList}
+            />
+          </View>
+        </View>
+      )}
+
+      {/* 3. Messages Area (from develop) */}
+      <KeyboardAvoidingView style={styles.chatContainer} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        {loading && currentMessages.length === 0 ? (
+          <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={COLORS.primaryMain} />
           </View>
         ) : (
           <FlatList
-            ref={scrollRef}
-            data={messages}
+            ref={messagesEndRef}
+            data={currentMessages}
             keyExtractor={(item, index) => item.id || index.toString()}
             renderItem={renderItem}
-            contentContainerStyle={[styles.messagesContainer, messages.length > 0 && styles.messagesContainerWithContent]}
+            contentContainerStyle={[styles.messagesContainer, currentMessages.length > 0 && styles.messagesContainerWithContent]}
             showsVerticalScrollIndicator={false}
             onScroll={handleScroll}
             scrollEventThrottle={16}
             onContentSizeChange={() => {
-              if (scrollRef.current && messages.length > 0 && isAtBottom.current) {
-                scrollRef.current.scrollToEnd({ animated: false });
+              if (messagesEndRef.current && currentMessages.length > 0 && isAtBottom.current) {
+                messagesEndRef.current.scrollToEnd({ animated: false });
               }
             }}
             ListEmptyComponent={
@@ -659,6 +931,7 @@ export default function ChatScreen() {
 
       <BottomNav activeTab={Tab.CHAT} />
 
+      {/* Friend Selection Modal (from develop) */}
       <Modal
         visible={showFriendModal}
         transparent={true}
@@ -740,6 +1013,75 @@ export default function ChatScreen() {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
+
+      {/* Rename Modal (from dlrbals#28) */}
+      <Modal
+        visible={renameModal.isOpen}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setRenameModal({ isOpen: false, sessionId: null, currentTitle: '' })}
+      >
+        <View style={styles.alertModalOverlay}>
+          <View style={styles.alertModalContent}>
+            <Text style={styles.alertModalTitle}>채팅방 이름 변경</Text>
+            <TextInput
+              value={renameModal.currentTitle}
+              onChangeText={(text) => setRenameModal(prev => ({ ...prev, currentTitle: text }))}
+              style={styles.alertInput}
+              autoFocus
+            />
+            <View style={styles.alertButtonContainer}>
+              <TouchableOpacity
+                onPress={() => setRenameModal({ isOpen: false, sessionId: null, currentTitle: '' })}
+                style={styles.alertButtonCancel}
+              >
+                <Text style={styles.alertButtonCancelText}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={updateSessionTitle}
+                style={styles.alertButtonConfirm}
+              >
+                <Text style={styles.alertButtonConfirmText}>저장</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Modal (from dlrbals#28) */}
+      <Modal
+        visible={deleteModal.isOpen}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setDeleteModal({ isOpen: false, sessionId: null })}
+      >
+        <View style={styles.alertModalOverlay}>
+          <View style={styles.alertModalContent}>
+            <View style={styles.deleteIconContainer}>
+              <Trash2 size={24} color="#EF4444" />
+            </View>
+            <Text style={styles.alertModalTitle}>채팅방 삭제</Text>
+            <Text style={styles.alertModalMessage}>
+              이 채팅방을 삭제하시겠습니까?{"\n"}삭제된 대화 내용은 복구할 수 없습니다.
+            </Text>
+            <View style={styles.alertButtonContainer}>
+              <TouchableOpacity
+                onPress={() => setDeleteModal({ isOpen: false, sessionId: null })}
+                style={styles.alertButtonCancel}
+              >
+                <Text style={styles.alertButtonCancelText}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={deleteSession}
+                style={[styles.alertButtonConfirm, { backgroundColor: '#EF4444' }]}
+              >
+                <Text style={styles.alertButtonConfirmText}>삭제하기</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -750,8 +1092,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.neutralLight,
   },
   header: {
-    paddingTop: 14,
-    paddingBottom: 14,
+    paddingTop: 20,
+    paddingBottom: 24,
     paddingHorizontal: 24,
     borderBottomLeftRadius: 32,
     borderBottomRightRadius: 32,
@@ -776,7 +1118,12 @@ const styles = StyleSheet.create({
   headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     zIndex: 1,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   headerIconContainer: {
     width: 44,
@@ -800,8 +1147,228 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: 'white',
-    marginTop: 4,
   },
+  onlineIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  onlineDot: {
+    width: 8,
+    height: 8,
+    backgroundColor: '#4ADE80',
+    borderRadius: 4,
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
+  onlineText: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  menuButton: {
+    padding: 8,
+    marginRight: -8,
+    borderRadius: 20,
+  },
+
+  // Sidebar
+  sidebarOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 50,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  sidebarPanel: {
+    width: '80%',
+    maxWidth: 320,
+    height: '100%',
+    backgroundColor: 'white',
+    borderTopLeftRadius: 24,
+    borderBottomLeftRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: -4, height: 0 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 16,
+    overflow: 'hidden',
+  },
+  sidebarHeader: {
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.neutral100,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sidebarTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.neutralSlate,
+  },
+  newChatButton: {
+    padding: 8,
+    backgroundColor: COLORS.primaryBg,
+    borderRadius: 20,
+  },
+  sidebarList: {
+    flex: 1,
+    padding: 12,
+  },
+  sessionGroup: {
+    marginBottom: 16,
+  },
+  sessionGroupLabel: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.neutral400,
+    marginBottom: 4,
+    marginLeft: 12,
+  },
+  sessionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 2,
+  },
+  sessionItemActive: {
+    backgroundColor: COLORS.primaryBg,
+  },
+  sessionTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.neutralSlate,
+  },
+  sessionTitleActive: {
+    color: COLORS.primaryMain,
+  },
+  sessionOptionButton: {
+    padding: 6,
+  },
+  contextMenu: {
+    position: 'absolute',
+    right: 40,
+    top: 40,
+    width: 120,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: COLORS.neutral100,
+    zIndex: 100,
+    padding: 4,
+  },
+  contextMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    borderRadius: 8,
+  },
+  contextMenuText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.neutral600,
+  },
+  contextMenuDivider: {
+    height: 1,
+    backgroundColor: COLORS.neutral100,
+    marginVertical: 2,
+  },
+
+  // Alert Modals
+  alertModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  alertModalContent: {
+    width: '100%',
+    maxWidth: 320,
+    backgroundColor: 'white',
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  alertModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.neutralSlate,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  alertModalMessage: {
+    fontSize: 14,
+    color: COLORS.neutral400,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  alertInput: {
+    backgroundColor: COLORS.neutralLight,
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.neutralSlate,
+    marginBottom: 24,
+  },
+  alertButtonContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  alertButtonCancel: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.neutral200,
+    alignItems: 'center',
+  },
+  alertButtonCancelText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.neutral500,
+  },
+  alertButtonConfirm: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.primaryMain,
+    alignItems: 'center',
+    shadowColor: COLORS.primaryMain,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  alertButtonConfirmText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  deleteIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+
   chatContainer: {
     flex: 1,
   },
@@ -823,6 +1390,22 @@ const styles = StyleSheet.create({
   },
   aiMessage: {
     justifyContent: 'flex-start',
+  },
+  aiAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'white',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: COLORS.neutral100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   messageBubble: {
     maxWidth: '75%',
@@ -966,7 +1549,7 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 24,
+    marginHorizontal: 16,
     backgroundColor: COLORS.neutralLight,
     borderRadius: 24,
     padding: 6,
@@ -975,13 +1558,11 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    paddingLeft: 8,
-    paddingRight: 12,
+    paddingHorizontal: 16,
     paddingVertical: 10,
     fontSize: 15,
     color: COLORS.neutralSlate,
     maxHeight: 100,
-    marginRight: 8,
   },
   sendButton: {
     width: 36,
@@ -1004,6 +1585,7 @@ const styles = StyleSheet.create({
   sendButtonText: {
     display: 'none',
   },
+  // Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -1013,19 +1595,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
-    height: '85%',
     paddingBottom: 40,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 20,
+    maxHeight: '80%',
   },
   modalHandle: {
-    width: 48,
-    height: 6,
+    width: 40,
+    height: 4,
     backgroundColor: COLORS.neutral200,
-    borderRadius: 3,
+    borderRadius: 2,
     alignSelf: 'center',
     marginTop: 12,
     marginBottom: 20,
@@ -1033,9 +1610,9 @@ const styles = StyleSheet.create({
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     paddingHorizontal: 24,
-    marginBottom: 20,
+    marginBottom: 24,
   },
   modalTitle: {
     fontSize: 20,
@@ -1044,45 +1621,45 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   modalSubtitle: {
-    fontSize: 13,
-    color: COLORS.neutral500,
+    fontSize: 14,
+    color: COLORS.neutral400,
   },
   modalSearch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.neutralLight,
     marginHorizontal: 24,
-    marginBottom: 20,
-    position: 'relative',
-    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    marginBottom: 24,
   },
   modalSearchIcon: {
-    position: 'absolute',
-    left: 16,
-    zIndex: 1,
+    marginRight: 12,
   },
   modalSearchInput: {
-    backgroundColor: COLORS.neutralLight,
-    borderRadius: 16,
-    paddingLeft: 44,
-    paddingRight: 16,
-    paddingVertical: 14,
+    flex: 1,
     fontSize: 15,
     color: COLORS.neutralSlate,
   },
   friendList: {
-    flex: 1,
     paddingHorizontal: 24,
+    maxHeight: 300,
   },
   friendListItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    marginBottom: 8,
-    backgroundColor: 'transparent',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.neutral100,
   },
   friendListItemSelected: {
     backgroundColor: COLORS.primaryBg,
+    marginHorizontal: -12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderBottomWidth: 0,
   },
   friendListInfo: {
     flexDirection: 'row',
@@ -1090,34 +1667,28 @@ const styles = StyleSheet.create({
   },
   friendListAvatarContainer: {
     position: 'relative',
-    marginRight: 16,
+    marginRight: 12,
   },
   friendListAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: COLORS.neutral100,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.neutral200,
   },
-  statusIndicator: {
+  friendListStatus: {
     position: 'absolute',
     bottom: 0,
     right: 0,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#4ADE80',
     borderWidth: 2,
     borderColor: 'white',
   },
-  statusOnline: {
-    backgroundColor: COLORS.success,
-  },
-  statusOffline: {
-    backgroundColor: COLORS.neutral300,
-  },
   friendListName: {
     fontSize: 15,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: COLORS.neutralSlate,
     marginBottom: 2,
   },
@@ -1129,11 +1700,11 @@ const styles = StyleSheet.create({
     color: COLORS.neutral400,
   },
   checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     borderWidth: 2,
-    borderColor: COLORS.neutral300,
+    borderColor: COLORS.neutral200,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1161,10 +1732,5 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 });
