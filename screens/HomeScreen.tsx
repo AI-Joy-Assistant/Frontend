@@ -60,14 +60,14 @@ export default function HomeScreen() {
     setShowRequest(false);
   };
 
-  const [isCalendarExpanded, setIsCalendarExpanded] = useState(true);
+  const [isCalendarExpanded, setIsCalendarExpanded] = useState(false);
 
   // Schedule State (API Integration)
   const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   // View Mode State
-  const [viewMode, setViewMode] = useState<CalendarViewMode>('STACKED');
+  const [viewMode, setViewMode] = useState<CalendarViewMode>('CONDENSED');
   const [showViewMenu, setShowViewMenu] = useState(false);
 
   // Modal & Edit State
@@ -142,11 +142,14 @@ export default function HomeScreen() {
   };
 
   // State for the currently selected date
-  const [selectedDate, setSelectedDate] = useState('2025-12-01');
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+  });
 
   // State for the visible month in the calendar (Year, Month index 0-11)
-  const [viewYear, setViewYear] = useState(2025);
-  const [viewMonth, setViewMonth] = useState(11); // December (0-indexed)
+  const [viewYear, setViewYear] = useState(() => new Date().getFullYear());
+  const [viewMonth, setViewMonth] = useState(() => new Date().getMonth());
 
   // Today's date string
   const todayStr = useMemo(() => {
@@ -473,17 +476,19 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                 </View>
 
-                <Text style={styles.requestCardTitle}>철수와 저녁 약속</Text>
+                <Text style={styles.requestCardTitle}>새로운 일정이 도착했어요!</Text>
                 <Text style={styles.requestCardSubtitle}>
-                  👤+ 2명 참가  •  2025년 12월 01일 (월)
+                  지민님이 '저녁 식사' 일정을 제안했어요.
                 </Text>
 
-                <TouchableOpacity
-                  onPress={handleViewRequest}
-                  style={styles.viewButton}
-                >
-                  <Text style={styles.viewButtonText}>보기</Text>
-                </TouchableOpacity>
+                <View style={styles.row}>
+                  <TouchableOpacity
+                    style={[styles.viewButton, { flex: 1 }]}
+                    onPress={() => handleViewRequest()}
+                  >
+                    <Text style={styles.viewButtonText}>보기</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           )}
@@ -1283,25 +1288,29 @@ const styles = StyleSheet.create({
   scheduleTimeRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
     marginBottom: 4,
   },
   scheduleTimeText: {
     fontSize: 14,
     color: COLORS.neutral500,
-    marginLeft: 6,
   },
   scheduleDateRange: {
     fontSize: 12,
     color: COLORS.neutral400,
-    marginLeft: 18,
+    marginLeft: 16,
   },
   participantsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.neutral100,
   },
   avatars: {
     flexDirection: 'row',
-    marginRight: 8,
   },
   avatar: {
     width: 24,
@@ -1309,21 +1318,22 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: -8,
     borderWidth: 2,
     borderColor: 'white',
-    marginLeft: -8,
   },
   avatarText: {
     fontSize: 10,
-    color: 'white',
     fontWeight: 'bold',
+    color: 'white',
   },
   participantsCount: {
     fontSize: 12,
-    color: COLORS.neutral500,
+    color: COLORS.neutral400,
   },
   emptyState: {
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 40,
   },
   emptyIconCircle: {
@@ -1347,12 +1357,15 @@ const styles = StyleSheet.create({
   },
   menuContainer: {
     backgroundColor: 'white',
-    borderRadius: 16,
+    borderRadius: 12,
     padding: 8,
     width: 160,
+    position: 'absolute',
+    top: 180,
+    right: 20,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 5,
   },
@@ -1360,7 +1373,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 8,
   },
@@ -1370,11 +1383,11 @@ const styles = StyleSheet.create({
   menuItemLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
   menuItemText: {
     fontSize: 14,
     color: COLORS.neutral600,
-    marginLeft: 10,
   },
   menuItemTextSelected: {
     color: COLORS.primaryMain,
@@ -1382,15 +1395,15 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     flex: 1,
-    justifyContent: 'flex-end',
     backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: 'white',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
-    minHeight: 400,
+    minHeight: '60%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1406,9 +1419,9 @@ const styles = StyleSheet.create({
   modalHeaderRight: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 16,
   },
   deleteButton: {
-    marginRight: 16,
     padding: 4,
   },
   deleteButtonConfirm: {
@@ -1416,14 +1429,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     borderRadius: 20,
+    gap: 6,
   },
   deleteButtonText: {
     color: 'white',
     fontSize: 12,
     fontWeight: '600',
-    marginLeft: 4,
   },
   formContainer: {
     gap: 20,
@@ -1451,26 +1464,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: COLORS.neutral100,
     borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 52,
+    padding: 16,
+    gap: 8,
   },
   inputNoBorder: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 15,
+    fontSize: 16,
     color: COLORS.neutral900,
-    paddingVertical: 12,
   },
   modalButtons: {
     flexDirection: 'row',
-    marginTop: 10,
     gap: 12,
+    marginTop: 20,
   },
   cancelButton: {
     flex: 1,
+    backgroundColor: COLORS.neutral200,
     paddingVertical: 16,
     borderRadius: 12,
-    backgroundColor: COLORS.neutral100,
     alignItems: 'center',
   },
   cancelButtonText: {
@@ -1480,9 +1490,9 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     flex: 1,
+    backgroundColor: COLORS.primaryMain,
     paddingVertical: 16,
     borderRadius: 12,
-    backgroundColor: COLORS.primaryMain,
     alignItems: 'center',
   },
   saveButtonText: {
