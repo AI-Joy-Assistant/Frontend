@@ -6,7 +6,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import Svg, { Path, Circle, Rect, Defs, LinearGradient as SvgLinear, Stop } from 'react-native-svg';
 import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
 import * as Linking from 'expo-linking';
 import { COLORS } from '../constants/Colors';
@@ -115,19 +115,35 @@ const LoginScreen = () => {
                     {/* 로고 + 타이틀 */}
                     <Animated.View entering={FadeInUp.duration(1000)} style={styles.logoContainer}>
                         <View style={styles.logoWrapper}>
-                            {/* 여기 로고가 '다 커진 상태' 느낌으로 고정 */}
-                            <Svg width={80} height={80} viewBox="0 0 100 100">
-                                {/* 왼쪽 머리 */}
-                                <Circle cx="38" cy="32" r="11" fill="#312E81" />
-                                {/* 오른쪽 머리 */}
-                                <Circle cx="62" cy="32" r="11" fill="#818CF8" />
+                            <Svg width={64} height={64} viewBox="0 0 64 64">
+                                <Defs>
+                                    <SvgLinear id="grad1" x1="12" y1="16" x2="28" y2="32">
+                                        <Stop offset="0%" stopColor="#3730A3" />
+                                        <Stop offset="100%" stopColor="#818CF8" />
+                                    </SvgLinear>
+                                    <SvgLinear id="grad2" x1="36" y1="16" x2="52" y2="32">
+                                        <Stop offset="0%" stopColor="#818CF8" />
+                                        <Stop offset="100%" stopColor="#3730A3" />
+                                    </SvgLinear>
+                                    <SvgLinear id="grad3" x1="28" y1="24" x2="36" y2="24">
+                                        <Stop offset="0%" stopColor="#3730A3" />
+                                        <Stop offset="100%" stopColor="#818CF8" />
+                                    </SvgLinear>
+                                    <SvgLinear id="grad4" x1="16" y1="38" x2="48" y2="58">
+                                        <Stop offset="0%" stopColor="#3730A3" />
+                                        <Stop offset="100%" stopColor="#818CF8" />
+                                    </SvgLinear>
+                                </Defs>
 
-                                {/* 목 */}
-                                <Rect x="44" y="42" width="4" height="11" rx={2} fill="#312E81" />
-                                <Rect x="52" y="42" width="4" height="11" rx={2} fill="#312E81" />
+                                <Circle cx="20" cy="24" r="8" fill="url(#grad1)" />
+                                <Circle cx="44" cy="24" r="8" fill="url(#grad2)" />
 
-                                {/* 몸통 */}
-                                <Rect x="30" y="52" width="40" height="26" rx={9} fill="#312E81" />
+                                <Path d="M28 24 L36 24" stroke="url(#grad3)" strokeWidth="3" strokeLinecap="round" />
+
+                                <Rect x="16" y="38" width="32" height="20" rx="4" fill="url(#grad4)" />
+
+                                <Rect x="20" y="34" width="4" height="6" rx="2" fill="#3730A3" />
+                                <Rect x="40" y="34" width="4" height="6" rx="2" fill="#3730A3" />
                             </Svg>
                         </View>
 
@@ -229,8 +245,11 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 24,
-        // 스플래시에서 "다 커진" 느낌을 주기 위해 살짝 확대
-        transform: [{ scale: 1.1 }],
+        elevation: 10,
+    },
+    logoImage: {
+        width: 64,
+        height: 64,
     },
     title: {
         fontSize: 36,

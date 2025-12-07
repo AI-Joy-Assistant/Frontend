@@ -77,6 +77,7 @@ const FriendsScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [isAdding, setIsAdding] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [friendSearchQuery, setFriendSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'friends' | 'requests'>('friends');
 
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
@@ -400,6 +401,8 @@ const FriendsScreen = () => {
               style={styles.mainSearchInput}
               placeholder="친구 검색..."
               placeholderTextColor={COLORS.neutral400}
+              value={friendSearchQuery}
+              onChangeText={setFriendSearchQuery}
             />
           </View>
         )}
@@ -411,52 +414,22 @@ const FriendsScreen = () => {
           <ActivityIndicator size="large" color={COLORS.primaryMain} style={{ marginTop: 20 }} />
         ) : activeTab === 'friends' ? (
           <FlatList
-            data={friends}
+            data={friends.filter(f =>
+              !friendRequests.some(req => req.from_user.id === f.friend.id) &&
+              (friendSearchQuery === '' ||
+                f.friend.name.toLowerCase().includes(friendSearchQuery.toLowerCase()) ||
+                f.friend.email.toLowerCase().includes(friendSearchQuery.toLowerCase()))
+            )}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingBottom: 100 }}
-            ListHeaderComponent={
-              friendRequests.length > 0 ? (
-                <View style={styles.requestsContainer}>
-                  <Text style={styles.sectionTitle}>받은 친구 요청 ({friendRequests.length})</Text>
-                  {friendRequests.map((request) => (
-                    <View key={request.id} style={styles.requestItem}>
-                      <View style={styles.requestInfo}>
-                        <Image
-                          source={{ uri: request.from_user.picture || 'https://via.placeholder.com/150' }}
-                          style={styles.requestAvatar}
-                        />
-                        <View>
-                          <Text style={styles.requestName}>{request.from_user.name}</Text>
-                          <Text style={styles.requestEmail}>{request.from_user.email}</Text>
-                        </View>
-                      </View>
-                      <View style={styles.requestActions}>
-                        <TouchableOpacity
-                          style={styles.acceptButton}
-                          onPress={() => handleAcceptRequest(request.id)}
-                        >
-                          <Text style={styles.acceptButtonText}>수락</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.rejectButton}
-                          onPress={() => handleRejectRequest(request.id)}
-                        >
-                          <Ionicons name="close" size={20} color={COLORS.neutral500} />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ))}
-                  <View style={styles.divider} />
-                </View>
-              ) : null
-            }
+            ListHeaderComponent={null}
             renderItem={({ item }) => (
               <View style={styles.friendItem}>
                 <View style={styles.friendInfo}>
                   <View style={styles.avatarContainer}>
                     <View style={styles.avatarRing}>
                       <Image
-                        source={{ uri: item.friend.picture || 'https://via.placeholder.com/150' }}
+                        source={{ uri: item.friend.picture || 'https://picsum.photos/150' }}
                         style={styles.avatarImage}
                       />
                     </View>
@@ -491,7 +464,7 @@ const FriendsScreen = () => {
                   <View style={styles.avatarContainer}>
                     <View style={styles.avatarRing}>
                       <Image
-                        source={{ uri: item.from_user.picture || 'https://via.placeholder.com/150' }}
+                        source={{ uri: item.from_user.picture || 'https://picsum.photos/150' }}
                         style={styles.avatarImage}
                       />
                     </View>

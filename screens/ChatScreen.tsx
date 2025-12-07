@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+﻿import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -15,7 +15,8 @@ import {
   TouchableWithoutFeedback,
   Image,
   Animated,
-  Dimensions
+  Dimensions,
+  Keyboard // Fixed: Static import
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -72,44 +73,28 @@ interface ChatSession {
 export default function ChatScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
-  // --- Chat Session State ---
+  // --- Chat Session State (from dlrbals#28) ---
   const [sessions, setSessions] = useState<ChatSession[]>([
     {
       id: 'session-1',
-      title: '일정 조율 (기본)',
+      title: '새 채팅',
       updatedAt: new Date(),
-      messages: [
-        {
-          id: '0',
-          sender: 'ai',
-          text: '안녕하세요! 저는 당신의 AI 비서입니다. 일정 조율, 캘린더 확인 등 무엇이든 도와드릴게요.',
-          timestamp: new Date().toISOString()
-        }
-      ]
-    },
-    {
-      id: 'session-2',
-      title: '지난 주 제주도 계획',
-      updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3), // 3 days ago
-      messages: [
-        { id: 'old-1', sender: 'user', text: '제주도 맛집 찾아줘', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString() },
-        { id: 'old-2', sender: 'ai', text: '제주도 맛집 리스트입니다...', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString() }
-      ]
+      messages: []
     }
   ]);
 
   const [currentSessionId, setCurrentSessionId] = useState<string>('session-1');
 
-  // UI State for Management
+  // UI State for Management (from dlrbals#28)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeMenuSessionId, setActiveMenuSessionId] = useState<string | null>(null);
 
-  // Modals
+  // Modals (from dlrbals#28)
   const [renameModal, setRenameModal] = useState<{ isOpen: boolean; sessionId: string | null; currentTitle: string }>({ isOpen: false, sessionId: null, currentTitle: '' });
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; sessionId: string | null }>({ isOpen: false, sessionId: null });
 
+  // Chat State (from develop)
   const [input, setInput] = useState("");
-  // const scrollRef = useRef<FlatList>(null); // Replaced by messagesEndRef
   const [pendingDate, setPendingDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -117,9 +102,13 @@ export default function ChatScreen() {
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [friendSearchQuery, setFriendSearchQuery] = useState('');
+  const [userName, setUserName] = useState("User");
 
   const isAtBottom = useRef(true);
   const messagesEndRef = useRef<FlatList>(null);
+  const inputRef = useRef<TextInput>(null);
+
+  // --- Helpers ---
 
   const toggleFriendSelection = (id: string) => {
     setSelectedFriends(prev => {
@@ -149,21 +138,62 @@ export default function ChatScreen() {
     }
   };
 
-  useEffect(() => {
-    fetchFriends();
-  }, []);
+  const fetchUserProfile = async () => {
+    try {
+      const token = await AsyncStorage.getItem("accessToken");
+      if (!token) return;
 
-  const formatTime = (isoString?: string) => {
-    if (!isoString) return "";
-    const date = new Date(isoString);
-    return date.toLocaleTimeString('ko-KR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
-    });
+      const res = await fetch(`${API_BASE}/auth/me`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUserName(data.name || data.nickname || "User");
+      }
+    } catch (e) {
+      console.error("Failed to fetch user profile", e);
+    }
   };
 
-  // --- Session Management Logic ---
+  useEffect(() => {
+    fetchFriends();
+    fetchUserProfile();
+  }, []);
+
+  // Fixed formatTime (Safe version)
+  const formatTime = (isoString?: string) => {
+    if (!isoString) return "";
+    try {
+      let timeValue = isoString;
+      if (!isoString.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(isoString)) {
+        timeValue += 'Z';
+      }
+      const date = new Date(timeValue);
+      if (isNaN(date.getTime())) return "";
+
+      const now = new Date();
+      const isToday = date.getDate() === now.getDate() &&
+        date.getMonth() === now.getMonth() &&
+        date.getFullYear() === now.getFullYear();
+
+      const timeStr = date.toLocaleTimeString('ko-KR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+
+      if (isToday) {
+        return timeStr;
+      } else {
+        const dateStr = `${date.getMonth() + 1}월 ${date.getDate()}일`;
+        return `${dateStr} ${timeStr}`;
+      }
+    } catch (e) {
+      return "";
+    }
+  };
+
+  // --- Session Management Logic (from dlrbals#28) ---
 
   const currentMessages = useMemo(() => {
     return sessions.find(s => s.id === currentSessionId)?.messages || [];
@@ -237,7 +267,9 @@ export default function ChatScreen() {
     };
 
     sessions.forEach(session => {
-      const time = new Date(session.updatedAt).getTime();
+      const date = new Date(session.updatedAt);
+      const time = isNaN(date.getTime()) ? 0 : date.getTime();
+
       if (time >= startOfToday) {
         groups.today.push(session);
       } else if (time >= startOfWeek) {
@@ -254,7 +286,8 @@ export default function ChatScreen() {
     return groups;
   }, [sessions]);
 
-  // 현재 사용자 ID 가져오기
+  // --- Chat Logic (from develop, adapted to sessions) ---
+
   const getCurrentUserId = async (): Promise<string | null> => {
     try {
       const token = await AsyncStorage.getItem("accessToken");
@@ -279,130 +312,154 @@ export default function ChatScreen() {
     }
   };
 
-  // 채팅 기록 불러오기 (Adapted)
   const loadChatHistory = async (showLoadingUI = true) => {
-    // Note: This logic fetches ALL history. In a session-based UI, we might want to fetch per session.
-    // For now, we will assume the server returns a flat list and we populate the CURRENT session if it's the "default" one,
-    // or we might need to rethink how to map server history to local sessions.
-    // Given the user wants the UI structure, we will prioritize the local session state.
-    // We will comment out the automatic population of 'messages' state since we replaced it with 'sessions'.
-    // If we want to sync, we would need to map thread_id to sessions.
-
-    /* 
-    // Existing logic commented out or adapted to push to current session if empty?
-    // For this task, we will rely on the local session state management as requested by the user's snippet,
-    // but we can keep the AUTH check.
-    */
-
     try {
+      if (showLoadingUI) setLoading(true);
       const token = await AsyncStorage.getItem("accessToken");
-      if (!token) return;
+      if (!token) {
+        if (showLoadingUI) setLoading(false);
+        return;
+      }
 
       const userId = await getCurrentUserId();
       if (userId) {
         setCurrentUserId(userId);
       }
 
-      // If we wanted to fetch history, we would do it here and map to sessions.
-      // For now, we skip overwriting the sessions with flat history to preserve the UI structure.
+      const res = await fetch(`${API_BASE}/chat/history`, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (res.status === 401) {
+        if (showLoadingUI) setLoading(false);
+        await AsyncStorage.removeItem("accessToken");
+        return;
+      }
+
+      if (!res.ok) {
+        if (showLoadingUI) setLoading(false);
+        return;
+      }
+
+      const chatLogs = await res.json();
+      const loadedMessages: Message[] = [];
+
+      if (Array.isArray(chatLogs)) {
+        chatLogs.forEach((log: any) => {
+          // User Message
+          if (log.request_text) {
+            if (log.message_type === "schedule_approval_response") {
+              const metadata = log.metadata || {};
+              const approved = metadata.approved;
+              const proposal = metadata.proposal || {};
+
+              if (approved) {
+                loadedMessages.push({
+                  sender: "user",
+                  text: log.request_text,
+                  timestamp: log.created_at,
+                });
+              } else {
+                const proposalText = proposal.date && proposal.time
+                  ? `${proposal.date} ${proposal.time} 일정을 거절했습니다.`
+                  : "일정을 거절했습니다.";
+                loadedMessages.push({
+                  sender: "user",
+                  text: proposalText,
+                  timestamp: log.created_at,
+                });
+              }
+            } else {
+              loadedMessages.push({
+                sender: "user",
+                text: log.request_text,
+                timestamp: log.created_at,
+              });
+            }
+          }
+          // AI Response
+          if (log.response_text) {
+            if (log.message_type === 'schedule_approval') {
+              const metadata = log.metadata || {};
+              const approvedByList = metadata.approved_by_list || [];
+              if (metadata.approved_by && !approvedByList.includes(metadata.approved_by)) {
+                approvedByList.push(metadata.approved_by);
+              }
+              const currentUserApproved = currentUserId && approvedByList.includes(currentUserId);
+              const allApproved = metadata.all_approved === true;
+
+              const isRejected = !!metadata.rejected_by || metadata.status === 'rejected';
+              const needsApproval = !currentUserApproved && !isRejected && !allApproved;
+
+              loadedMessages.push({
+                sender: "ai",
+                text: log.response_text,
+                needsApproval: needsApproval,
+                proposal: metadata.proposal,
+                threadId: metadata.thread_id,
+                sessionIds: metadata.session_ids || [],
+                approvalStatus: {
+                  approvedBy: approvedByList,
+                  totalParticipants: metadata.proposal?.participants?.length || 2
+                },
+                isApproved: currentUserApproved || allApproved,
+                isRejected: isRejected,
+                allApproved: allApproved,
+                shouldShowProposalCard: true,
+                timestamp: log.created_at,
+                id: log.id
+              });
+            }
+            else {
+              loadedMessages.push({
+                sender: "ai",
+                text: log.response_text,
+                timestamp: log.created_at,
+                id: log.id
+              });
+            }
+          }
+        });
+
+        loadedMessages.sort((a, b) => {
+          const timeA = new Date(a.timestamp || 0).getTime();
+          const timeB = new Date(b.timestamp || 0).getTime();
+          return timeA - timeB;
+        });
+
+        // Update current session with loaded messages
+        setSessions(prev => prev.map(s =>
+          s.id === currentSessionId
+            ? { ...s, messages: loadedMessages, updatedAt: new Date() }
+            : s
+        ));
+      }
 
     } catch (error) {
       console.error("채팅 기록 불러오기 오류:", error);
+    } finally {
+      if (showLoadingUI) setLoading(false);
     }
   };
 
   useFocusEffect(
     React.useCallback(() => {
-      loadChatHistory(false); // Just check auth/user id
-    }, [currentUserId])
+      loadChatHistory(true);
+      const interval = setInterval(() => {
+        loadChatHistory(false);
+      }, 3000);
+      return () => clearInterval(interval);
+    }, [currentUserId, currentSessionId])
   );
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
     const paddingToBottom = 100;
     isAtBottom.current = layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
-  };
-
-  // 메시지 전송
-  const handleSend = async () => {
-    if (!input.trim()) return;
-
-    const now = new Date();
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      sender: 'user',
-      text: input,
-      timestamp: now.toISOString()
-    };
-
-    // Update Session
-    setSessions(prev => prev.map(s => {
-      if (s.id === currentSessionId) {
-        const isFirstUserMsg = s.messages.length <= 1;
-        let newTitle = s.title;
-        if (isFirstUserMsg && s.title === '새 채팅') {
-          newTitle = input.length > 15 ? input.substring(0, 15) + '...' : input;
-        }
-
-        return {
-          ...s,
-          title: newTitle,
-          updatedAt: now,
-          messages: [...s.messages, userMsg]
-        };
-      }
-      return s;
-    }));
-
-    const userInput = input;
-    setInput('');
-    setLoading(true);
-    isAtBottom.current = true;
-
-    // Scroll to bottom
-    setTimeout(() => {
-      messagesEndRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-
-    try {
-      const token = await AsyncStorage.getItem("accessToken");
-      const res = await fetch(`${API_BASE}/chat/chat`, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userInput, date: pendingDate ?? undefined }),
-      });
-
-      if (!res.ok) {
-        if (res.status === 401) return;
-        const errorData = await res.json().catch(() => ({ detail: '서버 오류가 발생했습니다.' }));
-        addMessage("system", `❌ 오류: ${errorData.detail || '알 수 없는 오류'}`);
-        return;
-      }
-
-      const response = await res.json();
-      const data = response.data || response;
-
-      const aiResponse = data.ai_response || data.response;
-      const scheduleInfo = data.schedule_info || {};
-      const needsApproval = scheduleInfo.needs_approval || false;
-      const proposal = scheduleInfo.proposal;
-      const threadId = scheduleInfo.thread_id;
-      const sessionIds = scheduleInfo.session_ids || [];
-
-      if (aiResponse) {
-        if (needsApproval && proposal) {
-          addMessage("ai", aiResponse, true, proposal, threadId, sessionIds);
-        } else {
-          addMessage("ai", aiResponse);
-        }
-      }
-
-    } catch (e) {
-      console.error(e);
-      addMessage("system", "❌ 메시지 전송 중 오류가 발생했습니다.");
-    } finally {
-      setLoading(false);
-    }
   };
 
   const addMessage = (
@@ -431,7 +488,84 @@ export default function ChatScreen() {
     ));
   };
 
-  // 승인 처리
+  const sendMessage = async () => {
+    if (!input.trim()) return;
+    const userText = input;
+    setInput("");
+
+    // Optimistic update
+    const userMsg: Message = {
+      sender: "user",
+      text: userText,
+      timestamp: new Date().toISOString(),
+      id: Date.now().toString()
+    };
+
+    setSessions(prev => prev.map(s => {
+      if (s.id === currentSessionId) {
+        // Update title if it's new chat
+        const isFirstUserMsg = s.messages.length <= 1;
+        let newTitle = s.title;
+        if (isFirstUserMsg && s.title === '새 채팅') {
+          newTitle = userText.length > 15 ? userText.substring(0, 15) + '...' : userText;
+        }
+        return {
+          ...s,
+          title: newTitle,
+          updatedAt: new Date(),
+          messages: [...s.messages, userMsg]
+        };
+      }
+      return s;
+    }));
+
+    isAtBottom.current = true;
+    setTimeout(() => {
+      messagesEndRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+
+    try {
+      const token = await AsyncStorage.getItem("accessToken");
+      const res = await fetch(`${API_BASE}/chat/chat`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: userText,
+          date: pendingDate ?? undefined,
+          selected_friends: selectedFriends.length > 0 ? selectedFriends : undefined
+        }),
+      });
+
+      if (!res.ok) {
+        // if (res.status === 401) return; // Don't fail silently
+        const errorData = await res.json().catch(() => ({ detail: `서버 오류 (${res.status})` }));
+        addMessage("system", `❌ 오류: ${errorData.detail || '알 수 없는 오류'}`);
+        return;
+      }
+
+      const response = await res.json();
+      const data = response.data || response;
+
+      const aiResponse = data.ai_response || data.response;
+      const scheduleInfo = data.schedule_info || {};
+      const needsApproval = scheduleInfo.needs_approval || false;
+      const proposal = scheduleInfo.proposal;
+      const threadId = scheduleInfo.thread_id;
+      const sessionIds = scheduleInfo.session_ids || [];
+
+      if (aiResponse) {
+        if (needsApproval && proposal) {
+          addMessage("ai", aiResponse, true, proposal, threadId, sessionIds);
+        } else {
+          addMessage("ai", aiResponse);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      addMessage("system", "❌ 메시지 전송 중 오류가 발생했습니다.");
+    }
+  };
+
   const handleScheduleApproval = async (approved: boolean, proposal: any, threadId: string, sessionIds: string[]) => {
     try {
       const token = await AsyncStorage.getItem("accessToken");
@@ -536,11 +670,6 @@ export default function ChatScreen() {
           item.sender === "user" ? styles.userMessage : styles.aiMessage,
         ]}
       >
-        {item.sender === 'ai' && (
-          <View style={styles.aiAvatar}>
-            <Sparkles size={14} color={COLORS.primaryMain} />
-          </View>
-        )}
         <View style={[
           styles.messageBubble,
           item.sender === 'user' ? styles.userBubble : styles.aiBubble
@@ -562,9 +691,29 @@ export default function ChatScreen() {
     );
   };
 
+  // Keyboard Visibility (Fixed: Static import)
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const keyboardShowEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const keyboardHideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSubscription = Keyboard.addListener(keyboardShowEvent, () => {
+      setKeyboardVisible(true);
+    });
+    const hideSubscription = Keyboard.addListener(keyboardHideEvent, () => {
+      setKeyboardVisible(false);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
   return (
     <SafeAreaView style={styles.container}>
-      {/* 1. Header */}
+      {/* 1. Header (Merged: develop style + dlrbals#28 menu) */}
       <LinearGradient
         colors={[COLORS.primaryLight, COLORS.primaryMain]}
         start={{ x: 0, y: 0 }}
@@ -575,12 +724,14 @@ export default function ChatScreen() {
         <View style={styles.headerContent}>
           <View style={styles.headerLeft}>
             <View style={styles.headerIconContainer}>
-              <Sparkles size={20} color={COLORS.primaryMain} />
+              <Image
+                source={require('../assets/images/ai agent.png')}
+                style={styles.headerIconImage}
+                resizeMode="contain"
+              />
             </View>
             <View>
-              <Text style={styles.headerTitle}>
-                {sessions.find(s => s.id === currentSessionId)?.title || '내 AI 비서'}
-              </Text>
+              <Text style={styles.headerTitle}>{userName}님의 비서</Text>
               <View style={styles.onlineIndicator}>
                 <View style={styles.onlineDot} />
                 <Text style={styles.onlineText}>온라인</Text>
@@ -597,7 +748,7 @@ export default function ChatScreen() {
         </View>
       </LinearGradient>
 
-      {/* 2. Chat Sidebar (Overlay) */}
+      {/* 2. Chat Sidebar (Overlay) (from dlrbals#28) */}
       {isSidebarOpen && (
         <View style={styles.sidebarOverlay}>
           <TouchableWithoutFeedback onPress={() => setIsSidebarOpen(false)}>
@@ -689,7 +840,7 @@ export default function ChatScreen() {
         </View>
       )}
 
-      {/* 3. Messages Area */}
+      {/* 3. Messages Area (from develop) */}
       <KeyboardAvoidingView style={styles.chatContainer} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         {loading && currentMessages.length === 0 ? (
           <View style={styles.loadingContainer}>
@@ -713,11 +864,14 @@ export default function ChatScreen() {
             ListEmptyComponent={
               <View style={styles.emptyContainer}><Text style={styles.emptyText}>아직 대화가 없습니다.</Text></View>
             }
-            style={{ flexGrow: 1 }}
+            style={{ flex: 1 }}
           />
         )}
 
-        <View style={styles.inputWrapper}>
+        <View style={[
+          styles.inputWrapper,
+          { paddingBottom: isKeyboardVisible ? 10 : (Platform.OS === 'ios' ? 90 : 80) }
+        ]}>
           {/* Friend Selection Area */}
           <View style={styles.friendSelectionArea}>
             <TouchableOpacity
@@ -737,7 +891,7 @@ export default function ChatScreen() {
                 if (!friendData) return null;
                 return (
                   <View style={styles.selectedFriendChip}>
-                    <Image source={{ uri: friendData.friend.picture || 'https://via.placeholder.com/150' }} style={styles.chipAvatar} />
+                    <Image source={{ uri: friendData.friend.picture || 'https://picsum.photos/150' }} style={styles.chipAvatar} />
                     <Text style={styles.chipName}>{friendData.friend.name}</Text>
                     <TouchableOpacity onPress={() => toggleFriendSelection(item)}>
                       <X size={12} color={COLORS.neutral400} />
@@ -751,14 +905,21 @@ export default function ChatScreen() {
 
           <View style={styles.inputContainer}>
             <TextInput
+              ref={inputRef}
               value={input}
               onChangeText={setInput}
               placeholder="AI에게 메시지 보내기..."
               placeholderTextColor={COLORS.neutral400}
-              style={styles.input}
+              style={[
+                styles.input,
+                // @ts-ignore
+                Platform.OS === 'web' && { outlineStyle: 'none' }
+              ]}
+              underlineColorAndroid="transparent"
+              selectionColor={COLORS.primaryMain}
             />
             <TouchableOpacity
-              onPress={handleSend}
+              onPress={sendMessage}
               disabled={!input.trim()}
               style={[styles.sendButton, !input.trim() && styles.sendButtonDisabled]}
             >
@@ -770,7 +931,7 @@ export default function ChatScreen() {
 
       <BottomNav activeTab={Tab.CHAT} />
 
-      {/* Friend Selection Modal */}
+      {/* Friend Selection Modal (from develop) */}
       <Modal
         visible={showFriendModal}
         transparent={true}
@@ -820,7 +981,7 @@ export default function ChatScreen() {
                       >
                         <View style={styles.friendListInfo}>
                           <View style={styles.friendListAvatarContainer}>
-                            <Image source={{ uri: item.friend.picture || 'https://via.placeholder.com/150' }} style={styles.friendListAvatar} />
+                            <Image source={{ uri: item.friend.picture || 'https://picsum.photos/150' }} style={styles.friendListAvatar} />
 
                           </View>
                           <View>
@@ -853,7 +1014,7 @@ export default function ChatScreen() {
         </TouchableWithoutFeedback>
       </Modal>
 
-      {/* Rename Modal */}
+      {/* Rename Modal (from dlrbals#28) */}
       <Modal
         visible={renameModal.isOpen}
         transparent={true}
@@ -887,7 +1048,7 @@ export default function ChatScreen() {
         </View>
       </Modal>
 
-      {/* Delete Modal */}
+      {/* Delete Modal (from dlrbals#28) */}
       <Modal
         visible={deleteModal.isOpen}
         transparent={true}
@@ -977,6 +1138,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+  },
+  headerIconImage: {
+    width: 26,
+    height: 26,
   },
   headerTitle: {
     fontSize: 18,

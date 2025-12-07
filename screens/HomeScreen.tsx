@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ChevronLeft,
   ChevronRight,
@@ -43,22 +45,83 @@ import { calendarService } from '../services/calendarService';
 import { CreateEventRequest } from '../types/calendar';
 import DatePickerModal from '../components/DatePickerModal';
 import TimePickerModal from '../components/TimePickerModal';
+import { API_BASE } from '../constants/config';
+
+// Pending 요청 타입 정의
+interface PendingRequest {
+  id: string;
+  thread_id: string;
+  title: string;
+  summary?: string;
+  initiator_id: string;
+  initiator_name: string;
+  initiator_avatar: string;
+  participant_count: number;
+  proposed_date?: string;
+  proposed_time?: string;
+  status: string;
+  created_at: string;
+}
 
 type CalendarViewMode = 'CONDENSED' | 'STACKED' | 'DETAILED';
 
 export default function HomeScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
-  // Mock Props/State for Request Card
-  const [showRequest, setShowRequest] = useState(true);
+  // Pending 요청 카드 State
+  const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
+  const [dismissedRequestIds, setDismissedRequestIds] = useState<string[]>([]);
 
   const onNavigateToA2A = (id: string) => {
     navigation.navigate('A2A', { initialLogId: id });
   };
 
-  const onDismissRequest = () => {
-    setShowRequest(false);
+  const onDismissRequest = (requestId: string) => {
+    setDismissedRequestIds(prev => [...prev, requestId]);
   };
+
+  // Pending 요청 API 호출
+  const fetchPendingRequests = async () => {
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      console.log('📋 Pending 요청 조회 시작, token:', token ? '있음' : '없음');
+      if (!token) return;
+
+      const response = await fetch(`${API_BASE}/a2a/pending-requests`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      console.log('📋 API 응답 상태:', response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('📋 Pending 요청 데이터:', data);
+        setPendingRequests(data.requests || []);
+      } else {
+        const errorText = await response.text();
+        console.error('📋 API 에러:', errorText);
+      }
+    } catch (error) {
+      console.error('Pending 요청 조회 실패:', error);
+    }
+  };
+
+  // 화면에 포커스될 때마다 요청 새로고침
+  useFocusEffect(
+    useCallback(() => {
+      fetchPendingRequests();
+    }, [])
+  );
+
+  // 표시할 요청 필터링 (dismissed 제외, 첫 번째만 표시)
+  const visibleRequest = pendingRequests.find(req => !dismissedRequestIds.includes(req.id));
+  const showRequest = !!visibleRequest;
+
+  console.log('📋 visibleRequest:', visibleRequest);
+  console.log('📋 showRequest:', showRequest);
 
   const [isCalendarExpanded, setIsCalendarExpanded] = useState(false);
 
@@ -158,8 +221,10 @@ export default function HomeScreen() {
   }, []);
 
   const handleViewRequest = () => {
-    onDismissRequest();
-    onNavigateToA2A('1');
+    if (visibleRequest) {
+      onDismissRequest(visibleRequest.id);
+      onNavigateToA2A(visibleRequest.thread_id);
+    }
   };
 
   // Helper to format date string YYYY-MM-DD
@@ -449,6 +514,9 @@ export default function HomeScreen() {
     }
   };
 
+  // 필터링된 요청 목록 (dismissed 제외)
+  const visibleRequests = pendingRequests.filter(req => !dismissedRequestIds.includes(req.id));
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.contentContainer}>
@@ -457,9 +525,9 @@ export default function HomeScreen() {
           contentContainerStyle={{ paddingBottom: 100 }}
           showsVerticalScrollIndicator={false}
         >
-          {/* Request Card  */}
-          {showRequest && (
-            <View style={styles.requestCardContainer}>
+          {/* Request Cards - 모든 요청 표시 */}
+          {visibleRequests.length > 0 && visibleRequests.map((request) => (
+            <View key={request.id} style={styles.requestCardContainer}>
               <View style={styles.requestCard}>
                 <View style={styles.requestCardBgCircle} />
 
@@ -471,32 +539,33 @@ export default function HomeScreen() {
                     <Text style={styles.requestCardBadgeText}>새로운 일정 요청</Text>
                     <View style={styles.redDot} />
                   </View>
-                  <TouchableOpacity onPress={onDismissRequest}>
+                  <TouchableOpacity onPress={() => onDismissRequest(request.id)}>
                     <X size={18} color={COLORS.neutral300} />
                   </TouchableOpacity>
                 </View>
 
-                <Text style={styles.requestCardTitle}>새로운 일정이 도착했어요!</Text>
+                <Text style={styles.requestCardTitle}>{request.title}</Text>
                 <Text style={styles.requestCardSubtitle}>
-                  지민님이 '저녁 식사' 일정을 제안했어요.
+                  👤 {request.initiator_name}님 요청  •  {request.participant_count}명 참가
                 </Text>
 
-                <View style={styles.row}>
-                  <TouchableOpacity
-                    style={[styles.viewButton, { flex: 1 }]}
-                    onPress={() => handleViewRequest()}
-                  >
-                    <Text style={styles.viewButtonText}>보기</Text>
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    onDismissRequest(request.id);
+                    onNavigateToA2A(request.id);  // session ID로 A2A 화면 이동
+                  }}
+                  style={styles.viewButton}
+                >
+                  <Text style={styles.viewButtonText}>보기</Text>
+                </TouchableOpacity>
               </View>
             </View>
-          )}
+          ))}
 
           {/* Calendar Section  */}
           <View style={[
             styles.calendarContainer,
-            showRequest ? styles.calendarContainerRounded : styles.calendarContainerTopRounded
+            styles.calendarContainerRounded
           ]}>
 
             {/* Calendar Header */}
@@ -913,6 +982,7 @@ export default function HomeScreen() {
                         mode="time"
                         display="default"
                         onChange={onStartTimeChange}
+                        minuteInterval={1}
                       />
                     )
                   )}
@@ -940,6 +1010,7 @@ export default function HomeScreen() {
                         mode="time"
                         display="default"
                         onChange={onEndTimeChange}
+                        minuteInterval={1}
                       />
                     )
                   )}
@@ -984,7 +1055,6 @@ const styles = StyleSheet.create({
   requestCardContainer: {
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 10,
   },
   requestCard: {
     backgroundColor: 'white',
@@ -1066,6 +1136,7 @@ const styles = StyleSheet.create({
   calendarContainer: {
     backgroundColor: 'white',
     marginHorizontal: 20,
+    marginTop: 20,
     marginBottom: 20,
     padding: 20,
     shadowColor: "#000",
