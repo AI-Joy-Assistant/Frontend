@@ -82,7 +82,7 @@ const A2AScreen = () => {
     const [isCalendarLoading, setIsCalendarLoading] = useState(false);
     const [selectedNewTime, setSelectedNewTime] = useState<Date | null>(null);
     const [showTimePicker, setShowTimePicker] = useState(false);
-    const [showDetailsModal, setShowDetailsModal] = useState(false);
+    const [confirmationType, setConfirmationType] = useState<'official' | 'reschedule'>('official');
 
     // Restore deleted states
     const [preferredTime, setPreferredTime] = useState('');
@@ -314,9 +314,37 @@ const A2AScreen = () => {
             });
 
             if (response.ok) {
+                // 새로운 날짜/시간 계산
+                const newDate = selectedDate || selectedLog?.details?.proposedDate || '';
+                const newTime = selectedNewTime
+                    ? selectedNewTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    : (selectedLog?.details?.proposedTime || '');
+                const newTimeRange = `${newDate} ${newTime}`.trim();
+
+                // 선택된 로그의 상세 정보를 새로운 날짜/시간으로 업데이트
+                if (selectedLog) {
+                    const updatedLog = {
+                        ...selectedLog,
+                        details: {
+                            ...selectedLog.details,
+                            proposedDate: newDate,
+                            proposedTime: newTime
+                        },
+                        timeRange: newTimeRange
+                    };
+                    setSelectedLog(updatedLog as typeof selectedLog);
+
+                    // 로그 목록도 즉시 업데이트
+                    setLogs(prevLogs => prevLogs.map(log =>
+                        log.id === selectedLog.id
+                            ? { ...log, timeRange: newTimeRange, details: { ...(log.details || {}), proposedDate: newDate, proposedTime: newTime } as typeof log.details }
+                            : log
+                    ));
+                }
+                setConfirmationType('reschedule');
                 setIsConfirmed(true);
                 setIsRescheduling(false);
-                fetchA2ALogs();
+                fetchA2ALogs(false);
             } else {
                 console.error("Reschedule failed");
                 // TODO: Show error toast
@@ -344,13 +372,13 @@ const A2AScreen = () => {
         }
     };
 
-    const fetchA2ALogs = useCallback(async () => {
-        setLoading(true);
+    const fetchA2ALogs = useCallback(async (showLoading = true) => {
+        if (showLoading) setLoading(true);
         try {
             const token = await AsyncStorage.getItem('accessToken');
             if (!token) {
                 console.error("No access token found");
-                setLoading(false);
+                if (showLoading) setLoading(false);
                 return;
             }
 
@@ -369,48 +397,54 @@ const A2AScreen = () => {
                     status: session.status === 'completed' ? 'COMPLETED' : 'IN_PROGRESS',
                     // [✅ 수정] 요약에는 참여자 이름만 표시 (이모지 옆 텍스트)
                     summary: session.participant_names?.join(', ') || "참여자 없음",
-                    timeRange: session.details?.proposedTime || "미정",
+                    timeRange: (session.details?.proposedDate ? `${session.details.proposedDate} ` : '') + (session.details?.proposedTime || "미정"),
                     createdAt: session.created_at,
                     details: session.details,
                     initiator_user_id: session.initiator_user_id
                 }));
                 setLogs(mappedLogs);
 
-                if (initialLogId) {
-                    const targetLog = mappedLogs.find(l => l.id === initialLogId);
-                    if (targetLog) {
-                        handleLogClick(targetLog);
-                    }
-                }
             } else {
                 console.error("Failed to fetch sessions:", response.status);
             }
         } catch (error) {
             console.error("Error fetching A2A logs:", error);
         } finally {
-            setLoading(false);
+            if (showLoading) setLoading(false);
         }
-    }, [initialLogId]);
+    }, []);
 
     useEffect(() => {
         fetchCurrentUser();
         fetchA2ALogs();
     }, [fetchA2ALogs]);
 
+    const [initialCheckDone, setInitialCheckDone] = useState(false);
+
+    useEffect(() => {
+        if (initialLogId && logs.length > 0 && !selectedLog && !initialCheckDone) {
+            const targetLog = logs.find(l => l.id === initialLogId);
+            if (targetLog) {
+                handleLogClick(targetLog);
+                setInitialCheckDone(true);
+            }
+        }
+    }, [initialLogId, logs, selectedLog, initialCheckDone]);
     const handleClose = () => {
-        setShowDetailsModal(false);
+        setSelectedLog(null);
+        setIsRescheduling(false);
+        setIsConfirmed(false);
+        setSelectedReason(null);
+        setIsProcessExpanded(false);
+        setManualInput('');
+        setPreferredTime('');
     };
 
     const handleLogClick = async (log: A2ALog) => {
-        // Reset and initialize state for new log
         setSelectedLog(log);
         setIsProcessExpanded(false);
         setIsConfirmed(false);
         setIsRescheduling(false);
-        setSelectedReason(null);
-        setManualInput('');
-        setPreferredTime('');
-        setShowDetailsModal(true);
 
         try {
             const token = await AsyncStorage.getItem('accessToken');
@@ -462,6 +496,7 @@ const A2AScreen = () => {
                 // 전원 승인 완료 시에만 It's Official 화면 표시
                 if (data.all_approved) {
                     console.log('🔵 전원 승인 완료 - It\'s Official 화면 표시');
+                    setConfirmationType('official');
                     setIsConfirmed(true);
                     // It's Official 화면을 유지하기 위해 fetchA2ALogs를 호출하지 않음
                 } else {
@@ -661,8 +696,9 @@ const A2AScreen = () => {
 
             <BottomNav activeTab={Tab.A2A} />
 
+            {/* Modal */}
             <Modal
-                visible={showDetailsModal}
+                visible={!!selectedLog}
                 transparent
                 animationType="slide"
                 onRequestClose={handleClose}
@@ -681,9 +717,13 @@ const A2AScreen = () => {
                                     <CalendarCheck size={40} color={COLORS.primaryDark} />
                                 </View>
 
-                                <Text style={styles.confirmTitle}>It's Official!</Text>
+                                <Text style={styles.confirmTitle}>
+                                    {confirmationType === 'official' ? "It's Official!" : "Request Sent!"}
+                                </Text>
                                 <Text style={styles.confirmDesc}>
-                                    "{selectedLog?.title}" 일정이 캘린더에 추가되었으며,{'\n'}참가자들에게 초대장이 발송되었습니다.
+                                    {confirmationType === 'official'
+                                        ? `"${selectedLog?.title}" 일정이 캘린더에 추가되었으며,\n참가자들에게 초대장이 발송되었습니다.`
+                                        : `"${selectedLog?.title}" 일정의 재조율 요청이 전송되었습니다.\n상대방의 수락을 기다려주세요.`}
                                 </Text>
 
                                 {/* Ticket Card */}
@@ -696,13 +736,17 @@ const A2AScreen = () => {
                                         <View>
                                             <Text style={styles.ticketLabel}>DATE</Text>
                                             <Text style={styles.ticketValue}>
-                                                {selectedLog?.details?.proposedTime?.split(' ')[0] || selectedLog?.timeRange?.split(' ')[0] || '날짜 미정'}
+                                                {confirmationType === 'reschedule' && selectedDate
+                                                    ? selectedDate
+                                                    : (selectedLog?.details?.proposedDate || selectedLog?.details?.proposedTime?.split(' ')[0] || '날짜 미정')}
                                             </Text>
                                         </View>
                                         <View style={{ alignItems: 'flex-end' }}>
                                             <Text style={styles.ticketLabel}>TIME</Text>
                                             <Text style={[styles.ticketValue, { color: COLORS.primaryMain }]}>
-                                                {selectedLog?.details?.proposedTime?.split(' ').slice(1).join(' ') || selectedLog?.timeRange?.split(' ').slice(1).join(' ') || '시간 미정'}
+                                                {confirmationType === 'reschedule' && selectedNewTime
+                                                    ? selectedNewTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                                    : (selectedLog?.details?.proposedTime?.match(/\d{1,2}시/)?.[0] || selectedLog?.details?.proposedTime || '시간 미정')}
                                             </Text>
                                         </View>
                                     </View>

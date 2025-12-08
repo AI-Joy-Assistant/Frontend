@@ -545,6 +545,12 @@ export default function HomeScreen() {
                 </View>
 
                 <Text style={styles.requestCardTitle}>{request.title}</Text>
+
+                {request.proposed_date && (
+                  <Text style={[styles.requestCardSubtitle, { marginTop: 4, color: COLORS.primaryMain, fontWeight: '600' }]}>
+                    📅 {request.proposed_date} {request.proposed_time}
+                  </Text>
+                )}
                 <Text style={styles.requestCardSubtitle}>
                   👤 {request.initiator_name}님 요청  •  {request.participant_count}명 참가
                 </Text>
