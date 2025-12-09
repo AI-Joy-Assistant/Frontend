@@ -26,7 +26,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
         { id: Tab.HOME, label: 'Home', icon: 'home', route: 'Home' },
         { id: Tab.CHAT, label: 'Chat', icon: 'chatbubble', route: 'Chat' },
         { id: Tab.FRIENDS, label: 'Friends', icon: 'people', route: 'Friends' },
-        { id: Tab.A2A, label: 'A2A', icon: 'calendar', route: 'A2A' },
+        { id: Tab.A2A, label: 'Event', icon: 'calendar', route: 'A2A' },
         { id: Tab.USER, label: 'User', icon: 'information-circle', route: 'User' },
     ];
 

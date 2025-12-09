@@ -363,7 +363,7 @@ const FriendsScreen = () => {
       <View style={styles.mainHeader}>
         <View style={styles.mainHeaderTop}>
           <View>
-            <Text style={styles.mainTitle}>친구 관리</Text>
+            <Text style={styles.mainTitle}>친구</Text>
             <Text style={styles.mainSubtitle}>전체 {friends.length}명</Text>
           </View>
           <TouchableOpacity
