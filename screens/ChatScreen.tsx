@@ -199,24 +199,68 @@ export default function ChatScreen() {
     return sessions.find(s => s.id === currentSessionId)?.messages || [];
   }, [sessions, currentSessionId]);
 
-  const createNewSession = () => {
-    const newId = Date.now().toString();
-    const now = new Date();
-    const newSession: ChatSession = {
-      id: newId,
-      title: `새 채팅`,
-      updatedAt: now,
-      messages: [{
-        id: 'init',
-        sender: 'ai',
-        text: '새로운 대화를 시작합니다. 무엇을 도와드릴까요?',
-        timestamp: now.toISOString()
-      }]
-    };
-    setSessions(prev => [newSession, ...prev]);
-    setCurrentSessionId(newId);
-    setIsSidebarOpen(false);
+  const createNewSession = async () => {
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) {
+        console.warn('액세스 토큰 없음 – 세션을 만들 수 없습니다.');
+        return;
+      }
+
+      // 1) 백엔드에 실제 chat_sessions row 생성 요청
+      const res = await fetch(`${API_BASE}/chat/sessions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        // 서버에서 title 기본값 넣을 거면 body는 생략 가능하지만, 지금처럼 둬도 상관 없음
+        body: JSON.stringify({ title: '새 채팅' }),
+      });
+
+      if (!res.ok) {
+        console.error('세션 생성 실패', res.status);
+        return;
+      }
+
+      // ✅ 서버에서 돌려준 uuid 세션 정보 사용
+      const data = await res.json();  // { id, title, created_at, updated_at }
+
+      const now = new Date();
+      const newSessionId: string = data.id;              // ✅ uuid
+      const newSessionTitle: string = data.title ?? '새 채팅';
+      const updatedAt: Date = data.updated_at
+        ? new Date(data.updated_at)
+        : now;
+
+      const newSession: ChatSession = {
+        id: newSessionId,          // ✅ 절대 'session-1' 같은 거 쓰지 말기
+        title: newSessionTitle,
+        updatedAt,
+        messages: [
+          {
+            id: 'init',
+            sender: 'ai',
+            text: '새로운 대화를 시작합니다. 무엇을 도와드릴까요?',
+            timestamp: now.toISOString(),
+          },
+        ],
+      };
+
+      // 목록에 추가
+      setSessions(prev => [newSession, ...prev]);
+
+      // ✅ 현재 선택된 세션도 서버 uuid로 설정
+      setCurrentSessionId(newSessionId);
+
+      setIsSidebarOpen(false);
+      setActiveMenuSessionId(null);
+    } catch (e) {
+      console.error('세션 생성 중 오류', e);
+    }
   };
+
+
 
   const updateSessionTitle = () => {
     if (renameModal.sessionId && renameModal.currentTitle.trim()) {
@@ -314,7 +358,9 @@ export default function ChatScreen() {
 
   const loadChatHistory = async (showLoadingUI = true) => {
     try {
+      if (!currentSessionId) return; // 세션 없으면 요청 안 함
       if (showLoadingUI) setLoading(true);
+
       const token = await AsyncStorage.getItem("accessToken");
       if (!token) {
         if (showLoadingUI) setLoading(false);
@@ -322,17 +368,19 @@ export default function ChatScreen() {
       }
 
       const userId = await getCurrentUserId();
-      if (userId) {
-        setCurrentUserId(userId);
-      }
+      if (userId) setCurrentUserId(userId);
 
-      const res = await fetch(`${API_BASE}/chat/history`, {
-        method: "GET",
-        headers: {
-          "Authorization": `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
+      // 🔥 핵심: 현재 세션 기준으로만 채팅 기록 요청
+      const res = await fetch(
+        `${API_BASE}/chat/history?session_id=${currentSessionId}`,
+        {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
 
       if (res.status === 401) {
         if (showLoadingUI) setLoading(false);
@@ -350,101 +398,54 @@ export default function ChatScreen() {
 
       if (Array.isArray(chatLogs)) {
         chatLogs.forEach((log: any) => {
-          // User Message
+          // 🧩 User message
           if (log.request_text) {
-            if (log.message_type === "schedule_approval_response") {
-              const metadata = log.metadata || {};
-              const approved = metadata.approved;
-              const proposal = metadata.proposal || {};
-
-              if (approved) {
-                loadedMessages.push({
-                  sender: "user",
-                  text: log.request_text,
-                  timestamp: log.created_at,
-                });
-              } else {
-                const proposalText = proposal.date && proposal.time
-                  ? `${proposal.date} ${proposal.time} 일정을 거절했습니다.`
-                  : "일정을 거절했습니다.";
-                loadedMessages.push({
-                  sender: "user",
-                  text: proposalText,
-                  timestamp: log.created_at,
-                });
-              }
-            } else {
-              loadedMessages.push({
-                sender: "user",
-                text: log.request_text,
-                timestamp: log.created_at,
-              });
-            }
+            loadedMessages.push({
+              sender: "user",
+              text: log.request_text,
+              timestamp: log.created_at,
+              id: log.id,
+            });
           }
-          // AI Response
+
+          // 🧩 AI message
           if (log.response_text) {
-            if (log.message_type === 'schedule_approval') {
-              const metadata = log.metadata || {};
-              const approvedByList = metadata.approved_by_list || [];
-              if (metadata.approved_by && !approvedByList.includes(metadata.approved_by)) {
-                approvedByList.push(metadata.approved_by);
-              }
-              const currentUserApproved = currentUserId && approvedByList.includes(currentUserId);
-              const allApproved = metadata.all_approved === true;
-
-              const isRejected = !!metadata.rejected_by || metadata.status === 'rejected';
-              const needsApproval = !currentUserApproved && !isRejected && !allApproved;
-
-              loadedMessages.push({
-                sender: "ai",
-                text: log.response_text,
-                needsApproval: needsApproval,
-                proposal: metadata.proposal,
-                threadId: metadata.thread_id,
-                sessionIds: metadata.session_ids || [],
-                approvalStatus: {
-                  approvedBy: approvedByList,
-                  totalParticipants: metadata.proposal?.participants?.length || 2
-                },
-                isApproved: currentUserApproved || allApproved,
-                isRejected: isRejected,
-                allApproved: allApproved,
-                shouldShowProposalCard: true,
-                timestamp: log.created_at,
-                id: log.id
-              });
-            }
-            else {
-              loadedMessages.push({
-                sender: "ai",
-                text: log.response_text,
-                timestamp: log.created_at,
-                id: log.id
-              });
-            }
+            loadedMessages.push({
+              sender: "ai",
+              text: log.response_text,
+              timestamp: log.created_at,
+              id: log.id,
+            });
           }
         });
 
-        loadedMessages.sort((a, b) => {
-          const timeA = new Date(a.timestamp || 0).getTime();
-          const timeB = new Date(b.timestamp || 0).getTime();
-          return timeA - timeB;
-        });
+        // 시간 순으로 정렬
+        loadedMessages.sort(
+          (a, b) =>
+            new Date(a.timestamp || 0).getTime() -
+            new Date(b.timestamp || 0).getTime()
+        );
 
-        // Update current session with loaded messages
-        setSessions(prev => prev.map(s =>
-          s.id === currentSessionId
-            ? { ...s, messages: loadedMessages, updatedAt: new Date() }
-            : s
-        ));
+        // 🔥 현재 세션에 메시지 반영
+        setSessions(prev =>
+          prev.map(s =>
+            s.id === currentSessionId
+              ? {
+                ...s,
+                messages: loadedMessages,
+                updatedAt: new Date(),
+              }
+              : s
+          )
+        );
       }
-
     } catch (error) {
       console.error("채팅 기록 불러오기 오류:", error);
     } finally {
       if (showLoadingUI) setLoading(false);
     }
   };
+
 
   useFocusEffect(
     React.useCallback(() => {
@@ -493,6 +494,9 @@ export default function ChatScreen() {
     const userText = input;
     setInput("");
 
+    const friendsToSend = selectedFriends;
+    setSelectedFriends([]); // Clear UI immediately
+
     // Optimistic update
     const userMsg: Message = {
       sender: "user",
@@ -532,7 +536,8 @@ export default function ChatScreen() {
         body: JSON.stringify({
           message: userText,
           date: pendingDate ?? undefined,
-          selected_friends: selectedFriends.length > 0 ? selectedFriends : undefined
+          selected_friends: friendsToSend.length > 0 ? friendsToSend : undefined,
+          session_id: currentSessionId,
         }),
       });
 
@@ -710,10 +715,6 @@ export default function ChatScreen() {
             </View>
             <View>
               <Text style={styles.headerTitle}>{userName}님의 비서</Text>
-              <View style={styles.onlineIndicator}>
-                <View style={styles.onlineDot} />
-                <Text style={styles.onlineText}>온라인</Text>
-              </View>
             </View>
           </View>
 
@@ -1125,25 +1126,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: 'white',
-  },
-  onlineIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  onlineDot: {
-    width: 8,
-    height: 8,
-    backgroundColor: '#4ADE80',
-    borderRadius: 4,
-    marginRight: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.5)',
-  },
-  onlineText: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: 12,
-    fontWeight: '500',
   },
   menuButton: {
     padding: 8,

@@ -672,7 +672,7 @@ const A2AScreen = () => {
         <SafeAreaView style={styles.container}>
             {/* Header */}
             <View style={styles.headerContainer}>
-                <Text style={styles.headerTitle}>히스토리</Text>
+                <Text style={styles.headerTitle}>Event</Text>
             </View>
 
             {/* List */}
