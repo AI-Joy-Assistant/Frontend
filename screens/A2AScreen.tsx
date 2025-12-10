@@ -23,10 +23,12 @@ import {
     Calendar,
     CalendarCheck,
     ArrowLeft,
-    Trash2
+    Trash2,
+    AlertCircle
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import TimePickerModal from '../components/TimePickerModal';
+import RealTimeNegotiationView from '../components/RealTimeNegotiationView';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -87,6 +89,12 @@ const A2AScreen = () => {
     // Restore deleted states
     const [preferredTime, setPreferredTime] = useState('');
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+    // True A2A States
+    const [showNegotiation, setShowNegotiation] = useState(false);
+    const [negotiatingSessionId, setNegotiatingSessionId] = useState<string | null>(null);
+    const [showHumanDecision, setShowHumanDecision] = useState(false);
+    const [lastProposalForDecision, setLastProposalForDecision] = useState<any>(null);
 
     useEffect(() => {
         if (selectedReason === "날짜를 변경하고 싶어요" && selectedLog) {
@@ -430,6 +438,69 @@ const A2AScreen = () => {
             }
         }
     }, [initialLogId, logs, selectedLog, initialCheckDone]);
+    // =============================================
+    // True A2A Handlers
+    // =============================================
+
+    const startTrueA2ANegotiation = (sessionId: string) => {
+        setNegotiatingSessionId(sessionId);
+        setShowNegotiation(true);
+    };
+
+    const handleNegotiationClose = () => {
+        setShowNegotiation(false);
+        setNegotiatingSessionId(null);
+        fetchA2ALogs();  // 협상 종료 후 목록 새로고침
+    };
+
+    const handleNeedHumanDecision = (lastProposal: any) => {
+        setLastProposalForDecision(lastProposal);
+        setShowNegotiation(false);
+        setShowHumanDecision(true);
+    };
+
+    const handleAgreementReached = (proposal: any) => {
+        setShowNegotiation(false);
+        setConfirmationType('official');
+        setIsConfirmed(true);
+        fetchA2ALogs();
+    };
+
+    const submitHumanDecision = async (approved: boolean, counterProposal?: any) => {
+        if (!negotiatingSessionId) return;
+
+        try {
+            const token = await AsyncStorage.getItem('accessToken');
+            const res = await fetch(`${API_BASE}/a2a/session/${negotiatingSessionId}/human-decision`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    approved,
+                    counter_proposal: counterProposal
+                })
+            });
+
+            if (res.ok) {
+                setShowHumanDecision(false);
+                if (approved) {
+                    setConfirmationType('official');
+                    setIsConfirmed(true);
+                }
+                fetchA2ALogs();
+            } else {
+                Alert.alert('오류', '결정 처리에 실패했습니다.');
+            }
+        } catch (e) {
+            console.error('Human decision error:', e);
+            Alert.alert('오류', '결정 처리 중 오류가 발생했습니다.');
+        }
+    };
+
+    // =============================================
+
     const handleClose = () => {
         setSelectedLog(null);
         setIsRescheduling(false);
@@ -696,6 +767,80 @@ const A2AScreen = () => {
 
             <BottomNav activeTab={Tab.A2A} />
 
+            {/* True A2A Real-time Negotiation View */}
+            {negotiatingSessionId && (
+                <RealTimeNegotiationView
+                    sessionId={negotiatingSessionId}
+                    visible={showNegotiation}
+                    onClose={handleNegotiationClose}
+                    onNeedHumanDecision={handleNeedHumanDecision}
+                    onAgreementReached={handleAgreementReached}
+                />
+            )}
+
+            {/* Human Decision Modal */}
+            <Modal
+                visible={showHumanDecision}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowHumanDecision(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { maxHeight: '50%' }]}>
+                        <View style={styles.rescheduleHeader}>
+                            <View>
+                                <Text style={styles.rescheduleTitle}>🤔 결정이 필요해요</Text>
+                                <Text style={styles.rescheduleSub}>AI가 5라운드 내에 합의하지 못했어요</Text>
+                            </View>
+                            <TouchableOpacity onPress={() => setShowHumanDecision(false)}>
+                                <X size={24} color={COLORS.neutral400} />
+                            </TouchableOpacity>
+                        </View>
+
+                        {lastProposalForDecision && (
+                            <View style={{ padding: 16 }}>
+                                <Text style={{ fontSize: 14, color: COLORS.neutral600, marginBottom: 8 }}>
+                                    마지막 제안:
+                                </Text>
+                                <View style={{ backgroundColor: COLORS.primaryBg, padding: 12, borderRadius: 12 }}>
+                                    <Text style={{ fontSize: 16, fontWeight: '600', color: COLORS.primaryDark }}>
+                                        📅 {lastProposalForDecision.date} {lastProposalForDecision.time}
+                                    </Text>
+                                    {lastProposalForDecision.location && (
+                                        <Text style={{ fontSize: 14, color: COLORS.neutral600, marginTop: 4 }}>
+                                            📍 {lastProposalForDecision.location}
+                                        </Text>
+                                    )}
+                                </View>
+                            </View>
+                        )}
+
+                        <View style={{ padding: 16, gap: 12 }}>
+                            <TouchableOpacity
+                                style={[styles.approveButton, { width: '100%' }]}
+                                onPress={() => submitHumanDecision(true)}
+                            >
+                                <CheckCircle2 size={18} color="white" style={{ marginRight: 8 }} />
+                                <Text style={styles.approveButtonText}>이 시간으로 확정할게요</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.rescheduleButton, { width: '100%' }]}
+                                onPress={() => {
+                                    setShowHumanDecision(false);
+                                    // 재조율 화면으로 이동
+                                    if (selectedLog) {
+                                        setIsRescheduling(true);
+                                    }
+                                }}
+                            >
+                                <Text style={styles.rescheduleButtonText}>다른 시간으로 다시 협상</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
             {/* Modal */}
             <Modal
                 visible={!!selectedLog}
@@ -887,6 +1032,21 @@ const A2AScreen = () => {
                                                         </Text>
                                                     </View>
                                                 </View>
+
+                                                {/* 캘린더 충돌 경고 */}
+                                                {(selectedLog.details as any)?.has_conflict && (selectedLog.details as any)?.conflicting_event && (
+                                                    <View style={[styles.infoCard, { backgroundColor: '#FEF3C7', borderColor: '#F59E0B', borderWidth: 1 }]}>
+                                                        <View style={[styles.infoIconBox, { backgroundColor: '#FEF3C7' }]}>
+                                                            <AlertCircle size={20} color="#F59E0B" />
+                                                        </View>
+                                                        <View style={{ flex: 1 }}>
+                                                            <Text style={[styles.infoLabel, { color: '#B45309' }]}>⚠️ 일정 충돌</Text>
+                                                            <Text style={[styles.infoValue, { color: '#92400E' }]}>
+                                                                "{(selectedLog.details as any).conflicting_event.title}" ({(selectedLog.details as any).conflicting_event.start} ~ {(selectedLog.details as any).conflicting_event.end})
+                                                            </Text>
+                                                        </View>
+                                                    </View>
+                                                )}
 
                                                 <View style={styles.infoCard}>
                                                     <View style={[styles.infoIconBox, { backgroundColor: COLORS.primaryBg }]}>
