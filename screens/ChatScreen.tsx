@@ -16,7 +16,7 @@ import {
   Image,
   Animated,
   Dimensions,
-  Keyboard // Fixed: Static import
+  Keyboard,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,10 +27,22 @@ import BottomNav from "../components/BottomNav";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "../constants/config";
 
-import { LinearGradient } from 'expo-linear-gradient';
-import { Send, Sparkles, X, Search, Check, Menu, MoreHorizontal, Edit2, Trash2, Plus, MessageSquare } from 'lucide-react-native';
-import { COLORS } from '../constants/Colors';
-import { BlurView } from 'expo-blur';
+import { LinearGradient } from "expo-linear-gradient";
+import {
+  Send,
+  Sparkles,
+  X,
+  Search,
+  Check,
+  Menu,
+  MoreHorizontal,
+  Edit2,
+  Trash2,
+  Plus,
+  MessageSquare,
+} from "lucide-react-native";
+import { COLORS } from "../constants/Colors";
+import { BlurView } from "expo-blur";
 
 interface Friend {
   id: string;
@@ -71,37 +83,39 @@ interface ChatSession {
 }
 
 export default function ChatScreen() {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
-  // --- Chat Session State (from dlrbals#28) ---
-  const [sessions, setSessions] = useState<ChatSession[]>([
-    {
-      id: 'session-1',
-      title: '새 채팅',
-      updatedAt: new Date(),
-      messages: []
-    }
-  ]);
+  // --- Chat Session State ---
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
-  const [currentSessionId, setCurrentSessionId] = useState<string>('session-1');
-
-  // UI State for Management (from dlrbals#28)
+  // UI State for Management
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [activeMenuSessionId, setActiveMenuSessionId] = useState<string | null>(null);
+  const [activeMenuSessionId, setActiveMenuSessionId] = useState<string | null>(
+    null
+  );
 
-  // Modals (from dlrbals#28)
-  const [renameModal, setRenameModal] = useState<{ isOpen: boolean; sessionId: string | null; currentTitle: string }>({ isOpen: false, sessionId: null, currentTitle: '' });
-  const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; sessionId: string | null }>({ isOpen: false, sessionId: null });
+  // Modals
+  const [renameModal, setRenameModal] = useState<{
+    isOpen: boolean;
+    sessionId: string | null;
+    currentTitle: string;
+  }>({ isOpen: false, sessionId: null, currentTitle: "" });
 
-  // Chat State (from develop)
+  const [deleteModal, setDeleteModal] = useState<{
+    isOpen: boolean;
+    sessionId: string | null;
+  }>({ isOpen: false, sessionId: null });
+
+  // Chat State
   const [input, setInput] = useState("");
   const [pendingDate, setPendingDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [showFriendModal, setShowFriendModal] = useState(false);
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
-  const [friendSearchQuery, setFriendSearchQuery] = useState('');
+  const [friendSearchQuery, setFriendSearchQuery] = useState("");
   const [userName, setUserName] = useState("User");
 
   const isAtBottom = useRef(true);
@@ -111,9 +125,9 @@ export default function ChatScreen() {
   // --- Helpers ---
 
   const toggleFriendSelection = (id: string) => {
-    setSelectedFriends(prev => {
+    setSelectedFriends((prev) => {
       if (prev.includes(id)) {
-        return prev.filter(fid => fid !== id);
+        return prev.filter((fid) => fid !== id);
       } else {
         return [...prev, id];
       }
@@ -122,11 +136,11 @@ export default function ChatScreen() {
 
   const fetchFriends = async () => {
     try {
-      const token = await AsyncStorage.getItem('accessToken');
+      const token = await AsyncStorage.getItem("accessToken");
       if (!token) return;
 
       const response = await fetch(`${API_BASE}/friends/list`, {
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (response.ok) {
@@ -134,7 +148,7 @@ export default function ChatScreen() {
         setFriends(data.friends || []);
       }
     } catch (error) {
-      console.error('Error fetching friends:', error);
+      console.error("Error fetching friends:", error);
     }
   };
 
@@ -144,7 +158,7 @@ export default function ChatScreen() {
       if (!token) return;
 
       const res = await fetch(`${API_BASE}/auth/me`, {
-        headers: { "Authorization": `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
         const data = await res.json();
@@ -165,21 +179,25 @@ export default function ChatScreen() {
     if (!isoString) return "";
     try {
       let timeValue = isoString;
-      if (!isoString.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(isoString)) {
-        timeValue += 'Z';
+      if (
+        !isoString.endsWith("Z") &&
+        !/[+-]\d{2}:?\d{2}$/.test(isoString)
+      ) {
+        timeValue += "Z";
       }
       const date = new Date(timeValue);
       if (isNaN(date.getTime())) return "";
 
       const now = new Date();
-      const isToday = date.getDate() === now.getDate() &&
+      const isToday =
+        date.getDate() === now.getDate() &&
         date.getMonth() === now.getMonth() &&
         date.getFullYear() === now.getFullYear();
 
-      const timeStr = date.toLocaleTimeString('ko-KR', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
+      const timeStr = date.toLocaleTimeString("ko-KR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
       });
 
       if (isToday) {
@@ -193,105 +211,107 @@ export default function ChatScreen() {
     }
   };
 
-  // --- Session Management Logic (from dlrbals#28) ---
+  // --- Session Management Logic ---
 
   const currentMessages = useMemo(() => {
-    return sessions.find(s => s.id === currentSessionId)?.messages || [];
+    return sessions.find((s) => s.id === currentSessionId)?.messages || [];
   }, [sessions, currentSessionId]);
 
   const createNewSession = async () => {
     try {
-      const token = await AsyncStorage.getItem('accessToken');
+      const token = await AsyncStorage.getItem("accessToken");
       if (!token) {
-        console.warn('액세스 토큰 없음 – 세션을 만들 수 없습니다.');
+        console.warn("액세스 토큰 없음 – 세션을 만들 수 없습니다.");
         return;
       }
 
       // 1) 백엔드에 실제 chat_sessions row 생성 요청
       const res = await fetch(`${API_BASE}/chat/sessions`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
-        // 서버에서 title 기본값 넣을 거면 body는 생략 가능하지만, 지금처럼 둬도 상관 없음
-        body: JSON.stringify({ title: '새 채팅' }),
+        body: JSON.stringify({ title: "새 채팅" }),
       });
 
       if (!res.ok) {
-        console.error('세션 생성 실패', res.status);
+        console.error("세션 생성 실패", res.status);
         return;
       }
 
-      // ✅ 서버에서 돌려준 uuid 세션 정보 사용
-      const data = await res.json();  // { id, title, created_at, updated_at }
+      const json = await res.json();
+      const session = json.data ?? json;
 
       const now = new Date();
-      const newSessionId: string = data.id;              // ✅ uuid
-      const newSessionTitle: string = data.title ?? '새 채팅';
-      const updatedAt: Date = data.updated_at
-        ? new Date(data.updated_at)
+
+      const newSessionId: string = session.id; // uuid
+      const newSessionTitle: string = session.title ?? "새 채팅";
+      const updatedAt: Date = session.updated_at
+        ? new Date(session.updated_at)
         : now;
 
       const newSession: ChatSession = {
-        id: newSessionId,          // ✅ 절대 'session-1' 같은 거 쓰지 말기
+        id: newSessionId,
         title: newSessionTitle,
         updatedAt,
         messages: [
           {
-            id: 'init',
-            sender: 'ai',
-            text: '새로운 대화를 시작합니다. 무엇을 도와드릴까요?',
+            id: "init",
+            sender: "ai",
+            text: "새로운 대화를 시작합니다. 무엇을 도와드릴까요?",
             timestamp: now.toISOString(),
           },
         ],
       };
 
-      // 목록에 추가
-      setSessions(prev => [newSession, ...prev]);
-
-      // ✅ 현재 선택된 세션도 서버 uuid로 설정
+      setSessions((prev) => [newSession, ...prev]);
       setCurrentSessionId(newSessionId);
 
       setIsSidebarOpen(false);
       setActiveMenuSessionId(null);
     } catch (e) {
-      console.error('세션 생성 중 오류', e);
+      console.error("세션 생성 중 오류", e);
     }
   };
 
-
-
   const updateSessionTitle = () => {
     if (renameModal.sessionId && renameModal.currentTitle.trim()) {
-      setSessions(prev => prev.map(s =>
-        s.id === renameModal.sessionId
-          ? { ...s, title: renameModal.currentTitle }
-          : s
-      ));
-      setRenameModal({ isOpen: false, sessionId: null, currentTitle: '' });
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === renameModal.sessionId
+            ? { ...s, title: renameModal.currentTitle }
+            : s
+        )
+      );
+      setRenameModal({ isOpen: false, sessionId: null, currentTitle: "" });
       setActiveMenuSessionId(null);
     }
   };
 
   const deleteSession = () => {
     if (deleteModal.sessionId) {
-      const newSessions = sessions.filter(s => s.id !== deleteModal.sessionId);
+      const newSessions = sessions.filter(
+        (s) => s.id !== deleteModal.sessionId
+      );
       setSessions(newSessions);
 
       if (currentSessionId === deleteModal.sessionId) {
         if (newSessions.length > 0) {
           setCurrentSessionId(newSessions[0].id);
         } else {
-          const newId = Date.now().toString();
+          // 완전 비면 프론트 단에서만 임시 세션 하나 만들어둘 수도 있음
           const now = new Date();
-          setSessions([{
-            id: newId,
-            title: '새 채팅',
-            updatedAt: now,
-            messages: []
-          }]);
-          setCurrentSessionId(newId);
+          const tmpId = now.getTime().toString();
+          setSessions([
+            {
+              id: tmpId,
+              title: "새 채팅",
+              updatedAt: now,
+              messages: [],
+            },
+          ]);
+          setCurrentSessionId(tmpId);
         }
       }
       setDeleteModal({ isOpen: false, sessionId: null });
@@ -301,16 +321,21 @@ export default function ChatScreen() {
 
   const groupedSessions = useMemo(() => {
     const today = new Date();
-    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-    const startOfWeek = startOfToday - (today.getDay() * 24 * 60 * 60 * 1000);
+    const startOfToday = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate()
+    ).getTime();
+    const startOfWeek =
+      startOfToday - today.getDay() * 24 * 60 * 60 * 1000;
 
     const groups = {
       today: [] as ChatSession[],
       thisWeek: [] as ChatSession[],
-      older: [] as ChatSession[]
+      older: [] as ChatSession[],
     };
 
-    sessions.forEach(session => {
+    sessions.forEach((session) => {
       const date = new Date(session.updatedAt);
       const time = isNaN(date.getTime()) ? 0 : date.getTime();
 
@@ -323,42 +348,30 @@ export default function ChatScreen() {
       }
     });
 
-    groups.today.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-    groups.thisWeek.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-    groups.older.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    const sorter = (a: ChatSession, b: ChatSession) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+
+    groups.today.sort(sorter);
+    groups.thisWeek.sort(sorter);
+    groups.older.sort(sorter);
 
     return groups;
   }, [sessions]);
 
-  // --- Chat Logic (from develop, adapted to sessions) ---
+  // --- Chat History Load Logic ---
 
-  const getCurrentUserId = async (): Promise<string | null> => {
-    try {
-      const token = await AsyncStorage.getItem("accessToken");
-      if (!token) return null;
-
-      const res = await fetch(`${API_BASE}/auth/me`, {
-        method: "GET",
-        headers: {
-          "Authorization": `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (res.ok) {
-        const userData = await res.json();
-        return userData.id || null;
-      }
-      return null;
-    } catch (error) {
-      console.error("사용자 ID 가져오기 오류:", error);
-      return null;
-    }
+  const isValidUUID = (value?: string | null): boolean => {
+    if (!value) return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value
+    );
   };
 
-  const loadChatHistory = async (showLoadingUI = true) => {
+  const loadChatHistory = async (
+    showLoadingUI: boolean,
+    sessionIdArg?: string | null
+  ) => {
     try {
-      if (!currentSessionId) return; // 세션 없으면 요청 안 함
       if (showLoadingUI) setLoading(true);
 
       const token = await AsyncStorage.getItem("accessToken");
@@ -367,20 +380,28 @@ export default function ChatScreen() {
         return;
       }
 
-      const userId = await getCurrentUserId();
-      if (userId) setCurrentUserId(userId);
+      const targetSessionId = sessionIdArg ?? currentSessionId;
 
-      // 🔥 핵심: 현재 세션 기준으로만 채팅 기록 요청
-      const res = await fetch(
-        `${API_BASE}/chat/history?session_id=${currentSessionId}`,
-        {
-          method: "GET",
-          headers: {
-            "Authorization": `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      // 세션이 선택되지 않은 상태면 아무 것도 안 함
+      if (!targetSessionId) {
+        if (showLoadingUI) setLoading(false);
+        return;
+      }
+
+      let url = `${API_BASE}/chat/history`;
+
+      // uuid 형식일 때만 session_id 파라미터로 전달
+      if (isValidUUID(targetSessionId)) {
+        url += `?session_id=${encodeURIComponent(targetSessionId)}`;
+      }
+
+      const res = await fetch(url, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
 
       if (res.status === 401) {
         if (showLoadingUI) setLoading(false);
@@ -390,6 +411,7 @@ export default function ChatScreen() {
 
       if (!res.ok) {
         if (showLoadingUI) setLoading(false);
+        console.error("채팅 히스토리 불러오기 실패", res.status);
         return;
       }
 
@@ -398,7 +420,7 @@ export default function ChatScreen() {
 
       if (Array.isArray(chatLogs)) {
         chatLogs.forEach((log: any) => {
-          // 🧩 User message
+          // user message
           if (log.request_text) {
             loadedMessages.push({
               sender: "user",
@@ -408,7 +430,7 @@ export default function ChatScreen() {
             });
           }
 
-          // 🧩 AI message
+          // ai message
           if (log.response_text) {
             loadedMessages.push({
               sender: "ai",
@@ -419,25 +441,35 @@ export default function ChatScreen() {
           }
         });
 
-        // 시간 순으로 정렬
         loadedMessages.sort(
           (a, b) =>
             new Date(a.timestamp || 0).getTime() -
             new Date(b.timestamp || 0).getTime()
         );
 
-        // 🔥 현재 세션에 메시지 반영
-        setSessions(prev =>
-          prev.map(s =>
-            s.id === currentSessionId
-              ? {
-                ...s,
+        const now = new Date();
+
+        setSessions((prev) => {
+          const exists = prev.some((s) => s.id === targetSessionId);
+
+          if (!exists) {
+            return [
+              {
+                id: targetSessionId,
+                title: "새 채팅",
+                updatedAt: now,
                 messages: loadedMessages,
-                updatedAt: new Date(),
-              }
+              },
+              ...prev,
+            ];
+          }
+
+          return prev.map((s) =>
+            s.id === targetSessionId
+              ? { ...s, messages: loadedMessages, updatedAt: now }
               : s
-          )
-        );
+          );
+        });
       }
     } catch (error) {
       console.error("채팅 기록 불러오기 오류:", error);
@@ -445,22 +477,49 @@ export default function ChatScreen() {
       if (showLoadingUI) setLoading(false);
     }
   };
+  useEffect(() => {
+    (async () => {
+      // 이미 세션 선택돼 있으면 건드리지 않기
+      if (currentSessionId || sessions.length > 0) return;
 
+      const legacyId = 'legacy';  // uuid 아님 → session 필터 없이 전체 히스토리 가져옴
+      await loadChatHistory(true, legacyId);
+
+      // 현재 선택된 세션을 legacy로
+      setCurrentSessionId(legacyId);
+
+      // 제목을 보기 좋게 바꿔주기
+      setSessions(prev =>
+        prev.map(s =>
+          s.id === legacyId ? { ...s, title: '이전 대화' } : s
+        )
+      );
+    })();
+  }, [currentSessionId, sessions.length]);
 
   useFocusEffect(
     React.useCallback(() => {
+      // 화면 들어올 때 한 번
       loadChatHistory(true);
+
+      // 3초마다 폴링
       const interval = setInterval(() => {
         loadChatHistory(false);
       }, 3000);
+
       return () => clearInterval(interval);
-    }, [currentUserId, currentSessionId])
+    }, [currentSessionId])
   );
 
-  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+  const handleScroll = (
+    event: NativeSyntheticEvent<NativeScrollEvent>
+  ) => {
+    const { layoutMeasurement, contentOffset, contentSize } =
+      event.nativeEvent;
     const paddingToBottom = 100;
-    isAtBottom.current = layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
+    isAtBottom.current =
+      layoutMeasurement.height + contentOffset.y >=
+      contentSize.height - paddingToBottom;
   };
 
   const addMessage = (
@@ -479,14 +538,20 @@ export default function ChatScreen() {
       proposal,
       threadId,
       sessionIds,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
 
-    setSessions(prev => prev.map(s =>
-      s.id === currentSessionId
-        ? { ...s, messages: [...s.messages, newMsg], updatedAt: new Date() }
-        : s
-    ));
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === currentSessionId
+          ? {
+            ...s,
+            messages: [...s.messages, newMsg],
+            updatedAt: new Date(),
+          }
+          : s
+      )
+    );
   };
 
   const sendMessage = async () => {
@@ -495,33 +560,36 @@ export default function ChatScreen() {
     setInput("");
 
     const friendsToSend = selectedFriends;
-    setSelectedFriends([]); // Clear UI immediately
+    setSelectedFriends([]);
 
-    // Optimistic update
     const userMsg: Message = {
       sender: "user",
       text: userText,
       timestamp: new Date().toISOString(),
-      id: Date.now().toString()
+      id: Date.now().toString(),
     };
 
-    setSessions(prev => prev.map(s => {
-      if (s.id === currentSessionId) {
-        // Update title if it's new chat
-        const isFirstUserMsg = s.messages.length <= 1;
-        let newTitle = s.title;
-        if (isFirstUserMsg && s.title === '새 채팅') {
-          newTitle = userText.length > 15 ? userText.substring(0, 15) + '...' : userText;
+    setSessions((prev) =>
+      prev.map((s) => {
+        if (s.id === currentSessionId) {
+          const isFirstUserMsg = s.messages.length <= 1;
+          let newTitle = s.title;
+          if (isFirstUserMsg && s.title === "새 채팅") {
+            newTitle =
+              userText.length > 15
+                ? userText.substring(0, 15) + "..."
+                : userText;
+          }
+          return {
+            ...s,
+            title: newTitle,
+            updatedAt: new Date(),
+            messages: [...s.messages, userMsg],
+          };
         }
-        return {
-          ...s,
-          title: newTitle,
-          updatedAt: new Date(),
-          messages: [...s.messages, userMsg]
-        };
-      }
-      return s;
-    }));
+        return s;
+      })
+    );
 
     isAtBottom.current = true;
     setTimeout(() => {
@@ -532,19 +600,27 @@ export default function ChatScreen() {
       const token = await AsyncStorage.getItem("accessToken");
       const res = await fetch(`${API_BASE}/chat/chat`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           message: userText,
           date: pendingDate ?? undefined,
-          selected_friends: friendsToSend.length > 0 ? friendsToSend : undefined,
+          selected_friends:
+            friendsToSend.length > 0 ? friendsToSend : undefined,
           session_id: currentSessionId,
         }),
       });
 
       if (!res.ok) {
-        // if (res.status === 401) return; // Don't fail silently
-        const errorData = await res.json().catch(() => ({ detail: `서버 오류 (${res.status})` }));
-        addMessage("system", `❌ 오류: ${errorData.detail || '알 수 없는 오류'}`);
+        const errorData = await res
+          .json()
+          .catch(() => ({ detail: `서버 오류 (${res.status})` }));
+        addMessage(
+          "system",
+          `❌ 오류: ${errorData.detail || "알 수 없는 오류"}`
+        );
         return;
       }
 
@@ -560,18 +636,33 @@ export default function ChatScreen() {
 
       if (aiResponse) {
         if (needsApproval && proposal) {
-          addMessage("ai", aiResponse, true, proposal, threadId, sessionIds);
+          addMessage(
+            "ai",
+            aiResponse,
+            true,
+            proposal,
+            threadId,
+            sessionIds
+          );
         } else {
           addMessage("ai", aiResponse);
         }
       }
     } catch (e) {
       console.error(e);
-      addMessage("system", "❌ 메시지 전송 중 오류가 발생했습니다.");
+      addMessage(
+        "system",
+        "❌ 메시지 전송 중 오류가 발생했습니다."
+      );
     }
   };
 
-  const handleScheduleApproval = async (approved: boolean, proposal: any, threadId: string, sessionIds: string[]) => {
+  const handleScheduleApproval = async (
+    approved: boolean,
+    proposal: any,
+    threadId: string,
+    sessionIds: string[]
+  ) => {
     try {
       const token = await AsyncStorage.getItem("accessToken");
       if (!token) return;
@@ -579,69 +670,96 @@ export default function ChatScreen() {
       const res = await fetch(`${API_BASE}/chat/approve-schedule`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
           thread_id: threadId,
           session_ids: sessionIds,
           approved: approved,
-          proposal: proposal
+          proposal: proposal,
         }),
       });
 
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({ detail: '승인 처리 실패' }));
-        addMessage("system", `❌ 오류: ${errorData.detail || '승인 처리 실패'}`);
+        const errorData = await res
+          .json()
+          .catch(() => ({ detail: "승인 처리 실패" }));
+        addMessage(
+          "system",
+          `❌ 오류: ${errorData.detail || "승인 처리 실패"}`
+        );
         return;
       }
 
       const result = await res.json();
 
-      setSessions(prev => prev.map(s => {
-        if (s.id !== currentSessionId) return s;
+      setSessions((prev) =>
+        prev.map((s) => {
+          if (s.id !== currentSessionId) return s;
 
-        const updatedMessages = s.messages.map(msg => {
-          if (!msg.proposal) return msg;
+          const updatedMessages = s.messages.map((msg) => {
+            if (!msg.proposal) return msg;
 
-          const matchesThreadId = threadId && msg.threadId === threadId;
-          const matchesSessionIds = msg.sessionIds && sessionIds &&
-            msg.sessionIds.length > 0 && sessionIds.length > 0 &&
-            msg.sessionIds.some(sid => sessionIds.includes(sid));
+            const matchesThreadId =
+              threadId && msg.threadId === threadId;
+            const matchesSessionIds =
+              msg.sessionIds &&
+              sessionIds &&
+              msg.sessionIds.length > 0 &&
+              sessionIds.length > 0 &&
+              msg.sessionIds.some((sid) => sessionIds.includes(sid));
 
-          const proposalMatches = proposal && msg.proposal &&
-            proposal.date === msg.proposal.date &&
-            proposal.time === msg.proposal.time;
+            const proposalMatches =
+              proposal &&
+              msg.proposal &&
+              proposal.date === msg.proposal.date &&
+              proposal.time === msg.proposal.time;
 
-          if (proposalMatches && (matchesThreadId || matchesSessionIds)) {
-            const updatedApprovalStatus = result.all_approved !== undefined ? {
-              approvedBy: result.approved_by_list || [],
-              totalParticipants: msg.approvalStatus?.totalParticipants || 2,
-            } : msg.approvalStatus;
+            if (proposalMatches && (matchesThreadId || matchesSessionIds)) {
+              const updatedApprovalStatus =
+                result.all_approved !== undefined
+                  ? {
+                    approvedBy: result.approved_by_list || [],
+                    totalParticipants:
+                      msg.approvalStatus?.totalParticipants || 2,
+                  }
+                  : msg.approvalStatus;
 
-            return {
-              ...msg,
-              needsApproval: false,
-              isApproved: approved || result.all_approved,
-              isRejected: !approved && !result.all_approved,
-              allApproved: result.all_approved || false,
-              approvalStatus: updatedApprovalStatus,
-            };
-          }
-          return msg;
-        });
+              return {
+                ...msg,
+                needsApproval: false,
+                isApproved: approved || result.all_approved,
+                isRejected: !approved && !result.all_approved,
+                allApproved: result.all_approved || false,
+                approvalStatus: updatedApprovalStatus,
+              };
+            }
+            return msg;
+          });
 
-        return { ...s, messages: updatedMessages };
-      }));
+          return { ...s, messages: updatedMessages };
+        })
+      );
 
       if (approved) {
-        addMessage("ai", result.message || "일정이 확정되어 모든 참여자 캘린더에 추가되었습니다.");
+        addMessage(
+          "ai",
+          result.message ||
+          "일정이 확정되어 모든 참여자 캘린더에 추가되었습니다."
+        );
       } else {
-        addMessage("ai", result.message || "일정이 거절되었습니다. 재조율을 진행합니다.");
+        addMessage(
+          "ai",
+          result.message || "일정이 거절되었습니다. 재조율을 진행합니다."
+        );
       }
     } catch (error) {
       console.error("승인 처리 오류:", error);
-      addMessage("system", "❌ 승인 처리 중 오류가 발생했습니다.");
+      addMessage(
+        "system",
+        "❌ 승인 처리 중 오류가 발생했습니다."
+      );
     }
   };
 
@@ -653,20 +771,32 @@ export default function ChatScreen() {
           item.sender === "user" ? styles.userMessage : styles.aiMessage,
         ]}
       >
-        <View style={[
-          styles.messageBubble,
-          item.sender === 'user' ? styles.userBubble : styles.aiBubble
-        ]}>
-          <Text style={[
-            styles.messageText,
-            item.sender === "user" ? styles.userMessageText : styles.aiMessageText
-          ]}>
+        <View
+          style={[
+            styles.messageBubble,
+            item.sender === "user"
+              ? styles.userBubble
+              : styles.aiBubble,
+          ]}
+        >
+          <Text
+            style={[
+              styles.messageText,
+              item.sender === "user"
+                ? styles.userMessageText
+                : styles.aiMessageText,
+            ]}
+          >
             {item.text}
           </Text>
-          <Text style={[
-            styles.timestampText,
-            item.sender === "user" ? styles.userTimestamp : styles.aiTimestamp
-          ]}>
+          <Text
+            style={[
+              styles.timestampText,
+              item.sender === "user"
+                ? styles.userTimestamp
+                : styles.aiTimestamp,
+            ]}
+          >
             {formatTime(item.timestamp)}
           </Text>
         </View>
@@ -674,19 +804,27 @@ export default function ChatScreen() {
     );
   };
 
-  // Keyboard Visibility (Fixed: Static import)
+  // Keyboard Visibility
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
 
   useEffect(() => {
-    const keyboardShowEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const keyboardHideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const keyboardShowEvent =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const keyboardHideEvent =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
 
-    const showSubscription = Keyboard.addListener(keyboardShowEvent, () => {
-      setKeyboardVisible(true);
-    });
-    const hideSubscription = Keyboard.addListener(keyboardHideEvent, () => {
-      setKeyboardVisible(false);
-    });
+    const showSubscription = Keyboard.addListener(
+      keyboardShowEvent,
+      () => {
+        setKeyboardVisible(true);
+      }
+    );
+    const hideSubscription = Keyboard.addListener(
+      keyboardHideEvent,
+      () => {
+        setKeyboardVisible(false);
+      }
+    );
 
     return () => {
       showSubscription.remove();
@@ -696,7 +834,7 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* 1. Header (Merged: develop style + dlrbals#28 menu) */}
+      {/* 1. Header */}
       <LinearGradient
         colors={[COLORS.primaryLight, COLORS.primaryMain]}
         start={{ x: 0, y: 0 }}
@@ -708,13 +846,15 @@ export default function ChatScreen() {
           <View style={styles.headerLeft}>
             <View style={styles.headerIconContainer}>
               <Image
-                source={require('../assets/images/ai agent.png')}
+                source={require("../assets/images/ai agent.png")}
                 style={styles.headerIconImage}
                 resizeMode="contain"
               />
             </View>
             <View>
-              <Text style={styles.headerTitle}>{userName}님의 비서</Text>
+              <Text style={styles.headerTitle}>
+                {userName}님의 비서
+              </Text>
             </View>
           </View>
 
@@ -727,11 +867,17 @@ export default function ChatScreen() {
         </View>
       </LinearGradient>
 
-      {/* 2. Chat Sidebar (Overlay) (from dlrbals#28) */}
+      {/* 2. Chat Sidebar */}
       {isSidebarOpen && (
         <View style={styles.sidebarOverlay}>
-          <TouchableWithoutFeedback onPress={() => setIsSidebarOpen(false)}>
-            <BlurView intensity={20} style={StyleSheet.absoluteFill} tint="dark" />
+          <TouchableWithoutFeedback
+            onPress={() => setIsSidebarOpen(false)}
+          >
+            <BlurView
+              intensity={20}
+              style={StyleSheet.absoluteFill}
+              tint="dark"
+            />
           </TouchableWithoutFeedback>
 
           <View style={styles.sidebarPanel}>
@@ -746,64 +892,129 @@ export default function ChatScreen() {
             </View>
 
             <FlatList
-              data={['today', 'thisWeek', 'older']}
+              data={["today", "thisWeek", "older"]}
               keyExtractor={(item) => item}
               renderItem={({ item: groupKey }) => {
-                const groupItems = groupedSessions[groupKey as keyof typeof groupedSessions];
+                const groupItems =
+                  groupedSessions[
+                  groupKey as keyof typeof groupedSessions
+                  ];
                 if (groupItems.length === 0) return null;
 
-                let label = '';
-                if (groupKey === 'today') label = '오늘';
-                else if (groupKey === 'thisWeek') label = '이번 주';
-                else label = '이전';
+                let label = "";
+                if (groupKey === "today") label = "오늘";
+                else if (groupKey === "thisWeek") label = "이번 주";
+                else label = "이전";
 
                 return (
                   <View style={styles.sessionGroup}>
-                    <Text style={styles.sessionGroupLabel}>{label}</Text>
-                    {groupItems.map(session => {
-                      const isActive = session.id === currentSessionId;
+                    <Text style={styles.sessionGroupLabel}>
+                      {label}
+                    </Text>
+                    {groupItems.map((session) => {
+                      const isActive =
+                        session.id === currentSessionId;
                       return (
                         <TouchableOpacity
                           key={session.id}
-                          style={[styles.sessionItem, isActive && styles.sessionItemActive]}
+                          style={[
+                            styles.sessionItem,
+                            isActive && styles.sessionItemActive,
+                          ]}
                           onPress={() => {
                             setCurrentSessionId(session.id);
                             setIsSidebarOpen(false);
+                            // 선택하자마자 해당 세션 히스토리 로드
+                            loadChatHistory(true, session.id);
                           }}
                         >
-                          <MessageSquare size={16} color={isActive ? COLORS.primaryMain : COLORS.neutral400} style={{ marginRight: 12 }} />
+                          <MessageSquare
+                            size={16}
+                            color={
+                              isActive
+                                ? COLORS.primaryMain
+                                : COLORS.neutral400
+                            }
+                            style={{ marginRight: 12 }}
+                          />
                           <View style={{ flex: 1 }}>
-                            <Text style={[styles.sessionTitle, isActive && styles.sessionTitleActive]} numberOfLines={1}>
+                            <Text
+                              style={[
+                                styles.sessionTitle,
+                                isActive &&
+                                styles.sessionTitleActive,
+                              ]}
+                              numberOfLines={1}
+                            >
                               {session.title}
                             </Text>
                           </View>
 
                           <TouchableOpacity
                             style={styles.sessionOptionButton}
-                            onPress={(e) => {
-                              setActiveMenuSessionId(activeMenuSessionId === session.id ? null : session.id);
+                            onPress={() => {
+                              setActiveMenuSessionId(
+                                activeMenuSessionId === session.id
+                                  ? null
+                                  : session.id
+                              );
                             }}
                           >
-                            <MoreHorizontal size={16} color={COLORS.neutral400} />
+                            <MoreHorizontal
+                              size={16}
+                              color={COLORS.neutral400}
+                            />
                           </TouchableOpacity>
 
-                          {/* Context Menu */}
                           {activeMenuSessionId === session.id && (
                             <View style={styles.contextMenu}>
                               <TouchableOpacity
-                                onPress={() => setRenameModal({ isOpen: true, sessionId: session.id, currentTitle: session.title })}
+                                onPress={() =>
+                                  setRenameModal({
+                                    isOpen: true,
+                                    sessionId: session.id,
+                                    currentTitle:
+                                      session.title,
+                                  })
+                                }
                                 style={styles.contextMenuItem}
                               >
-                                <Edit2 size={14} color={COLORS.neutral600} style={{ marginRight: 8 }} />
-                                <Text style={styles.contextMenuText}>이름 변경</Text>
+                                <Edit2
+                                  size={14}
+                                  color={COLORS.neutral600}
+                                  style={{ marginRight: 8 }}
+                                />
+                                <Text
+                                  style={styles.contextMenuText}
+                                >
+                                  이름 변경
+                                </Text>
                               </TouchableOpacity>
-                              <View style={styles.contextMenuDivider} />
+                              <View
+                                style={styles.contextMenuDivider}
+                              />
                               <TouchableOpacity
-                                onPress={() => setDeleteModal({ isOpen: true, sessionId: session.id })}
+                                onPress={() =>
+                                  setDeleteModal({
+                                    isOpen: true,
+                                    sessionId: session.id,
+                                  })
+                                }
                                 style={styles.contextMenuItem}
                               >
-                                <Trash2 size={14} color="#EF4444" style={{ marginRight: 8 }} />
-                                <Text style={[styles.contextMenuText, { color: '#EF4444' }]}>삭제</Text>
+                                <Trash2
+                                  size={14}
+                                  color="#EF4444"
+                                  style={{ marginRight: 8 }}
+                                />
+                                <Text
+                                  style={[
+                                    styles.contextMenuText,
+                                    { color: "#EF4444" },
+                                  ]}
+                                >
+                                  삭제
+                                </Text>
                               </TouchableOpacity>
                             </View>
                           )}
@@ -819,45 +1030,77 @@ export default function ChatScreen() {
         </View>
       )}
 
-      {/* 3. Messages Area (from develop) */}
-      <KeyboardAvoidingView style={styles.chatContainer} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      {/* 3. Messages Area */}
+      <KeyboardAvoidingView
+        style={styles.chatContainer}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
         {loading && currentMessages.length === 0 ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={COLORS.primaryMain} />
+            <ActivityIndicator
+              size="large"
+              color={COLORS.primaryMain}
+            />
           </View>
         ) : (
           <FlatList
             ref={messagesEndRef}
             data={currentMessages}
-            keyExtractor={(item, index) => item.id || index.toString()}
+            keyExtractor={(item, index) =>
+              item.id || index.toString()
+            }
             renderItem={renderItem}
-            contentContainerStyle={[styles.messagesContainer, currentMessages.length > 0 && styles.messagesContainerWithContent]}
+            contentContainerStyle={[
+              styles.messagesContainer,
+              currentMessages.length > 0 &&
+              styles.messagesContainerWithContent,
+            ]}
             showsVerticalScrollIndicator={false}
             onScroll={handleScroll}
             scrollEventThrottle={16}
             onContentSizeChange={() => {
-              if (messagesEndRef.current && currentMessages.length > 0 && isAtBottom.current) {
-                messagesEndRef.current.scrollToEnd({ animated: false });
+              if (
+                messagesEndRef.current &&
+                currentMessages.length > 0 &&
+                isAtBottom.current
+              ) {
+                messagesEndRef.current.scrollToEnd({
+                  animated: false,
+                });
               }
             }}
             ListEmptyComponent={
-              <View style={styles.emptyContainer}><Text style={styles.emptyText}>아직 대화가 없습니다.</Text></View>
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>
+                  아직 대화가 없습니다.
+                </Text>
+              </View>
             }
             style={{ flex: 1 }}
           />
         )}
 
-        <View style={[
-          styles.inputWrapper,
-          { paddingBottom: isKeyboardVisible ? 10 : (Platform.OS === 'ios' ? 90 : 80) }
-        ]}>
+        <View
+          style={[
+            styles.inputWrapper,
+            {
+              paddingBottom: isKeyboardVisible
+                ? 10
+                : Platform.OS === "ios"
+                  ? 90
+                  : 80,
+            },
+          ]}
+        >
           {/* Friend Selection Area */}
           <View style={styles.friendSelectionArea}>
             <TouchableOpacity
               onPress={() => setShowFriendModal(true)}
               style={styles.friendSelectButton}
             >
-              <Text style={styles.friendSelectButtonText}>친구 선택</Text>
+              <Text style={styles.friendSelectButtonText}>
+                친구 선택
+              </Text>
             </TouchableOpacity>
 
             <FlatList
@@ -866,14 +1109,32 @@ export default function ChatScreen() {
               showsHorizontalScrollIndicator={false}
               keyExtractor={(item) => item}
               renderItem={({ item }) => {
-                const friendData = friends.find(f => f.friend.id === item);
+                const friendData = friends.find(
+                  (f) => f.friend.id === item
+                );
                 if (!friendData) return null;
                 return (
                   <View style={styles.selectedFriendChip}>
-                    <Image source={{ uri: friendData.friend.picture || 'https://picsum.photos/150' }} style={styles.chipAvatar} />
-                    <Text style={styles.chipName}>{friendData.friend.name}</Text>
-                    <TouchableOpacity onPress={() => toggleFriendSelection(item)}>
-                      <X size={12} color={COLORS.neutral400} />
+                    <Image
+                      source={{
+                        uri:
+                          friendData.friend.picture ||
+                          "https://picsum.photos/150",
+                      }}
+                      style={styles.chipAvatar}
+                    />
+                    <Text style={styles.chipName}>
+                      {friendData.friend.name}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() =>
+                        toggleFriendSelection(item)
+                      }
+                    >
+                      <X
+                        size={12}
+                        color={COLORS.neutral400}
+                      />
                     </TouchableOpacity>
                   </View>
                 );
@@ -892,7 +1153,7 @@ export default function ChatScreen() {
               style={[
                 styles.input,
                 // @ts-ignore
-                Platform.OS === 'web' && { outlineStyle: 'none' }
+                Platform.OS === "web" && { outlineStyle: "none" },
               ]}
               underlineColorAndroid="transparent"
               selectionColor={COLORS.primaryMain}
@@ -900,9 +1161,19 @@ export default function ChatScreen() {
             <TouchableOpacity
               onPress={sendMessage}
               disabled={!input.trim()}
-              style={[styles.sendButton, !input.trim() && styles.sendButtonDisabled]}
+              style={[
+                styles.sendButton,
+                !input.trim() && styles.sendButtonDisabled,
+              ]}
             >
-              <Send size={18} color={input.trim() ? 'white' : COLORS.neutral400} />
+              <Send
+                size={18}
+                color={
+                  input.trim()
+                    ? "white"
+                    : COLORS.neutral400
+                }
+              />
             </TouchableOpacity>
           </View>
         </View>
@@ -910,14 +1181,16 @@ export default function ChatScreen() {
 
       <BottomNav activeTab={Tab.CHAT} />
 
-      {/* Friend Selection Modal (from develop) */}
+      {/* Friend Selection Modal */}
       <Modal
         visible={showFriendModal}
         transparent={true}
         animationType="slide"
         onRequestClose={() => setShowFriendModal(false)}
       >
-        <TouchableWithoutFeedback onPress={() => setShowFriendModal(false)}>
+        <TouchableWithoutFeedback
+          onPress={() => setShowFriendModal(false)}
+        >
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
               <View style={styles.modalContent}>
@@ -925,16 +1198,29 @@ export default function ChatScreen() {
 
                 <View style={styles.modalHeader}>
                   <View>
-                    <Text style={styles.modalTitle}>친구 선택</Text>
-                    <Text style={styles.modalSubtitle}>일정을 잡을 친구를 선택하세요</Text>
+                    <Text style={styles.modalTitle}>
+                      친구 선택
+                    </Text>
+                    <Text style={styles.modalSubtitle}>
+                      일정을 잡을 친구를 선택하세요
+                    </Text>
                   </View>
-                  <TouchableOpacity onPress={() => setShowFriendModal(false)}>
-                    <X size={24} color={COLORS.neutral400} />
+                  <TouchableOpacity
+                    onPress={() => setShowFriendModal(false)}
+                  >
+                    <X
+                      size={24}
+                      color={COLORS.neutral400}
+                    />
                   </TouchableOpacity>
                 </View>
 
                 <View style={styles.modalSearch}>
-                  <Search size={18} color={COLORS.neutral400} style={styles.modalSearchIcon} />
+                  <Search
+                    size={18}
+                    color={COLORS.neutral400}
+                    style={styles.modalSearchIcon}
+                  />
                   <TextInput
                     placeholder="친구 검색"
                     placeholderTextColor={COLORS.neutral400}
@@ -945,31 +1231,78 @@ export default function ChatScreen() {
                 </View>
 
                 <FlatList
-                  data={friends.filter(f =>
-                    friendSearchQuery === '' ||
-                    f.friend.name.toLowerCase().includes(friendSearchQuery.toLowerCase()) ||
-                    f.friend.email.toLowerCase().includes(friendSearchQuery.toLowerCase())
+                  data={friends.filter(
+                    (f) =>
+                      friendSearchQuery === "" ||
+                      f.friend.name
+                        .toLowerCase()
+                        .includes(
+                          friendSearchQuery.toLowerCase()
+                        ) ||
+                      f.friend.email
+                        .toLowerCase()
+                        .includes(
+                          friendSearchQuery.toLowerCase()
+                        )
                   )}
                   keyExtractor={(item) => item.friend.id}
                   renderItem={({ item }) => {
-                    const isSelected = selectedFriends.includes(item.friend.id);
+                    const isSelected = selectedFriends.includes(
+                      item.friend.id
+                    );
                     return (
                       <TouchableOpacity
-                        onPress={() => toggleFriendSelection(item.friend.id)}
-                        style={[styles.friendListItem, isSelected && styles.friendListItemSelected]}
+                        onPress={() =>
+                          toggleFriendSelection(item.friend.id)
+                        }
+                        style={[
+                          styles.friendListItem,
+                          isSelected &&
+                          styles.friendListItemSelected,
+                        ]}
                       >
                         <View style={styles.friendListInfo}>
-                          <View style={styles.friendListAvatarContainer}>
-                            <Image source={{ uri: item.friend.picture || 'https://picsum.photos/150' }} style={styles.friendListAvatar} />
-
+                          <View
+                            style={
+                              styles.friendListAvatarContainer
+                            }
+                          >
+                            <Image
+                              source={{
+                                uri:
+                                  item.friend.picture ||
+                                  "https://picsum.photos/150",
+                              }}
+                              style={styles.friendListAvatar}
+                            />
                           </View>
                           <View>
-                            <Text style={[styles.friendListName, isSelected && styles.friendListNameSelected]}>{item.friend.name}</Text>
-                            <Text style={styles.friendListEmail}>{item.friend.email}</Text>
+                            <Text
+                              style={[
+                                styles.friendListName,
+                                isSelected &&
+                                styles.friendListNameSelected,
+                              ]}
+                            >
+                              {item.friend.name}
+                            </Text>
+                            <Text
+                              style={styles.friendListEmail}
+                            >
+                              {item.friend.email}
+                            </Text>
                           </View>
                         </View>
-                        <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-                          {isSelected && <Check size={14} color="white" />}
+                        <View
+                          style={[
+                            styles.checkbox,
+                            isSelected &&
+                            styles.checkboxSelected,
+                          ]}
+                        >
+                          {isSelected && (
+                            <Check size={14} color="white" />
+                          )}
                         </View>
                       </TouchableOpacity>
                     );
@@ -983,7 +1316,9 @@ export default function ChatScreen() {
                     style={styles.modalDoneButton}
                   >
                     <Text style={styles.modalDoneButtonText}>
-                      완료 {selectedFriends.length > 0 && `(${selectedFriends.length})`}
+                      완료{" "}
+                      {selectedFriends.length > 0 &&
+                        `(${selectedFriends.length})`}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -993,74 +1328,113 @@ export default function ChatScreen() {
         </TouchableWithoutFeedback>
       </Modal>
 
-      {/* Rename Modal (from dlrbals#28) */}
+      {/* Rename Modal */}
       <Modal
         visible={renameModal.isOpen}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setRenameModal({ isOpen: false, sessionId: null, currentTitle: '' })}
+        onRequestClose={() =>
+          setRenameModal({
+            isOpen: false,
+            sessionId: null,
+            currentTitle: "",
+          })
+        }
       >
         <View style={styles.alertModalOverlay}>
           <View style={styles.alertModalContent}>
-            <Text style={styles.alertModalTitle}>채팅방 이름 변경</Text>
+            <Text style={styles.alertModalTitle}>
+              채팅방 이름 변경
+            </Text>
             <TextInput
               value={renameModal.currentTitle}
-              onChangeText={(text) => setRenameModal(prev => ({ ...prev, currentTitle: text }))}
+              onChangeText={(text) =>
+                setRenameModal((prev) => ({
+                  ...prev,
+                  currentTitle: text,
+                }))
+              }
               style={styles.alertInput}
               autoFocus
             />
             <View style={styles.alertButtonContainer}>
               <TouchableOpacity
-                onPress={() => setRenameModal({ isOpen: false, sessionId: null, currentTitle: '' })}
+                onPress={() =>
+                  setRenameModal({
+                    isOpen: false,
+                    sessionId: null,
+                    currentTitle: "",
+                  })
+                }
                 style={styles.alertButtonCancel}
               >
-                <Text style={styles.alertButtonCancelText}>취소</Text>
+                <Text style={styles.alertButtonCancelText}>
+                  취소
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={updateSessionTitle}
                 style={styles.alertButtonConfirm}
               >
-                <Text style={styles.alertButtonConfirmText}>저장</Text>
+                <Text style={styles.alertButtonConfirmText}>
+                  저장
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Delete Modal (from dlrbals#28) */}
+      {/* Delete Modal */}
       <Modal
         visible={deleteModal.isOpen}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setDeleteModal({ isOpen: false, sessionId: null })}
+        onRequestClose={() =>
+          setDeleteModal({ isOpen: false, sessionId: null })
+        }
       >
         <View style={styles.alertModalOverlay}>
           <View style={styles.alertModalContent}>
             <View style={styles.deleteIconContainer}>
               <Trash2 size={24} color="#EF4444" />
             </View>
-            <Text style={styles.alertModalTitle}>채팅방 삭제</Text>
+            <Text style={styles.alertModalTitle}>
+              채팅방 삭제
+            </Text>
             <Text style={styles.alertModalMessage}>
-              이 채팅방을 삭제하시겠습니까?{"\n"}삭제된 대화 내용은 복구할 수 없습니다.
+              이 채팅방을 삭제하시겠습니까?{"\n"}삭제된 대화
+              내용은 복구할 수 없습니다.
             </Text>
             <View style={styles.alertButtonContainer}>
               <TouchableOpacity
-                onPress={() => setDeleteModal({ isOpen: false, sessionId: null })}
+                onPress={() =>
+                  setDeleteModal({
+                    isOpen: false,
+                    sessionId: null,
+                  })
+                }
                 style={styles.alertButtonCancel}
               >
-                <Text style={styles.alertButtonCancelText}>취소</Text>
+                <Text style={styles.alertButtonCancelText}>
+                  취소
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={deleteSession}
-                style={[styles.alertButtonConfirm, { backgroundColor: '#EF4444' }]}
+                style={[
+                  styles.alertButtonConfirm,
+                  { backgroundColor: "#EF4444" },
+                ]}
               >
-                <Text style={styles.alertButtonConfirmText}>삭제하기</Text>
+                <Text style={styles.alertButtonConfirmText}>
+                  삭제하기
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-
     </SafeAreaView>
   );
 }
@@ -1081,38 +1455,38 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 16,
     elevation: 8,
-    overflow: 'hidden',
-    position: 'relative',
+    overflow: "hidden",
+    position: "relative",
   },
   headerDecor: {
-    position: 'absolute',
+    position: "absolute",
     top: -40,
     right: -40,
     width: 128,
     height: 128,
-    backgroundColor: 'white',
+    backgroundColor: "white",
     opacity: 0.1,
     borderRadius: 64,
   },
   headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     zIndex: 1,
   },
   headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   headerIconContainer: {
     width: 44,
     height: 44,
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 16,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -1124,8 +1498,8 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: 'white',
+    fontWeight: "bold",
+    color: "white",
   },
   menuButton: {
     padding: 8,
@@ -1137,34 +1511,34 @@ const styles = StyleSheet.create({
   sidebarOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 50,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
+    flexDirection: "row",
+    justifyContent: "flex-end",
   },
   sidebarPanel: {
-    width: '80%',
+    width: "80%",
     maxWidth: 320,
-    height: '100%',
-    backgroundColor: 'white',
+    height: "100%",
+    backgroundColor: "white",
     borderTopLeftRadius: 24,
     borderBottomLeftRadius: 24,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: -4, height: 0 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 16,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   sidebarHeader: {
     padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.neutral100,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   sidebarTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.neutralSlate,
   },
   newChatButton: {
@@ -1181,14 +1555,14 @@ const styles = StyleSheet.create({
   },
   sessionGroupLabel: {
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.neutral400,
     marginBottom: 4,
     marginLeft: 12,
   },
   sessionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     padding: 12,
     borderRadius: 12,
     marginBottom: 2,
@@ -1198,7 +1572,7 @@ const styles = StyleSheet.create({
   },
   sessionTitle: {
     fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.neutralSlate,
   },
   sessionTitleActive: {
@@ -1208,13 +1582,13 @@ const styles = StyleSheet.create({
     padding: 6,
   },
   contextMenu: {
-    position: 'absolute',
+    position: "absolute",
     right: 40,
     top: 40,
     width: 120,
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderRadius: 12,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
@@ -1225,14 +1599,14 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   contextMenuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     padding: 8,
     borderRadius: 8,
   },
   contextMenuText: {
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.neutral600,
   },
   contextMenuDivider: {
@@ -1244,18 +1618,18 @@ const styles = StyleSheet.create({
   // Alert Modals
   alertModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
     padding: 24,
   },
   alertModalContent: {
-    width: '100%',
+    width: "100%",
     maxWidth: 320,
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderRadius: 24,
     padding: 24,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.2,
     shadowRadius: 20,
@@ -1263,15 +1637,15 @@ const styles = StyleSheet.create({
   },
   alertModalTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.neutralSlate,
     marginBottom: 16,
-    textAlign: 'center',
+    textAlign: "center",
   },
   alertModalMessage: {
     fontSize: 14,
     color: COLORS.neutral400,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 24,
     lineHeight: 20,
   },
@@ -1280,12 +1654,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.neutralSlate,
     marginBottom: 24,
   },
   alertButtonContainer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
   },
   alertButtonCancel: {
@@ -1294,11 +1668,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.neutral200,
-    alignItems: 'center',
+    alignItems: "center",
   },
   alertButtonCancelText: {
     fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.neutral500,
   },
   alertButtonConfirm: {
@@ -1306,7 +1680,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 12,
     backgroundColor: COLORS.primaryMain,
-    alignItems: 'center',
+    alignItems: "center",
     shadowColor: COLORS.primaryMain,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
@@ -1315,17 +1689,17 @@ const styles = StyleSheet.create({
   },
   alertButtonConfirmText: {
     fontSize: 14,
-    fontWeight: 'bold',
-    color: 'white',
+    fontWeight: "bold",
+    color: "white",
   },
   deleteIconContainer: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#FEF2F2',
-    justifyContent: 'center',
-    alignItems: 'center',
-    alignSelf: 'center',
+    backgroundColor: "#FEF2F2",
+    justifyContent: "center",
+    alignItems: "center",
+    alignSelf: "center",
     marginBottom: 16,
   },
 
@@ -1342,36 +1716,36 @@ const styles = StyleSheet.create({
   },
   messageItem: {
     marginBottom: 20,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
+    flexDirection: "row",
+    alignItems: "flex-end",
   },
   userMessage: {
-    justifyContent: 'flex-end',
+    justifyContent: "flex-end",
   },
   aiMessage: {
-    justifyContent: 'flex-start',
+    justifyContent: "flex-start",
   },
   aiAvatar: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'white',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "white",
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 8,
     borderWidth: 1,
     borderColor: COLORS.neutral100,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
   },
   messageBubble: {
-    maxWidth: '75%',
+    maxWidth: "75%",
     padding: 14,
     borderRadius: 20,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
@@ -1382,7 +1756,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 4,
   },
   aiBubble: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderTopLeftRadius: 4,
     borderWidth: 1,
     borderColor: COLORS.neutral100,
@@ -1392,7 +1766,7 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   userMessageText: {
-    color: 'white',
+    color: "white",
   },
   aiMessageText: {
     color: COLORS.neutralSlate,
@@ -1400,17 +1774,17 @@ const styles = StyleSheet.create({
   timestampText: {
     fontSize: 10,
     marginTop: 6,
-    alignSelf: 'flex-end',
+    alignSelf: "flex-end",
   },
   userTimestamp: {
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: "rgba(255, 255, 255, 0.7)",
   },
   aiTimestamp: {
     color: COLORS.neutral400,
   },
   loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
+    flexDirection: "row",
+    alignItems: "flex-end",
     paddingHorizontal: 16,
     marginBottom: 20,
   },
@@ -1418,17 +1792,17 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'white',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "white",
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 8,
     borderWidth: 1,
     borderColor: COLORS.neutral100,
   },
   loadingBubble: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "white",
     padding: 12,
     borderRadius: 20,
     borderTopLeftRadius: 4,
@@ -1445,25 +1819,24 @@ const styles = StyleSheet.create({
   },
   emptyContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingVertical: 60,
   },
   emptyText: {
     color: COLORS.neutral400,
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   inputWrapper: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderTopWidth: 1,
     borderTopColor: COLORS.neutral100,
-    paddingBottom: Platform.OS === 'ios' ? 90 : 80,
     paddingTop: 12,
   },
   friendSelectionArea: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
     marginBottom: 12,
   },
@@ -1476,16 +1849,16 @@ const styles = StyleSheet.create({
   },
   friendSelectButtonText: {
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.neutral500,
   },
   selectedFriendsList: {
     flexGrow: 0,
   },
   selectedFriendChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "white",
     borderWidth: 1,
     borderColor: COLORS.neutral200,
     paddingLeft: 4,
@@ -1502,13 +1875,13 @@ const styles = StyleSheet.create({
   },
   chipName: {
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.neutral500,
     marginRight: 6,
   },
   inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginHorizontal: 16,
     backgroundColor: COLORS.neutralLight,
     borderRadius: 24,
@@ -1529,8 +1902,8 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     backgroundColor: COLORS.primaryMain,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     shadowColor: COLORS.primaryMain,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
@@ -1542,41 +1915,39 @@ const styles = StyleSheet.create({
     shadowOpacity: 0,
     elevation: 0,
   },
-  sendButtonText: {
-    display: 'none',
-  },
+
   // Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
   },
   modalContent: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     paddingBottom: 40,
-    maxHeight: '80%',
+    maxHeight: "80%",
   },
   modalHandle: {
     width: 40,
     height: 4,
     backgroundColor: COLORS.neutral200,
     borderRadius: 2,
-    alignSelf: 'center',
+    alignSelf: "center",
     marginTop: 12,
     marginBottom: 20,
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 24,
     marginBottom: 24,
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.neutralSlate,
     marginBottom: 4,
   },
@@ -1585,8 +1956,8 @@ const styles = StyleSheet.create({
     color: COLORS.neutral400,
   },
   modalSearch: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: COLORS.neutralLight,
     marginHorizontal: 24,
     paddingHorizontal: 16,
@@ -1607,9 +1978,9 @@ const styles = StyleSheet.create({
     maxHeight: 300,
   },
   friendListItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.neutral100,
@@ -1622,11 +1993,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0,
   },
   friendListInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   friendListAvatarContainer: {
-    position: 'relative',
+    position: "relative",
     marginRight: 12,
   },
   friendListAvatar: {
@@ -1636,19 +2007,19 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.neutral200,
   },
   friendListStatus: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     right: 0,
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#4ADE80',
+    backgroundColor: "#4ADE80",
     borderWidth: 2,
-    borderColor: 'white',
+    borderColor: "white",
   },
   friendListName: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: "600",
     color: COLORS.neutralSlate,
     marginBottom: 2,
   },
@@ -1665,8 +2036,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 2,
     borderColor: COLORS.neutral200,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   checkboxSelected: {
     backgroundColor: COLORS.primaryMain,
@@ -1681,7 +2052,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primaryMain,
     paddingVertical: 16,
     borderRadius: 16,
-    alignItems: 'center',
+    alignItems: "center",
     shadowColor: COLORS.primaryMain,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
@@ -1689,8 +2060,9 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   modalDoneButtonText: {
-    color: 'white',
+    color: "white",
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
 });
+
