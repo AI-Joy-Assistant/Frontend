@@ -137,6 +137,8 @@ export default function HomeScreen() {
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [selectedDetailSchedule, setSelectedDetailSchedule] = useState<ScheduleItem | null>(null);
 
   // Form State
   const [formTitle, setFormTitle] = useState('');
@@ -407,6 +409,21 @@ export default function HomeScreen() {
     setFormEndTime('10:00');
     setShowDeleteConfirm(false);
     setShowScheduleModal(true);
+  };
+
+  const handleScheduleClick = (schedule: ScheduleItem) => {
+    setSelectedDetailSchedule(schedule);
+    setShowDetailModal(true);
+  };
+
+  const handleMoveToEdit = () => {
+    if (selectedDetailSchedule) {
+      setShowDetailModal(false);
+      // Wait for modal transition slightly if needed, or just open next one
+      setTimeout(() => {
+        handleEditSchedule(selectedDetailSchedule);
+      }, 100);
+    }
   };
 
   const handleEditSchedule = (schedule: ScheduleItem) => {
@@ -748,10 +765,10 @@ export default function HomeScreen() {
                   return (
                     <TouchableOpacity
                       key={schedule.id}
-                      onPress={() => handleEditSchedule(schedule)}
+                      onPress={() => handleScheduleClick(schedule)}
                       style={[
                         styles.scheduleCard,
-                        schedule.type === 'A2A' ? styles.scheduleCardA2A : styles.scheduleCardNormal
+                        schedule.type === 'A2A' ? styles.scheduleCardA2A : { borderLeftColor: getScheduleColor(schedule).bg }
                       ]}
                     >
                       <View style={styles.scheduleCardHeader}>
@@ -1040,6 +1057,71 @@ export default function HomeScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* Detail Modal */}
+      <Modal
+        visible={showDetailModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowDetailModal(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowDetailModal(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.detailCard}>
+                <View style={styles.detailHeader}>
+                  <Text style={styles.detailTitle}>{selectedDetailSchedule?.title}</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowDetailModal(false)}
+                    style={styles.closeDetailButton}
+                  >
+                    <X size={24} color={COLORS.neutral400} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.tagContainer}>
+                  <View style={styles.typeTag}>
+                    <Text style={styles.typeTagText}>일반 일정</Text>
+                  </View>
+                </View>
+
+                <View style={styles.infoSection}>
+                  <View style={styles.infoRow}>
+                    <View style={styles.infoIconBox}>
+                      <CalendarIcon size={20} color={COLORS.neutral500} />
+                    </View>
+                    <View>
+                      <Text style={styles.infoLabel}>날짜</Text>
+                      <Text style={styles.infoValue}>
+                        {selectedDetailSchedule?.date}
+                        {selectedDetailSchedule?.endDate && ` ~ ${selectedDetailSchedule.endDate}`}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.infoRow}>
+                    <View style={styles.infoIconBox}>
+                      <Clock size={20} color={COLORS.neutral500} />
+                    </View>
+                    <View>
+                      <Text style={styles.infoLabel}>시간</Text>
+                      <Text style={styles.infoValue}>{selectedDetailSchedule?.time}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.editLinkButton}
+                  onPress={handleMoveToEdit}
+                >
+                  <Text style={styles.editLinkText}>일정 수정하기</Text>
+                  <ChevronRight size={18} color="white" />
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       <BottomNav activeTab={Tab.HOME} />
@@ -1576,5 +1658,94 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: 'white',
+  },
+  // Detail Modal Styles
+  detailCard: {
+    width: '85%',
+    backgroundColor: 'white',
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  detailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  detailTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLORS.neutral900,
+    flex: 1,
+    marginRight: 12,
+  },
+  closeDetailButton: {
+    padding: 4,
+    marginTop: -4,
+    marginRight: -4,
+    backgroundColor: COLORS.neutral100,
+    borderRadius: 20,
+  },
+  tagContainer: {
+    flexDirection: 'row',
+    marginBottom: 24,
+  },
+  typeTag: {
+    backgroundColor: COLORS.neutral100,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  typeTagText: {
+    fontSize: 13,
+    color: COLORS.neutral600,
+    fontWeight: '600',
+  },
+  infoSection: {
+    gap: 16,
+    marginBottom: 24,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 16,
+  },
+  infoIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: COLORS.neutral50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.neutral400,
+    marginBottom: 4,
+  },
+  infoValue: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: COLORS.neutral900,
+  },
+  editLinkButton: {
+    backgroundColor: COLORS.primaryMain,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 16,
+    gap: 8,
+  },
+  editLinkText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
