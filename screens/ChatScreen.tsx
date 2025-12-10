@@ -95,6 +95,7 @@ export default function ChatScreen() {
   const [activeMenuSessionId, setActiveMenuSessionId] = useState<string | null>(
     null
   );
+  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Modals
   const [renameModal, setRenameModal] = useState<{
@@ -169,41 +170,85 @@ export default function ChatScreen() {
     }
   };
 
+  // 채팅 세션 목록 불러오기
+  const fetchSessions = async () => {
+    try {
+      const token = await AsyncStorage.getItem("accessToken");
+      if (!token) return;
+
+      const res = await fetch(`${API_BASE}/chat/sessions`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const backendSessions = data.sessions || [];
+
+        if (backendSessions.length > 0) {
+          // 백엔드 세션을 로컬 형식으로 변환
+          const loadedSessions: ChatSession[] = backendSessions.map((s: any) => ({
+            id: s.id,
+            title: s.title || "새 채팅",
+            updatedAt: s.updated_at ? new Date(s.updated_at) : new Date(),
+            messages: [], // 메시지는 별도로 로드
+          }));
+
+          setSessions(prev => {
+            // 기존 로컬 세션(legacy 등)과 백엔드 세션 병합
+            const backendIds = new Set(loadedSessions.map(s => s.id));
+            const localOnly = prev.filter(s => !backendIds.has(s.id) && s.id === 'legacy');
+            return [...loadedSessions, ...localOnly];
+          });
+
+          // 현재 세션이 없으면 첫 번째 세션 선택
+          if (!currentSessionId) {
+            setCurrentSessionId(backendSessions[0].id);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Failed to fetch sessions", e);
+    }
+  };
+
   useEffect(() => {
     fetchFriends();
     fetchUserProfile();
+    fetchSessions();
   }, []);
 
-  // Fixed formatTime (Safe version)
+  // Fixed formatTime (Korean Standard Time)
   const formatTime = (isoString?: string) => {
     if (!isoString) return "";
     try {
-      let timeValue = isoString;
-      if (
-        !isoString.endsWith("Z") &&
-        !/[+-]\d{2}:?\d{2}$/.test(isoString)
-      ) {
-        timeValue += "Z";
-      }
-      const date = new Date(timeValue);
+      // 백엔드 timestamp를 Date 객체로 변환
+      const date = new Date(isoString);
       if (isNaN(date.getTime())) return "";
 
-      const now = new Date();
-      const isToday =
-        date.getDate() === now.getDate() &&
-        date.getMonth() === now.getMonth() &&
-        date.getFullYear() === now.getFullYear();
-
-      const timeStr = date.toLocaleTimeString("ko-KR", {
+      // 한국 시간대로 변환하여 표시
+      const kstOptions: Intl.DateTimeFormatOptions = {
+        timeZone: "Asia/Seoul",
         hour: "2-digit",
         minute: "2-digit",
         hour12: true,
-      });
+      };
+
+      // 오늘인지 확인 (KST 기준)
+      const now = new Date();
+      const nowKST = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+      const dateKST = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+
+      const isToday =
+        dateKST.getDate() === nowKST.getDate() &&
+        dateKST.getMonth() === nowKST.getMonth() &&
+        dateKST.getFullYear() === nowKST.getFullYear();
+
+      const timeStr = date.toLocaleTimeString("ko-KR", kstOptions);
 
       if (isToday) {
         return timeStr;
       } else {
-        const dateStr = `${date.getMonth() + 1}월 ${date.getDate()}일`;
+        const dateStr = `${dateKST.getMonth() + 1}월 ${dateKST.getDate()}일`;
         return `${dateStr} ${timeStr}`;
       }
     } catch (e) {
@@ -215,6 +260,10 @@ export default function ChatScreen() {
 
   const currentMessages = useMemo(() => {
     return sessions.find((s) => s.id === currentSessionId)?.messages || [];
+  }, [sessions, currentSessionId]);
+
+  const currentSessionTitle = useMemo(() => {
+    return sessions.find((s) => s.id === currentSessionId)?.title || "새 채팅";
   }, [sessions, currentSessionId]);
 
   const createNewSession = async () => {
@@ -275,12 +324,37 @@ export default function ChatScreen() {
     }
   };
 
-  const updateSessionTitle = () => {
+  const updateSessionTitle = async () => {
     if (renameModal.sessionId && renameModal.currentTitle.trim()) {
+      const sessionIdToUpdate = renameModal.sessionId;
+      const newTitle = renameModal.currentTitle.trim();
+
+      // 백엔드에서 세션 이름 변경 (uuid 형식인 경우에만)
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sessionIdToUpdate);
+
+      if (isUUID) {
+        try {
+          const token = await AsyncStorage.getItem("accessToken");
+          if (token) {
+            await fetch(`${API_BASE}/chat/sessions/${sessionIdToUpdate}`, {
+              method: "PUT",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ title: newTitle }),
+            });
+          }
+        } catch (e) {
+          console.error("Failed to update session title on backend", e);
+        }
+      }
+
+      // 로컬 상태 업데이트
       setSessions((prev) =>
         prev.map((s) =>
-          s.id === renameModal.sessionId
-            ? { ...s, title: renameModal.currentTitle }
+          s.id === sessionIdToUpdate
+            ? { ...s, title: newTitle }
             : s
         )
       );
@@ -289,14 +363,34 @@ export default function ChatScreen() {
     }
   };
 
-  const deleteSession = () => {
+  const deleteSession = async () => {
     if (deleteModal.sessionId) {
+      const sessionIdToDelete = deleteModal.sessionId;
+
+      // 백엔드에서 세션 삭제 (uuid 형식인 경우에만)
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sessionIdToDelete);
+
+      if (isUUID) {
+        try {
+          const token = await AsyncStorage.getItem("accessToken");
+          if (token) {
+            await fetch(`${API_BASE}/chat/sessions/${sessionIdToDelete}`, {
+              method: "DELETE",
+              headers: { Authorization: `Bearer ${token}` },
+            });
+          }
+        } catch (e) {
+          console.error("Failed to delete session from backend", e);
+        }
+      }
+
+      // 로컬 상태에서 제거
       const newSessions = sessions.filter(
-        (s) => s.id !== deleteModal.sessionId
+        (s) => s.id !== sessionIdToDelete
       );
       setSessions(newSessions);
 
-      if (currentSessionId === deleteModal.sessionId) {
+      if (currentSessionId === sessionIdToDelete) {
         if (newSessions.length > 0) {
           setCurrentSessionId(newSessions[0].id);
         } else {
@@ -426,7 +520,7 @@ export default function ChatScreen() {
               sender: "user",
               text: log.request_text,
               timestamp: log.created_at,
-              id: log.id,
+              id: `${log.id}-user`,  // 고유 ID 생성
             });
           }
 
@@ -436,7 +530,7 @@ export default function ChatScreen() {
               sender: "ai",
               text: log.response_text,
               timestamp: log.created_at,
-              id: log.id,
+              id: `${log.id}-ai`,  // 고유 ID 생성
             });
           }
         });
@@ -499,7 +593,8 @@ export default function ChatScreen() {
 
   useFocusEffect(
     React.useCallback(() => {
-      // 화면 들어올 때 한 번
+      // 화면 들어올 때 세션 목록과 히스토리 불러오기
+      fetchSessions();
       loadChatHistory(true);
 
       // 3초마다 폴링
@@ -528,8 +623,15 @@ export default function ChatScreen() {
     needsApproval?: boolean,
     proposal?: any,
     threadId?: string,
-    sessionIds?: string[]
+    sessionIds?: string[],
+    targetSessionId?: string | null
   ) => {
+    const sid = targetSessionId ?? currentSessionId;
+    if (!sid) {
+      console.error("ChatScreen: addMessage called without sessionId");
+      return;
+    }
+
     const newMsg: Message = {
       id: Date.now().toString(),
       sender,
@@ -541,17 +643,36 @@ export default function ChatScreen() {
       timestamp: new Date().toISOString(),
     };
 
-    setSessions((prev) =>
-      prev.map((s) =>
-        s.id === currentSessionId
+    console.log("ChatScreen: addMessage called", { sender, text, sessionId: sid });
+
+    setSessions((prev) => {
+      const sessionExists = prev.some((s) => s.id === sid);
+
+      if (!sessionExists) {
+        // 세션이 존재하지 않으면 새 세션을 생성하며 메시지 추가
+        console.log("ChatScreen: Creating new session for message", sid);
+        return [
+          {
+            id: sid,
+            title: "새 채팅",
+            messages: [newMsg],
+            updatedAt: new Date(),
+          },
+          ...prev,
+        ];
+      }
+
+      // 기존 세션에 메시지 추가
+      return prev.map((s) =>
+        s.id === sid
           ? {
             ...s,
             messages: [...s.messages, newMsg],
             updatedAt: new Date(),
           }
           : s
-      )
-    );
+      );
+    });
   };
 
   const sendMessage = async () => {
@@ -562,6 +683,13 @@ export default function ChatScreen() {
     const friendsToSend = selectedFriends;
     setSelectedFriends([]);
 
+    // Capture the current session ID at the start of the request
+    const activeSessionId = currentSessionId;
+    if (!activeSessionId) {
+      console.error("No active session ID");
+      return;
+    }
+
     const userMsg: Message = {
       sender: "user",
       text: userText,
@@ -569,9 +697,29 @@ export default function ChatScreen() {
       id: Date.now().toString(),
     };
 
-    setSessions((prev) =>
-      prev.map((s) => {
-        if (s.id === currentSessionId) {
+    setSessions((prev) => {
+      const sessionExists = prev.some((s) => s.id === activeSessionId);
+
+      if (!sessionExists) {
+        // 세션이 존재하지 않으면 새 세션을 생성하며 메시지 추가
+        console.log("ChatScreen: Creating new session for user message", activeSessionId);
+        const newTitle =
+          userText.length > 15
+            ? userText.substring(0, 15) + "..."
+            : userText;
+        return [
+          {
+            id: activeSessionId,
+            title: newTitle,
+            messages: [userMsg],
+            updatedAt: new Date(),
+          },
+          ...prev,
+        ];
+      }
+
+      return prev.map((s) => {
+        if (s.id === activeSessionId) {
           const isFirstUserMsg = s.messages.length <= 1;
           let newTitle = s.title;
           if (isFirstUserMsg && s.title === "새 채팅") {
@@ -588,8 +736,8 @@ export default function ChatScreen() {
           };
         }
         return s;
-      })
-    );
+      });
+    });
 
     isAtBottom.current = true;
     setTimeout(() => {
@@ -609,7 +757,7 @@ export default function ChatScreen() {
           date: pendingDate ?? undefined,
           selected_friends:
             friendsToSend.length > 0 ? friendsToSend : undefined,
-          session_id: currentSessionId,
+          session_id: activeSessionId,
         }),
       });
 
@@ -619,7 +767,9 @@ export default function ChatScreen() {
           .catch(() => ({ detail: `서버 오류 (${res.status})` }));
         addMessage(
           "system",
-          `❌ 오류: ${errorData.detail || "알 수 없는 오류"}`
+          `❌ 오류: ${errorData.detail || "알 수 없는 오류"}`,
+          undefined, undefined, undefined, undefined,
+          activeSessionId
         );
         return;
       }
@@ -635,6 +785,7 @@ export default function ChatScreen() {
       const sessionIds = scheduleInfo.session_ids || [];
 
       if (aiResponse) {
+        console.log("ChatScreen: Received AI response", aiResponse);
         if (needsApproval && proposal) {
           addMessage(
             "ai",
@@ -642,17 +793,22 @@ export default function ChatScreen() {
             true,
             proposal,
             threadId,
-            sessionIds
+            sessionIds,
+            activeSessionId
           );
         } else {
-          addMessage("ai", aiResponse);
+          addMessage("ai", aiResponse, undefined, undefined, undefined, undefined, activeSessionId);
         }
+      } else {
+        console.log("ChatScreen: No AI response in data", data);
       }
     } catch (e) {
-      console.error(e);
+      console.error("ChatScreen: Error sending message", e);
       addMessage(
         "system",
-        "❌ 메시지 전송 중 오류가 발생했습니다."
+        "❌ 메시지 전송 중 오류가 발생했습니다.",
+        undefined, undefined, undefined, undefined,
+        activeSessionId
       );
     }
   };
@@ -855,6 +1011,9 @@ export default function ChatScreen() {
               <Text style={styles.headerTitle}>
                 {userName}님의 비서
               </Text>
+              <Text style={styles.headerSubtitle}>
+                {currentSessionTitle}
+              </Text>
             </View>
           </View>
 
@@ -952,7 +1111,10 @@ export default function ChatScreen() {
 
                           <TouchableOpacity
                             style={styles.sessionOptionButton}
-                            onPress={() => {
+                            onPress={(event) => {
+                              // 버튼의 화면 위치 가져오기
+                              const { pageX, pageY } = event.nativeEvent;
+                              setMenuPosition({ x: pageX, y: pageY });
                               setActiveMenuSessionId(
                                 activeMenuSessionId === session.id
                                   ? null
@@ -965,59 +1127,6 @@ export default function ChatScreen() {
                               color={COLORS.neutral400}
                             />
                           </TouchableOpacity>
-
-                          {activeMenuSessionId === session.id && (
-                            <View style={styles.contextMenu}>
-                              <TouchableOpacity
-                                onPress={() =>
-                                  setRenameModal({
-                                    isOpen: true,
-                                    sessionId: session.id,
-                                    currentTitle:
-                                      session.title,
-                                  })
-                                }
-                                style={styles.contextMenuItem}
-                              >
-                                <Edit2
-                                  size={14}
-                                  color={COLORS.neutral600}
-                                  style={{ marginRight: 8 }}
-                                />
-                                <Text
-                                  style={styles.contextMenuText}
-                                >
-                                  이름 변경
-                                </Text>
-                              </TouchableOpacity>
-                              <View
-                                style={styles.contextMenuDivider}
-                              />
-                              <TouchableOpacity
-                                onPress={() =>
-                                  setDeleteModal({
-                                    isOpen: true,
-                                    sessionId: session.id,
-                                  })
-                                }
-                                style={styles.contextMenuItem}
-                              >
-                                <Trash2
-                                  size={14}
-                                  color="#EF4444"
-                                  style={{ marginRight: 8 }}
-                                />
-                                <Text
-                                  style={[
-                                    styles.contextMenuText,
-                                    { color: "#EF4444" },
-                                  ]}
-                                >
-                                  삭제
-                                </Text>
-                              </TouchableOpacity>
-                            </View>
-                          )}
                         </TouchableOpacity>
                       );
                     })}
@@ -1328,6 +1437,69 @@ export default function ChatScreen() {
         </TouchableWithoutFeedback>
       </Modal>
 
+      {/* Context Menu Modal */}
+      <Modal
+        visible={activeMenuSessionId !== null}
+        transparent={true}
+        animationType="none"
+        onRequestClose={() => setActiveMenuSessionId(null)}
+      >
+        <TouchableWithoutFeedback onPress={() => setActiveMenuSessionId(null)}>
+          <View style={styles.contextMenuOverlay}>
+            <View style={[
+              styles.contextMenuModal,
+              { position: "absolute", top: menuPosition.y - 10, left: menuPosition.x - 180 }
+            ]}>
+              <TouchableOpacity
+                onPress={() => {
+                  const session = sessions.find(s => s.id === activeMenuSessionId);
+                  if (session) {
+                    setRenameModal({
+                      isOpen: true,
+                      sessionId: session.id,
+                      currentTitle: session.title,
+                    });
+                  }
+                  setActiveMenuSessionId(null);
+                }}
+                style={styles.contextMenuItem}
+              >
+                <Edit2
+                  size={16}
+                  color={COLORS.neutral600}
+                  style={{ marginRight: 12 }}
+                />
+                <Text style={styles.contextMenuText}>
+                  이름 변경
+                </Text>
+              </TouchableOpacity>
+              <View style={styles.contextMenuDivider} />
+              <TouchableOpacity
+                onPress={() => {
+                  if (activeMenuSessionId) {
+                    setDeleteModal({
+                      isOpen: true,
+                      sessionId: activeMenuSessionId,
+                    });
+                  }
+                  setActiveMenuSessionId(null);
+                }}
+                style={styles.contextMenuItem}
+              >
+                <Trash2
+                  size={16}
+                  color="#EF4444"
+                  style={{ marginRight: 12 }}
+                />
+                <Text style={[styles.contextMenuText, { color: "#EF4444" }]}>
+                  삭제
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
       {/* Rename Modal */}
       <Modal
         visible={renameModal.isOpen}
@@ -1501,6 +1673,12 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "white",
   },
+  headerSubtitle: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.8)",
+    marginTop: 2,
+    fontWeight: "500",
+  },
   menuButton: {
     padding: 8,
     marginRight: -8,
@@ -1549,6 +1727,7 @@ const styles = StyleSheet.create({
   sidebarList: {
     flex: 1,
     padding: 12,
+    overflow: "visible",
   },
   sessionGroup: {
     marginBottom: 16,
@@ -1566,6 +1745,8 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     marginBottom: 2,
+    position: "relative",
+    overflow: "visible",
   },
   sessionItemActive: {
     backgroundColor: COLORS.primaryBg,
@@ -1581,21 +1762,38 @@ const styles = StyleSheet.create({
   sessionOptionButton: {
     padding: 6,
   },
+  contextMenuOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  contextMenuModal: {
+    width: 200,
+    backgroundColor: "white",
+    borderRadius: 16,
+    padding: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 12,
+  },
   contextMenu: {
     position: "absolute",
-    right: 40,
-    top: 40,
+    right: 0,
+    top: 36,
     width: 120,
     backgroundColor: "white",
     borderRadius: 12,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.15,
     shadowRadius: 12,
-    elevation: 8,
+    elevation: 10,
     borderWidth: 1,
     borderColor: COLORS.neutral100,
-    zIndex: 100,
+    zIndex: 1000,
     padding: 4,
   },
   contextMenuItem: {
