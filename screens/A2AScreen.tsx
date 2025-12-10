@@ -741,10 +741,6 @@ const A2AScreen = () => {
 
     return (
         <SafeAreaView style={styles.container}>
-            {/* Header */}
-            <View style={styles.headerContainer}>
-                <Text style={styles.headerTitle}>Event</Text>
-            </View>
 
             {/* List */}
             <View style={styles.listContainer}>
@@ -1253,9 +1249,9 @@ const styles = StyleSheet.create({
 
     logItem: {
         backgroundColor: COLORS.white,
-        padding: 20,
-        borderRadius: 16,
-        marginBottom: 16,
+        padding: 12,
+        borderRadius: 12,
+        marginBottom: 10,
         borderWidth: 1,
         borderColor: COLORS.neutral100,
         shadowColor: '#000',
@@ -1264,16 +1260,16 @@ const styles = StyleSheet.create({
         shadowRadius: 2,
         elevation: 2
     },
-    logHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
-    logTitle: { fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate },
-    statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, borderWidth: 1 },
+    logHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
+    logTitle: { fontSize: 15, fontWeight: 'bold', color: COLORS.neutralSlate },
+    statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 10, borderWidth: 1 },
     statusCompleted: { backgroundColor: COLORS.green50, borderColor: COLORS.green100 },
     statusInProgress: { backgroundColor: COLORS.amber50, borderColor: COLORS.amber100 },
-    statusText: { fontSize: 10, fontWeight: 'bold' },
-    logSummary: { marginBottom: 16 },
-    logSummaryText: { fontSize: 12, color: COLORS.neutral500 },
-    logFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.neutral50 },
-    logTime: { fontSize: 12, color: COLORS.neutral400 },
+    statusText: { fontSize: 9, fontWeight: 'bold' },
+    logSummary: { marginBottom: 10 },
+    logSummaryText: { fontSize: 11, color: COLORS.neutral500 },
+    logFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderTopColor: COLORS.neutral50 },
+    logTime: { fontSize: 11, color: COLORS.neutral400 },
 
     // Modal
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
@@ -1401,43 +1397,43 @@ const styles = StyleSheet.create({
     },
 
     // Detail View
-    detailHeader: { padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    detailHeader: { padding: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     detailHeaderContent: { flexDirection: 'row', alignItems: 'center' },
-    detailHeaderIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-    detailHeaderSub: { fontSize: 12, color: 'rgba(255,255,255,0.8)' },
-    detailHeaderTime: { fontSize: 12, fontWeight: 'bold', color: 'white' },
+    detailHeaderIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
+    detailHeaderSub: { fontSize: 11, color: 'rgba(255,255,255,0.8)' },
+    detailHeaderTime: { fontSize: 11, fontWeight: 'bold', color: 'white' },
     detailCloseBtn: { padding: 4 },
-    detailContent: { flex: 1, padding: 24, backgroundColor: COLORS.neutralLight },
+    detailContent: { flex: 1, padding: 16, backgroundColor: COLORS.neutralLight },
 
-    proposerCard: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginBottom: 24, borderWidth: 1, borderColor: COLORS.neutral100, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4 },
-    proposerAvatar: { width: 48, height: 48, borderRadius: 24, marginRight: 16 },
-    proposerLabel: { fontSize: 12, color: COLORS.neutral500, fontWeight: '500' },
-    proposerName: { fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate },
+    proposerCard: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: COLORS.white, borderRadius: 12, marginBottom: 16, borderWidth: 1, borderColor: COLORS.neutral100, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4 },
+    proposerAvatar: { width: 40, height: 40, borderRadius: 20, marginRight: 12 },
+    proposerLabel: { fontSize: 11, color: COLORS.neutral500, fontWeight: '500' },
+    proposerName: { fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate },
 
-    infoStack: { gap: 12, marginBottom: 24 },
-    infoCard: { padding: 16, backgroundColor: COLORS.white, borderRadius: 16, flexDirection: 'row', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4 },
-    infoIconBox: { width: 36, height: 36, borderRadius: 8, backgroundColor: COLORS.neutral50, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
-    infoLabel: { fontSize: 12, color: COLORS.neutral400, fontWeight: 'bold', marginBottom: 4 },
-    infoValue: { fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate },
+    infoStack: { gap: 8, marginBottom: 16 },
+    infoCard: { padding: 10, backgroundColor: COLORS.white, borderRadius: 12, flexDirection: 'row', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4 },
+    infoIconBox: { width: 30, height: 30, borderRadius: 6, backgroundColor: COLORS.neutral50, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+    infoLabel: { fontSize: 11, color: COLORS.neutral400, fontWeight: 'bold', marginBottom: 2 },
+    infoValue: { fontSize: 13, fontWeight: 'bold', color: COLORS.neutralSlate },
 
-    attendeesSection: { marginBottom: 24 },
-    attendeesLabel: { fontSize: 12, color: COLORS.neutral400, fontWeight: 'bold', marginBottom: 8, paddingLeft: 4 },
+    attendeesSection: { marginBottom: 16 },
+    attendeesLabel: { fontSize: 11, color: COLORS.neutral400, fontWeight: 'bold', marginBottom: 6, paddingLeft: 4 },
     attendeeStack: { flexDirection: 'row', marginLeft: 8 },
-    attendeeAvatar: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: COLORS.white, marginLeft: -8 },
+    attendeeAvatar: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: COLORS.white, marginLeft: -8 },
     attendeeYou: { backgroundColor: COLORS.primaryBg, justifyContent: 'center', alignItems: 'center' },
-    attendeeYouText: { fontSize: 10, fontWeight: 'bold', color: COLORS.primaryMain },
+    attendeeYouText: { fontSize: 9, fontWeight: 'bold', color: COLORS.primaryMain },
     attendeePlus: { backgroundColor: COLORS.neutral100, justifyContent: 'center', alignItems: 'center' },
-    attendeePlusText: { fontSize: 10, fontWeight: 'bold', color: COLORS.neutral400 },
+    attendeePlusText: { fontSize: 9, fontWeight: 'bold', color: COLORS.neutral400 },
 
-    processCard: { padding: 16, backgroundColor: COLORS.white, borderRadius: 16, borderWidth: 1, borderColor: COLORS.neutral100, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4 },
+    processCard: { padding: 12, backgroundColor: COLORS.white, borderRadius: 12, borderWidth: 1, borderColor: COLORS.neutral100, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4 },
     processHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    processTitle: { fontSize: 12, fontWeight: 'bold', color: COLORS.neutral500 },
-    processList: { marginTop: 16, paddingLeft: 8, position: 'relative' },
-    processLine: { position: 'absolute', left: 12, top: 0, bottom: 0, width: 2, backgroundColor: COLORS.neutral100 },
-    processItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16, position: 'relative', zIndex: 1 },
-    processDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.neutral200, borderWidth: 2, borderColor: COLORS.white, marginRight: 16, marginTop: 4 },
-    processStep: { fontSize: 10, fontWeight: 'bold', color: COLORS.neutral400, marginBottom: 2 },
-    processDesc: { fontSize: 12, color: COLORS.neutral600 },
+    processTitle: { fontSize: 11, fontWeight: 'bold', color: COLORS.neutral500 },
+    processList: { marginTop: 12, paddingLeft: 6, position: 'relative' },
+    processLine: { position: 'absolute', left: 10, top: 0, bottom: 0, width: 2, backgroundColor: COLORS.neutral100 },
+    processItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12, position: 'relative', zIndex: 1 },
+    processDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.neutral200, borderWidth: 2, borderColor: COLORS.white, marginRight: 12, marginTop: 4 },
+    processStep: { fontSize: 9, fontWeight: 'bold', color: COLORS.neutral400, marginBottom: 2 },
+    processDesc: { fontSize: 11, color: COLORS.neutral600 },
 
     modalFooter: { padding: 16, borderTopWidth: 1, borderTopColor: COLORS.neutral100, backgroundColor: COLORS.white },
     buttonRow: { flexDirection: 'row', gap: 12 },
