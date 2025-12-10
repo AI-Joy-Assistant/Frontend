@@ -80,6 +80,7 @@ interface ChatSession {
   title: string;
   messages: Message[];
   updatedAt: Date;
+  isDefault?: boolean; // 기본 채팅 세션 여부
 }
 
 export default function ChatScreen() {
@@ -170,11 +171,35 @@ export default function ChatScreen() {
     }
   };
 
+  // 기본 채팅 세션 조회/생성
+  const fetchDefaultSession = async () => {
+    try {
+      const token = await AsyncStorage.getItem("accessToken");
+      if (!token) return null;
+
+      const res = await fetch(`${API_BASE}/chat/default-session`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        return data; // { id, title, is_new }
+      }
+      return null;
+    } catch (e) {
+      console.error("Failed to fetch default session", e);
+      return null;
+    }
+  };
+
   // 채팅 세션 목록 불러오기
   const fetchSessions = async () => {
     try {
       const token = await AsyncStorage.getItem("accessToken");
       if (!token) return;
+
+      // 먼저 기본 세션 확인/생성 (NULL 메시지 마이그레이션 포함)
+      await fetchDefaultSession();
 
       const res = await fetch(`${API_BASE}/chat/sessions`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -191,18 +216,15 @@ export default function ChatScreen() {
             title: s.title || "새 채팅",
             updatedAt: s.updated_at ? new Date(s.updated_at) : new Date(),
             messages: [], // 메시지는 별도로 로드
+            isDefault: s.is_default || false, // 기본 채팅 여부
           }));
 
-          setSessions(prev => {
-            // 기존 로컬 세션(legacy 등)과 백엔드 세션 병합
-            const backendIds = new Set(loadedSessions.map(s => s.id));
-            const localOnly = prev.filter(s => !backendIds.has(s.id) && s.id === 'legacy');
-            return [...loadedSessions, ...localOnly];
-          });
+          setSessions(loadedSessions);
 
-          // 현재 세션이 없으면 첫 번째 세션 선택
+          // 현재 세션이 없으면 기본 채팅 또는 첫 번째 세션 선택
           if (!currentSessionId) {
-            setCurrentSessionId(backendSessions[0].id);
+            const defaultSession = loadedSessions.find(s => s.title === "기본 채팅");
+            setCurrentSessionId(defaultSession?.id || backendSessions[0].id);
           }
         }
       }
@@ -571,25 +593,8 @@ export default function ChatScreen() {
       if (showLoadingUI) setLoading(false);
     }
   };
-  useEffect(() => {
-    (async () => {
-      // 이미 세션 선택돼 있으면 건드리지 않기
-      if (currentSessionId || sessions.length > 0) return;
-
-      const legacyId = 'legacy';  // uuid 아님 → session 필터 없이 전체 히스토리 가져옴
-      await loadChatHistory(true, legacyId);
-
-      // 현재 선택된 세션을 legacy로
-      setCurrentSessionId(legacyId);
-
-      // 제목을 보기 좋게 바꿔주기
-      setSessions(prev =>
-        prev.map(s =>
-          s.id === legacyId ? { ...s, title: '이전 대화' } : s
-        )
-      );
-    })();
-  }, [currentSessionId, sessions.length]);
+  // legacy 세션 코드 제거 - fetchDefaultSession에서 기본 채팅 세션 생성/조회 처리
+  // (더 이상 가상의 'legacy' ID를 사용하지 않고 DB에서 실제 UUID 사용)
 
   useFocusEffect(
     React.useCallback(() => {
