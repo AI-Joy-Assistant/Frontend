@@ -1059,10 +1059,26 @@ const A2AScreen = () => {
                                             <View style={styles.attendeesSection}>
                                                 <Text style={styles.attendeesLabel}>Attendees</Text>
                                                 <View style={styles.attendeeStack}>
-                                                    <Image source={{ uri: selectedLog.details.proposerAvatar }} style={styles.attendeeAvatar} />
-                                                    <View style={[styles.attendeeAvatar, styles.attendeeYou]}>
-                                                        <Text style={styles.attendeeYouText}>You</Text>
-                                                    </View>
+                                                    {(selectedLog.details as any)?.attendees?.map((attendee: any, idx: number) => (
+                                                        attendee.isCurrentUser ? (
+                                                            <View key={idx} style={[styles.attendeeAvatar, styles.attendeeYou]}>
+                                                                <Text style={styles.attendeeYouText}>You</Text>
+                                                            </View>
+                                                        ) : (
+                                                            <Image
+                                                                key={idx}
+                                                                source={{ uri: attendee.avatar }}
+                                                                style={styles.attendeeAvatar}
+                                                            />
+                                                        )
+                                                    )) || (
+                                                            <>
+                                                                <Image source={{ uri: selectedLog.details.proposerAvatar }} style={styles.attendeeAvatar} />
+                                                                <View style={[styles.attendeeAvatar, styles.attendeeYou]}>
+                                                                    <Text style={styles.attendeeYouText}>You</Text>
+                                                                </View>
+                                                            </>
+                                                        )}
                                                 </View>
                                             </View>
 
