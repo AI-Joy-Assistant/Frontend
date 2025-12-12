@@ -24,7 +24,10 @@ import {
     CalendarCheck,
     ArrowLeft,
     Trash2,
-    AlertCircle
+    AlertCircle,
+    ChevronLeft,
+    ChevronUp,
+    ChevronDown
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import TimePickerModal from '../components/TimePickerModal';
@@ -95,6 +98,49 @@ const A2AScreen = () => {
     const [negotiatingSessionId, setNegotiatingSessionId] = useState<string | null>(null);
     const [showHumanDecision, setShowHumanDecision] = useState(false);
     const [lastProposalForDecision, setLastProposalForDecision] = useState<any>(null);
+
+    // 재조율 시작시간/종료시간 상태
+    const [startTimeExpanded, setStartTimeExpanded] = useState(true);
+    const [endTimeExpanded, setEndTimeExpanded] = useState(false);
+    const [startDate, setStartDate] = useState<string | null>(null);
+    const [startTime, setStartTime] = useState<string | null>(null);
+    const [endDate, setEndDate] = useState<string | null>(null);
+    const [endTime, setEndTime] = useState<string | null>(null);
+    const [startMonth, setStartMonth] = useState(new Date());
+    const [endMonth, setEndMonth] = useState(new Date());
+
+    // 바쁜 시간대 (캘린더 일정이 있는 시간)
+    const [busyTimes, setBusyTimes] = useState<{ [date: string]: string[] }>({});
+
+    // 날짜 선택 시 해당 날짜의 바쁜 시간대 조회
+    const fetchBusyTimes = async (dateStr: string) => {
+        try {
+            const token = await AsyncStorage.getItem('accessToken');
+            const res = await fetch(`${API_BASE}/calendar/busy-times?date=${dateStr}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setBusyTimes(prev => ({ ...prev, [dateStr]: data.busy_times || [] }));
+            }
+        } catch (e) {
+            console.error("Failed to fetch busy times:", e);
+        }
+    };
+
+    // startDate 변경 시 바쁜 시간 조회
+    useEffect(() => {
+        if (startDate) {
+            fetchBusyTimes(startDate);
+        }
+    }, [startDate]);
+
+    // endDate 변경 시 바쁜 시간 조회
+    useEffect(() => {
+        if (endDate) {
+            fetchBusyTimes(endDate);
+        }
+    }, [endDate]);
 
     useEffect(() => {
         if (selectedReason === "날짜를 변경하고 싶어요" && selectedLog) {
@@ -294,23 +340,289 @@ const A2AScreen = () => {
         );
     };
 
+    // 오전/오후 시간 버튼 생성
+    const AM_TIMES = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30'];
+    const PM_TIMES = ['12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30', '20:00', '20:30', '21:00', '21:30'];
+
+    // 시간 선택 렌더링 (시작/종료 공용) - 4열 그리드, 바쁜 시간 비활성화
+    // minTime: 종료 시간 선택 시 시작 시간 이후만 선택 가능하도록 설정
+    // minDate: 같은 날짜인 경우에만 minTime 적용
+    const renderTimeButtons = (selectedTime: string | null, onSelect: (time: string) => void, dateStr: string | null, minTime?: string | null, minDate?: string | null) => {
+        const busyTimesForDate = dateStr ? (busyTimes[dateStr] || []) : [];
+
+        // 시간 비교 함수 (HH:MM 형식)
+        const isBeforeMinTime = (time: string): boolean => {
+            if (!minTime || !minDate || dateStr !== minDate) return false;
+            const [h1, m1] = time.split(':').map(Number);
+            const [h2, m2] = minTime.split(':').map(Number);
+            return h1 * 60 + m1 <= h2 * 60 + m2;  // 시작시간과 같거나 이전이면 비활성화
+        };
+
+        return (
+            <View style={{ marginTop: 12 }}>
+                <Text style={{ fontSize: 10, fontWeight: 'bold', color: COLORS.neutral400, marginBottom: 8 }}>오전</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 }}>
+                    {AM_TIMES.map((time) => {
+                        const isBusy = busyTimesForDate.includes(time);
+                        const isBeforeStart = isBeforeMinTime(time);
+                        const isDisabled = isBusy || isBeforeStart;
+                        return (
+                            <TouchableOpacity
+                                key={time}
+                                onPress={() => !isDisabled && onSelect(time)}
+                                disabled={isDisabled}
+                                style={{
+                                    width: '25%',
+                                    paddingHorizontal: 4,
+                                    marginBottom: 8,
+                                }}
+                            >
+                                <View style={{
+                                    paddingVertical: 10,
+                                    borderRadius: 8,
+                                    borderWidth: isDisabled ? 0 : 1,
+                                    borderColor: selectedTime === time ? COLORS.primaryMain : COLORS.primaryMain,
+                                    backgroundColor: isDisabled ? COLORS.neutral100 : (selectedTime === time ? COLORS.primaryMain : 'white'),
+                                    alignItems: 'center',
+                                }}>
+                                    <Text style={{
+                                        color: isDisabled ? COLORS.neutral300 : (selectedTime === time ? 'white' : COLORS.neutralSlate),
+                                        fontSize: 10,
+                                        fontWeight: 'bold'
+                                    }}>{time}</Text>
+                                </View>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
+                <Text style={{ fontSize: 10, fontWeight: 'bold', color: COLORS.neutral400, marginTop: 12, marginBottom: 8 }}>오후</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 }}>
+                    {PM_TIMES.map((time) => {
+                        const isBusy = busyTimesForDate.includes(time);
+                        const isBeforeStart = isBeforeMinTime(time);
+                        const isDisabled = isBusy || isBeforeStart;
+                        return (
+                            <TouchableOpacity
+                                key={time}
+                                onPress={() => !isDisabled && onSelect(time)}
+                                disabled={isDisabled}
+                                style={{
+                                    width: '25%',
+                                    paddingHorizontal: 4,
+                                    marginBottom: 8,
+                                }}
+                            >
+                                <View style={{
+                                    paddingVertical: 10,
+                                    borderRadius: 8,
+                                    borderWidth: isDisabled ? 0 : 1,
+                                    borderColor: selectedTime === time ? COLORS.primaryMain : COLORS.primaryMain,
+                                    backgroundColor: isDisabled ? COLORS.neutral100 : (selectedTime === time ? COLORS.primaryMain : 'white'),
+                                    alignItems: 'center',
+                                }}>
+                                    <Text style={{
+                                        color: isDisabled ? COLORS.neutral300 : (selectedTime === time ? 'white' : COLORS.neutralSlate),
+                                        fontSize: 10,
+                                        fontWeight: 'bold'
+                                    }}>{time}</Text>
+                                </View>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
+            </View>
+        );
+    };
+
+    // 달력 렌더링 (시작/종료 공용)
+    const renderScheduleCalendar = (selectedDateVal: string | null, onSelectDate: (date: string) => void, month: Date, onMonthChange: (dir: 'prev' | 'next') => void) => {
+        const year = month.getFullYear();
+        const monthNum = month.getMonth();
+        const firstDay = new Date(year, monthNum, 1).getDay();
+        const daysInMonth = new Date(year, monthNum + 1, 0).getDate();
+        const today = new Date();
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+        // 기존 약속 날짜 (proposedDate 또는 requestedDate)
+        let originalDateRaw = (selectedLog?.details as any)?.proposedDate || (selectedLog?.details as any)?.requestedDate || '';
+
+        // 한국어 날짜 형식 파싱 (예: "12월 13일" -> "2025-12-13")
+        let originalDate = '';
+        if (originalDateRaw) {
+            const koreanDateMatch = originalDateRaw.match(/(\d+)월\s*(\d+)일/);
+            if (koreanDateMatch) {
+                const parsedMonth = koreanDateMatch[1].padStart(2, '0');
+                const parsedDay = koreanDateMatch[2].padStart(2, '0');
+                originalDate = `${year}-${parsedMonth}-${parsedDay}`;
+            } else if (originalDateRaw.includes('-')) {
+                // 이미 ISO 형식인 경우
+                originalDate = originalDateRaw;
+            }
+        }
+        console.log('📅 [Calendar] originalDate:', originalDate, 'raw:', originalDateRaw);
+
+        const weeks: (number | null)[][] = [];
+        let currentWeek: (number | null)[] = Array(firstDay).fill(null);
+
+        for (let day = 1; day <= daysInMonth; day++) {
+            currentWeek.push(day);
+            if (currentWeek.length === 7) {
+                weeks.push(currentWeek);
+                currentWeek = [];
+            }
+        }
+        if (currentWeek.length > 0) {
+            while (currentWeek.length < 7) currentWeek.push(null);
+            weeks.push(currentWeek);
+        }
+
+        return (
+            <View style={{ marginTop: 16 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <TouchableOpacity onPress={() => onMonthChange('prev')}>
+                        <ChevronLeft size={20} color={COLORS.neutral500} />
+                    </TouchableOpacity>
+                    <Text style={{ fontSize: 16, fontWeight: '600', color: COLORS.neutralSlate }}>
+                        {year}.{String(monthNum + 1).padStart(2, '0')}
+                    </Text>
+                    <TouchableOpacity onPress={() => onMonthChange('next')}>
+                        <ChevronRight size={20} color={COLORS.neutral500} />
+                    </TouchableOpacity>
+                </View>
+                <View style={{ flexDirection: 'row', marginBottom: 8 }}>
+                    {['일', '월', '화', '수', '목', '금', '토'].map((d, i) => (
+                        <Text key={i} style={{ flex: 1, textAlign: 'center', fontSize: 12, color: i === 0 ? '#EF4444' : COLORS.neutral500 }}>{d}</Text>
+                    ))}
+                </View>
+                {weeks.map((week, wIdx) => (
+                    <View key={wIdx} style={{ flexDirection: 'row', marginBottom: 4 }}>
+                        {week.map((day, dIdx) => {
+                            if (!day) return <View key={dIdx} style={{ flex: 1, height: 40 }} />;
+                            const dateStr = `${year}-${String(monthNum + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                            const isSelected = selectedDateVal === dateStr;
+                            const isOriginalDate = dateStr === originalDate;  // 기존 약속 날짜
+                            const isPast = new Date(dateStr) < new Date(todayStr);
+
+                            return (
+                                <TouchableOpacity
+                                    key={dIdx}
+                                    onPress={() => !isPast && onSelectDate(dateStr)}
+                                    disabled={isPast}
+                                    style={{ flex: 1, height: 40, justifyContent: 'center', alignItems: 'center' }}
+                                >
+                                    <View style={{
+                                        width: 32, height: 32, borderRadius: 16,
+                                        backgroundColor: isSelected ? COLORS.primaryMain : isOriginalDate ? COLORS.primaryBg : 'transparent',
+                                        justifyContent: 'center', alignItems: 'center'
+                                    }}>
+                                        <Text style={{
+                                            color: isSelected ? 'white' : isPast ? COLORS.neutral300 : dIdx === 0 ? '#EF4444' : COLORS.neutralSlate,
+                                            fontSize: 14, fontWeight: isOriginalDate ? '700' : '400'
+                                        }}>{day}</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </View>
+                ))}
+            </View>
+        );
+    };
+
+    // 시작시간/종료시간 토글 렌더링 (참고 디자인 적용)
+    const renderRescheduleTimeSelection = () => (
+        <View style={{ paddingHorizontal: 8, paddingVertical: 12 }}>
+            {/* 상단 요약 박스 */}
+            <View style={{
+                backgroundColor: `${COLORS.primaryBg}80`,
+                borderRadius: 12,
+                padding: 12,
+                marginBottom: 12,
+                borderWidth: 1,
+                borderColor: `${COLORS.primaryLight}30`,
+                alignItems: 'center'
+            }}>
+                <Text style={{ fontSize: 11, color: COLORS.neutral500, marginBottom: 4 }}>선택된 재조율 시간</Text>
+                <Text style={{ fontSize: 13, fontWeight: 'bold', color: COLORS.primaryMain }}>
+                    {startDate && startTime && endDate && endTime
+                        ? `${startDate} ${startTime} ~ ${endDate} ${endTime}`
+                        : '시간을 선택해주세요'}
+                </Text>
+            </View>
+
+            {/* 시작시간 토글 */}
+            <TouchableOpacity
+                onPress={() => setStartTimeExpanded(!startTimeExpanded)}
+                style={{
+                    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                    padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginBottom: 4,
+                    borderWidth: 1, borderColor: COLORS.neutral200
+                }}
+            >
+                <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate }}>시작 시간</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 12, fontWeight: 'bold', color: COLORS.primaryMain, marginRight: 8 }}>
+                        {startDate && startTime ? `${startDate} ${startTime}` : '선택'}
+                    </Text>
+                    {startTimeExpanded ? <ChevronUp size={16} color={COLORS.neutral400} /> : <ChevronDown size={16} color={COLORS.neutral400} />}
+                </View>
+            </TouchableOpacity>
+
+            {startTimeExpanded && (
+                <View style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: COLORS.neutral100 }}>
+                    {renderScheduleCalendar(startDate, setStartDate, startMonth, (dir) => {
+                        const newDate = new Date(startMonth);
+                        newDate.setMonth(newDate.getMonth() + (dir === 'prev' ? -1 : 1));
+                        setStartMonth(newDate);
+                    })}
+                    {startDate && renderTimeButtons(startTime, setStartTime, startDate)}
+                </View>
+            )}
+
+            {/* 종료시간 토글 */}
+            <TouchableOpacity
+                onPress={() => setEndTimeExpanded(!endTimeExpanded)}
+                style={{
+                    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                    padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginBottom: 4,
+                    borderWidth: 1, borderColor: COLORS.neutral200
+                }}
+            >
+                <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate }}>종료 시간</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 12, fontWeight: 'bold', color: COLORS.primaryMain, marginRight: 8 }}>
+                        {endDate && endTime ? `${endDate} ${endTime}` : '선택'}
+                    </Text>
+                    {endTimeExpanded ? <ChevronUp size={16} color={COLORS.neutral400} /> : <ChevronDown size={16} color={COLORS.neutral400} />}
+                </View>
+            </TouchableOpacity>
+
+            {endTimeExpanded && (
+                <View style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: COLORS.neutral100 }}>
+                    {renderScheduleCalendar(endDate, setEndDate, endMonth, (dir) => {
+                        const newDate = new Date(endMonth);
+                        newDate.setMonth(newDate.getMonth() + (dir === 'prev' ? -1 : 1));
+                        setEndMonth(newDate);
+                    })}
+                    {endDate && renderTimeButtons(endTime, setEndTime, endDate, startTime, startDate)}
+                </View>
+            )}
+        </View>
+    );
+
     const handleSubmitReschedule = async () => {
         if (!selectedLog) return;
         try {
             setLoading(true);
             const token = await AsyncStorage.getItem('accessToken');
 
-            // Construct proposal details based on reason
-            let proposalDetails: any = {
-                reason: selectedReason,
-                note: manualInput
+            // 시작시간/종료시간 기반으로 proposal 구성
+            const proposalDetails = {
+                date: startDate,
+                time: startTime,
+                endDate: endDate,
+                endTime: endTime
             };
-
-            if (selectedReason === "날짜를 변경하고 싶어요" && selectedDate) {
-                proposalDetails.date = selectedDate;
-            } else if (selectedReason === "시간을 변경하고 싶어요" && selectedNewTime) {
-                proposalDetails.time = selectedNewTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-            }
 
             const response = await fetch(`${API_BASE}/a2a/session/${selectedLog.id}/reschedule`, {
                 method: 'POST',
@@ -322,12 +634,8 @@ const A2AScreen = () => {
             });
 
             if (response.ok) {
-                // 새로운 날짜/시간 계산
-                const newDate = selectedDate || selectedLog?.details?.proposedDate || '';
-                const newTime = selectedNewTime
-                    ? selectedNewTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                    : (selectedLog?.details?.proposedTime || '');
-                const newTimeRange = `${newDate} ${newTime}`.trim();
+                // 시간 범위 형식으로 표시
+                const newTimeRange = `${startDate} ${startTime} ~ ${endDate} ${endTime}`;
 
                 // 선택된 로그의 상세 정보를 새로운 날짜/시간으로 업데이트
                 if (selectedLog) {
@@ -335,8 +643,10 @@ const A2AScreen = () => {
                         ...selectedLog,
                         details: {
                             ...selectedLog.details,
-                            proposedDate: newDate,
-                            proposedTime: newTime
+                            proposedDate: startDate,
+                            proposedTime: startTime,
+                            proposedEndDate: endDate,
+                            proposedEndTime: endTime
                         },
                         timeRange: newTimeRange
                     };
@@ -345,17 +655,23 @@ const A2AScreen = () => {
                     // 로그 목록도 즉시 업데이트
                     setLogs(prevLogs => prevLogs.map(log =>
                         log.id === selectedLog.id
-                            ? { ...log, timeRange: newTimeRange, details: { ...(log.details || {}), proposedDate: newDate, proposedTime: newTime } as typeof log.details }
+                            ? { ...log, timeRange: newTimeRange, details: { ...(log.details || {}), proposedDate: startDate, proposedTime: startTime } as typeof log.details }
                             : log
                     ));
                 }
                 setConfirmationType('reschedule');
                 setIsConfirmed(true);
                 setIsRescheduling(false);
+
+                // 상태 초기화
+                setStartDate(null);
+                setStartTime(null);
+                setEndDate(null);
+                setEndTime(null);
+
                 fetchA2ALogs(false);
             } else {
                 console.error("Reschedule failed");
-                // TODO: Show error toast
             }
         } catch (error) {
             console.error("Error submitting reschedule:", error);
@@ -512,7 +828,8 @@ const A2AScreen = () => {
     };
 
     const handleLogClick = async (log: A2ALog) => {
-        setSelectedLog(log);
+        // 먼저 기본 정보로 모달을 즉시 열고, 로딩 상태 표시
+        setSelectedLog({ ...log, details: { ...log.details, _loading: true } } as any);
         setIsProcessExpanded(false);
         setIsConfirmed(false);
         setIsRescheduling(false);
@@ -525,22 +842,27 @@ const A2AScreen = () => {
             if (res.ok) {
                 const data = await res.json();
                 const newDetails = data.details || {};
-                const newStatus = data.status;  // API에서 최신 status 가져오기
+                const newStatus = data.status;
 
                 if (newDetails.proposer === "알 수 없음" && log.details?.proposer) {
                     newDetails.proposer = log.details.proposer;
                 }
 
-                setSelectedLog((prev: A2ALog | null) => prev ? {
-                    ...prev,
-                    status: newStatus || prev.status,  // status 업데이트 추가!
-                    details: { ...(prev.details || {}), ...newDetails }
-                } : null);
+                // API 응답으로 완전한 데이터를 받은 후에 모달 표시
+                setSelectedLog({
+                    ...log,
+                    status: newStatus || log.status,
+                    details: { ...(log.details || {}), ...newDetails }
+                });
 
-                console.log('📋 [DEBUG] Updated status:', newStatus);
+                console.log('📋 [DEBUG] Updated status:', newStatus, 'rescheduleRequestedBy:', newDetails.rescheduleRequestedBy);
+            } else {
+                // API 실패 시 기존 데이터로 표시
+                setSelectedLog(log);
             }
         } catch (e) {
             console.error("Failed to fetch log details:", e);
+            setSelectedLog(log);
         }
     };
 
@@ -576,7 +898,10 @@ const A2AScreen = () => {
                     // It's Official 화면을 유지하기 위해 fetchA2ALogs를 호출하지 않음
                 } else {
                     // 아직 다른 참여자 승인 대기 중
-                    alert(`승인 완료! 남은 승인 대기: ${data.approved_by_list ? 2 - data.approved_by_list.length : 1}명`);
+                    const totalNeeded = data.total_participants || 2;
+                    const approvedCount = data.approved_by_list ? data.approved_by_list.length : 1;
+                    const remaining = Math.max(totalNeeded - approvedCount, 0);
+                    alert(`승인 완료! 남은 승인 대기: ${remaining}명`);
                     handleClose();
                     fetchA2ALogs();
                 }
@@ -929,31 +1254,8 @@ const A2AScreen = () => {
                                 </View>
 
                                 <ScrollView style={styles.rescheduleContent}>
-                                    {/* Reasons */}
-                                    <View style={styles.section}>
-                                        <Text style={styles.sectionLabel}>재조율 이유</Text>
-                                        <View style={styles.reasonGrid}>
-                                            {reasons.map((reason, idx) => (
-                                                <TouchableOpacity
-                                                    key={idx}
-                                                    onPress={() => setSelectedReason(reason)}
-                                                    style={[
-                                                        styles.reasonChip,
-                                                        selectedReason === reason ? styles.reasonChipSelected : styles.reasonChipUnselected
-                                                    ]}
-                                                >
-                                                    <Text style={[
-                                                        styles.reasonText,
-                                                        selectedReason === reason ? styles.reasonTextSelected : styles.reasonTextUnselected
-                                                    ]}>{reason}</Text>
-                                                </TouchableOpacity>
-                                            ))}
-                                        </View>
-                                    </View>
-
-                                    {/* Manual Input and Preferred Time removed as per request */}
-                                    {selectedReason === "날짜를 변경하고 싶어요" && renderCalendar()}
-                                    {selectedReason === "시간을 변경하고 싶어요" && renderTimeSelection()}
+                                    {/* 새로운 시작/종료 시간 선택 UI */}
+                                    {renderRescheduleTimeSelection()}
                                 </ScrollView>
 
                                 <View style={styles.rescheduleFooter}>
@@ -962,10 +1264,10 @@ const A2AScreen = () => {
                                     </TouchableOpacity>
                                     <TouchableOpacity
                                         onPress={handleSubmitReschedule}
-                                        disabled={!selectedReason}
+                                        disabled={!startDate || !startTime || !endDate || !endTime}
                                         style={[
                                             styles.confirmBtn,
-                                            !selectedReason && styles.submitButtonDisabled
+                                            (!startDate || !startTime || !endDate || !endTime) && styles.submitButtonDisabled
                                         ]}
                                     >
                                         <Text style={styles.confirmBtnText}>AI에게 재협상 요청</Text>
@@ -1053,20 +1355,6 @@ const A2AScreen = () => {
                                                     </View>
                                                 )}
 
-                                                {/* 캘린더 충돌 경고 */}
-                                                {(selectedLog.details as any)?.has_conflict && (selectedLog.details as any)?.conflicting_event && (
-                                                    <View style={[styles.infoCard, { backgroundColor: '#FEF3C7', borderColor: '#F59E0B', borderWidth: 1 }]}>
-                                                        <View style={[styles.infoIconBox, { backgroundColor: '#FEF3C7' }]}>
-                                                            <AlertCircle size={20} color="#F59E0B" />
-                                                        </View>
-                                                        <View style={{ flex: 1 }}>
-                                                            <Text style={[styles.infoLabel, { color: '#B45309' }]}>⚠️ 일정 충돌</Text>
-                                                            <Text style={[styles.infoValue, { color: '#92400E' }]}>
-                                                                "{(selectedLog.details as any).conflicting_event.title}" ({(selectedLog.details as any).conflicting_event.start} ~ {(selectedLog.details as any).conflicting_event.end})
-                                                            </Text>
-                                                        </View>
-                                                    </View>
-                                                )}
 
                                                 <View style={styles.infoCard}>
                                                     <View style={[styles.infoIconBox, { backgroundColor: COLORS.primaryBg }]}>
@@ -1126,8 +1414,15 @@ const A2AScreen = () => {
                                                         {selectedLog.details.process.map((step: any, idx: number) => (
                                                             <View key={idx} style={styles.processItem}>
                                                                 <View style={styles.processDot} />
-                                                                <View>
-                                                                    <Text style={styles.processStep}>[{step.step}]</Text>
+                                                                <View style={{ flex: 1 }}>
+                                                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                        <Text style={styles.processStep}>[{step.step}]</Text>
+                                                                        {step.created_at && (
+                                                                            <Text style={{ fontSize: 10, color: COLORS.neutral400 }}>
+                                                                                {new Date(step.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                                                                            </Text>
+                                                                        )}
+                                                                    </View>
                                                                     <Text style={styles.processDesc}>{step.description}</Text>
                                                                 </View>
                                                             </View>
@@ -1145,19 +1440,29 @@ const A2AScreen = () => {
                                             <Text style={styles.rescheduleButtonText}>재조율</Text>
                                         </TouchableOpacity>
 
-                                        {selectedLog?.status?.toLowerCase() !== 'completed' && currentUserId !== selectedLog?.initiator_user_id && (
-                                            <>
-                                                <TouchableOpacity onPress={handleApproveClick} style={styles.approveButton}>
-                                                    <CheckCircle2 size={16} color="white" style={{ marginRight: 6 }} />
-                                                    <Text style={styles.approveButtonText}>승인</Text>
-                                                </TouchableOpacity>
+                                        {/* 승인/거절 버튼: 로딩 중이 아닐 때만 표시 */}
+                                        {selectedLog?.status?.toLowerCase() !== 'completed' && !(selectedLog?.details as any)?._loading && (() => {
+                                            const rescheduleRequestedBy = (selectedLog?.details as any)?.rescheduleRequestedBy;
+                                            // 재조율 요청이 있으면: 요청한 사람이 아닌 사람에게 버튼 표시
+                                            // 재조율 요청이 없으면: initiator가 아닌 사람에게 버튼 표시
+                                            const showButtons = rescheduleRequestedBy
+                                                ? currentUserId !== rescheduleRequestedBy
+                                                : currentUserId !== selectedLog?.initiator_user_id;
 
-                                                <TouchableOpacity onPress={handleRejectClick} style={styles.rejectButton}>
-                                                    <X size={16} color="white" style={{ marginRight: 6 }} />
-                                                    <Text style={styles.rejectButtonText}>거절</Text>
-                                                </TouchableOpacity>
-                                            </>
-                                        )}
+                                            return showButtons ? (
+                                                <>
+                                                    <TouchableOpacity onPress={handleApproveClick} style={styles.approveButton}>
+                                                        <CheckCircle2 size={16} color="white" style={{ marginRight: 6 }} />
+                                                        <Text style={styles.approveButtonText}>승인</Text>
+                                                    </TouchableOpacity>
+
+                                                    <TouchableOpacity onPress={handleRejectClick} style={styles.rejectButton}>
+                                                        <X size={16} color="white" style={{ marginRight: 6 }} />
+                                                        <Text style={styles.rejectButtonText}>거절</Text>
+                                                    </TouchableOpacity>
+                                                </>
+                                            ) : null;
+                                        })()}
                                     </View>
                                 </View>
                             </View>
