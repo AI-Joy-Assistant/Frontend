@@ -525,6 +525,7 @@ const A2AScreen = () => {
             if (res.ok) {
                 const data = await res.json();
                 const newDetails = data.details || {};
+                const newStatus = data.status;  // API에서 최신 status 가져오기
 
                 if (newDetails.proposer === "알 수 없음" && log.details?.proposer) {
                     newDetails.proposer = log.details.proposer;
@@ -532,8 +533,11 @@ const A2AScreen = () => {
 
                 setSelectedLog((prev: A2ALog | null) => prev ? {
                     ...prev,
+                    status: newStatus || prev.status,  // status 업데이트 추가!
                     details: { ...(prev.details || {}), ...newDetails }
                 } : null);
+
+                console.log('📋 [DEBUG] Updated status:', newStatus);
             }
         } catch (e) {
             console.error("Failed to fetch log details:", e);
@@ -698,21 +702,21 @@ const A2AScreen = () => {
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <View style={[
                         styles.statusBadge,
-                        item.status === 'COMPLETED' ? styles.statusCompleted : styles.statusInProgress
+                        item.status?.toLowerCase() === 'completed' ? styles.statusCompleted : styles.statusInProgress
                     ]}>
                         <View style={{
                             width: 6, height: 6, borderRadius: 3,
-                            backgroundColor: item.status === 'COMPLETED' ? COLORS.green600 : COLORS.amber600,
+                            backgroundColor: item.status?.toLowerCase() === 'completed' ? COLORS.green600 : COLORS.amber600,
                             marginRight: 6
                         }} />
                         <Text style={[
                             styles.statusText,
-                            { color: item.status === 'COMPLETED' ? COLORS.green600 : COLORS.amber600 }
+                            { color: item.status?.toLowerCase() === 'completed' ? COLORS.green600 : COLORS.amber600 }
                         ]}>
-                            {item.status === 'COMPLETED' ? '완료됨' : '진행중'}
+                            {item.status?.toLowerCase() === 'completed' ? '완료됨' : '진행중'}
                         </Text>
                     </View>
-                    {item.status === 'COMPLETED' && (
+                    {item.status?.toLowerCase() === 'completed' && (
                         <TouchableOpacity
                             onPress={(e) => {
                                 console.log("Trash icon pressed");
@@ -994,6 +998,7 @@ const A2AScreen = () => {
                                 <ScrollView style={styles.detailContent}>
                                     {selectedLog?.details && (
                                         <>
+                                            {console.log('🔍 [DEBUG] selectedLog.status:', selectedLog.status, 'toLowerCase:', selectedLog.status?.toLowerCase?.())}
                                             {/* Proposer */}
                                             <View style={styles.proposerCard}>
                                                 <Image source={{ uri: selectedLog.details.proposerAvatar }} style={styles.proposerAvatar} />
@@ -1020,14 +1025,33 @@ const A2AScreen = () => {
                                                         <Clock size={20} color={COLORS.primaryMain} />
                                                     </View>
                                                     <View>
-                                                        <Text style={styles.infoLabel}>Proposed Time</Text>
+                                                        <Text style={styles.infoLabel}>요청시간</Text>
                                                         <Text style={styles.infoValue}>
-                                                            {selectedLog.details.proposedDate
-                                                                ? `${selectedLog.details.proposedDate} ${selectedLog.details.proposedTime}`
-                                                                : selectedLog.details.proposedTime}
+                                                            {/* 요청시간: requestedDate/Time 우선, 없으면 proposedDate/Time fallback */}
+                                                            {(selectedLog.details as any)?.requestedDate || selectedLog.details.proposedDate
+                                                                ? `${(selectedLog.details as any)?.requestedDate || selectedLog.details.proposedDate} ${(selectedLog.details as any)?.requestedTime || selectedLog.details.proposedTime}`
+                                                                : (selectedLog.details as any)?.requestedTime || selectedLog.details.proposedTime || '미정'}
                                                         </Text>
                                                     </View>
                                                 </View>
+
+                                                {/* 확정시간 - 협상 완료 상태(completed/pending_approval)일 때 표시 */}
+                                                {['pending_approval', 'completed'].includes((selectedLog as any).status?.toLowerCase?.() || '') && (
+                                                    <View style={styles.infoCard}>
+                                                        <View style={[styles.infoIconBox, { backgroundColor: COLORS.primaryBg }]}>
+                                                            <CheckCircle2 size={20} color={COLORS.primaryMain} />
+                                                        </View>
+                                                        <View>
+                                                            <Text style={styles.infoLabel}>확정시간</Text>
+                                                            <Text style={styles.infoValue}>
+                                                                {/* agreedDate/Time 우선, 없으면 proposedDate/Time fallback */}
+                                                                {(selectedLog.details as any)?.agreedDate || selectedLog.details.proposedDate
+                                                                    ? `${(selectedLog.details as any)?.agreedDate || selectedLog.details.proposedDate} ${(selectedLog.details as any)?.agreedTime || selectedLog.details.proposedTime}`
+                                                                    : (selectedLog.details as any)?.agreedTime || selectedLog.details.proposedTime || '협상 중'}
+                                                            </Text>
+                                                        </View>
+                                                    </View>
+                                                )}
 
                                                 {/* 캘린더 충돌 경고 */}
                                                 {(selectedLog.details as any)?.has_conflict && (selectedLog.details as any)?.conflicting_event && (
@@ -1049,8 +1073,8 @@ const A2AScreen = () => {
                                                         <MapPin size={20} color={COLORS.primaryMain} />
                                                     </View>
                                                     <View>
-                                                        <Text style={styles.infoLabel}>Location</Text>
-                                                        <Text style={styles.infoValue}>{selectedLog.details.location}</Text>
+                                                        <Text style={styles.infoLabel}>위치</Text>
+                                                        <Text style={styles.infoValue}>{selectedLog.details.location || '미정'}</Text>
                                                     </View>
                                                 </View>
                                             </View>
@@ -1121,7 +1145,7 @@ const A2AScreen = () => {
                                             <Text style={styles.rescheduleButtonText}>재조율</Text>
                                         </TouchableOpacity>
 
-                                        {selectedLog?.status !== 'COMPLETED' && currentUserId !== selectedLog?.initiator_user_id && (
+                                        {selectedLog?.status?.toLowerCase() !== 'completed' && currentUserId !== selectedLog?.initiator_user_id && (
                                             <>
                                                 <TouchableOpacity onPress={handleApproveClick} style={styles.approveButton}>
                                                     <CheckCircle2 size={16} color="white" style={{ marginRight: 6 }} />
