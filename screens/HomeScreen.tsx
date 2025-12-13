@@ -10,7 +10,8 @@ import {
   Dimensions,
   Platform,
   TouchableWithoutFeedback,
-  Alert
+  Alert,
+  Switch
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -46,6 +47,7 @@ import { CreateEventRequest } from '../types/calendar';
 import DatePickerModal from '../components/DatePickerModal';
 import TimePickerModal from '../components/TimePickerModal';
 import { API_BASE } from '../constants/config';
+import NotificationPanel from '../components/NotificationPanel';
 
 // Pending 요청 타입 정의
 interface PendingRequest {
@@ -71,13 +73,58 @@ export default function HomeScreen() {
   // Pending 요청 카드 State
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
   const [dismissedRequestIds, setDismissedRequestIds] = useState<string[]>([]);
+  const [viewedRequestCount, setViewedRequestCount] = useState<number>(0);
+  const [notifications, setNotifications] = useState<{
+    id: string;
+    type: 'schedule_rejected' | 'friend_request' | 'friend_accepted' | 'general';
+    title: string;
+    message: string;
+    created_at: string;
+    read: boolean;
+    metadata?: Record<string, unknown>;
+  }[]>([]);
+
+  // Load dismissed request IDs and viewed count from AsyncStorage on mount
+  useEffect(() => {
+    const loadStoredData = async () => {
+      try {
+        const storedDismissed = await AsyncStorage.getItem('dismissedRequestIds');
+        if (storedDismissed) {
+          setDismissedRequestIds(JSON.parse(storedDismissed));
+        }
+        const storedViewedCount = await AsyncStorage.getItem('viewedRequestCount');
+        if (storedViewedCount) {
+          setViewedRequestCount(parseInt(storedViewedCount, 10));
+        }
+      } catch (error) {
+        console.error('Failed to load stored data:', error);
+      }
+    };
+    loadStoredData();
+  }, []);
 
   const onNavigateToA2A = (id: string) => {
     navigation.navigate('A2A', { initialLogId: id });
   };
 
-  const onDismissRequest = (requestId: string) => {
-    setDismissedRequestIds(prev => [...prev, requestId]);
+  const onDismissRequest = async (requestId: string) => {
+    const newDismissedIds = [...dismissedRequestIds, requestId];
+    setDismissedRequestIds(newDismissedIds);
+    try {
+      await AsyncStorage.setItem('dismissedRequestIds', JSON.stringify(newDismissedIds));
+    } catch (error) {
+      console.error('Failed to save dismissed request IDs:', error);
+    }
+  };
+
+  const markNotificationsAsViewed = async () => {
+    const count = pendingRequests.length;
+    setViewedRequestCount(count);
+    try {
+      await AsyncStorage.setItem('viewedRequestCount', count.toString());
+    } catch (error) {
+      console.error('Failed to save viewed request count:', error);
+    }
   };
 
   // Pending 요청 API 호출
@@ -109,10 +156,33 @@ export default function HomeScreen() {
     }
   };
 
-  // 화면에 포커스될 때마다 요청 새로고침
+  // 알림 조회 API 호출
+  const fetchNotifications = async () => {
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) return;
+
+      const response = await fetch(`${API_BASE}/chat/notifications`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setNotifications(data.notifications || []);
+      }
+    } catch (error) {
+      console.error('알림 조회 실패:', error);
+    }
+  };
+
+  // 화면에 포커스될 때마다 요청 및 알림 새로고침
   useFocusEffect(
     useCallback(() => {
       fetchPendingRequests();
+      fetchNotifications();
     }, [])
   );
 
@@ -132,6 +202,7 @@ export default function HomeScreen() {
   // View Mode State
   const [viewMode, setViewMode] = useState<CalendarViewMode>('CONDENSED');
   const [showViewMenu, setShowViewMenu] = useState(false);
+  const [showNotificationPanel, setShowNotificationPanel] = useState(false);
 
   // Modal & Edit State
   const [showScheduleModal, setShowScheduleModal] = useState(false);
@@ -146,6 +217,7 @@ export default function HomeScreen() {
   const [formEndDate, setFormEndDate] = useState('');
   const [formStartTime, setFormStartTime] = useState('');
   const [formEndTime, setFormEndTime] = useState('');
+  const [isAllDay, setIsAllDay] = useState(false);
 
   // Date/Time Picker State
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
@@ -407,6 +479,7 @@ export default function HomeScreen() {
     setFormEndDate('');
     setFormStartTime('09:00');
     setFormEndTime('10:00');
+    setIsAllDay(false);
     setShowDeleteConfirm(false);
     setShowScheduleModal(true);
   };
@@ -458,18 +531,30 @@ export default function HomeScreen() {
     try {
       setIsLoading(true);
 
-      const startDateTimeStr = `${formStartDate}T${formStartTime}:00`;
-      const endDateTimeStr = formEndDate
-        ? `${formEndDate}T${formEndTime}:00`
-        : `${formStartDate}T${formEndTime}:00`;
+      let startTimeStr = formStartTime || '00:00';
+      let endTimeStr = formEndTime || '23:59';
 
-      const start = new Date(startDateTimeStr);
-      const end = new Date(endDateTimeStr);
+      // If all-day is selected, set time to full day
+      if (isAllDay) {
+        startTimeStr = '00:00';
+        endTimeStr = '23:59';
+      }
+
+      const startDateTimeStr = `${formStartDate}T${startTimeStr}:00`;
+      const endDateTimeStr = formEndDate
+        ? `${formEndDate}T${endTimeStr}:00`
+        : `${formStartDate}T${endTimeStr}:00`;
+
+      // Create ISO string with KST timezone offset (+09:00)
+      const formatKSTISO = (dateTimeStr: string) => {
+        // Append KST timezone offset directly to the datetime string
+        return `${dateTimeStr}+09:00`;
+      };
 
       const eventData: CreateEventRequest = {
         summary: formTitle,
-        start_time: start.toISOString(),
-        end_time: end.toISOString(),
+        start_time: formatKSTISO(startDateTimeStr),
+        end_time: formatKSTISO(endDateTimeStr),
       };
 
       if (editingScheduleId) {
@@ -614,6 +699,23 @@ export default function HomeScreen() {
                   }}
                 >
                   <Text style={styles.todayButtonText}>오늘</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowNotificationPanel(true);
+                    markNotificationsAsViewed();
+                  }}
+                  style={styles.iconButton}
+                >
+                  <Bell size={20} color={COLORS.neutral400} />
+                  {pendingRequests.length > viewedRequestCount && (
+                    <View style={styles.notificationBadge}>
+                      <Text style={styles.notificationBadgeText}>
+                        {pendingRequests.length - viewedRequestCount}
+                      </Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -787,7 +889,21 @@ export default function HomeScreen() {
                             styles.scheduleTimeText,
                             schedule.type === 'A2A' && { color: COLORS.primaryMain }
                           ]}>
-                            {schedule.time}
+                            {(() => {
+                              const timeStr = schedule.time;
+                              if (timeStr === '00:00 - 23:59' || timeStr === '09:00 - 08:59') return '종일';
+                              // Check if it's a full day (ends with :59 and spans ~24h)
+                              const parts = timeStr.split(' - ');
+                              if (parts.length === 2) {
+                                const [sh, sm] = parts[0].split(':').map(Number);
+                                const [eh, em] = parts[1].split(':').map(Number);
+                                const startMins = sh * 60 + sm;
+                                const endMins = eh * 60 + em;
+                                const diff = endMins < startMins ? (24 * 60 - startMins + endMins) : (endMins - startMins);
+                                if (diff >= 23 * 60 + 50) return '종일';
+                              }
+                              return timeStr;
+                            })()}
                           </Text>
                         </View>
 
@@ -981,64 +1097,77 @@ export default function HomeScreen() {
                 </View>
               </View>
 
-              <View style={styles.row}>
-                <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-                  <Text style={styles.label}>시작 시간</Text>
-                  <TouchableOpacity
-                    style={styles.iconInput}
-                    onPress={() => setShowStartTimePicker(true)}
-                  >
-                    <Clock size={18} color={COLORS.neutral700} />
-                    <Text style={styles.inputNoBorder}>{formStartTime || 'HH:MM'}</Text>
-                  </TouchableOpacity>
-                  {Platform.OS === 'web' ? (
-                    <TimePickerModal
-                      visible={showStartTimePicker}
-                      onClose={() => setShowStartTimePicker(false)}
-                      onSelect={(date) => onStartTimeChange(null, date)}
-                      initialTime={parseTime(formStartTime)}
-                    />
-                  ) : (
-                    showStartTimePicker && (
-                      <DateTimePicker
-                        value={parseTime(formStartTime)}
-                        mode="time"
-                        display="default"
-                        onChange={onStartTimeChange}
-                        minuteInterval={1}
-                      />
-                    )
-                  )}
-                </View>
-                <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
-                  <Text style={styles.label}>종료 시간</Text>
-                  <TouchableOpacity
-                    style={styles.iconInput}
-                    onPress={() => setShowEndTimePicker(true)}
-                  >
-                    <Clock size={18} color={COLORS.neutral700} />
-                    <Text style={styles.inputNoBorder}>{formEndTime || 'HH:MM'}</Text>
-                  </TouchableOpacity>
-                  {Platform.OS === 'web' ? (
-                    <TimePickerModal
-                      visible={showEndTimePicker}
-                      onClose={() => setShowEndTimePicker(false)}
-                      onSelect={(date) => onEndTimeChange(null, date)}
-                      initialTime={parseTime(formEndTime)}
-                    />
-                  ) : (
-                    showEndTimePicker && (
-                      <DateTimePicker
-                        value={parseTime(formEndTime)}
-                        mode="time"
-                        display="default"
-                        onChange={onEndTimeChange}
-                        minuteInterval={1}
-                      />
-                    )
-                  )}
-                </View>
+              {/* All Day Toggle */}
+              <View style={styles.allDayRow}>
+                <Text style={styles.allDayLabel}>종일</Text>
+                <Switch
+                  value={isAllDay}
+                  onValueChange={setIsAllDay}
+                  trackColor={{ false: COLORS.neutral200, true: COLORS.primaryLight }}
+                  thumbColor={isAllDay ? COLORS.primaryMain : COLORS.neutral400}
+                />
               </View>
+
+              {!isAllDay && (
+                <View style={styles.row}>
+                  <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                    <Text style={styles.label}>시작 시간</Text>
+                    <TouchableOpacity
+                      style={styles.iconInput}
+                      onPress={() => setShowStartTimePicker(true)}
+                    >
+                      <Clock size={18} color={COLORS.neutral700} />
+                      <Text style={styles.inputNoBorder}>{formStartTime || 'HH:MM'}</Text>
+                    </TouchableOpacity>
+                    {Platform.OS === 'web' ? (
+                      <TimePickerModal
+                        visible={showStartTimePicker}
+                        onClose={() => setShowStartTimePicker(false)}
+                        onSelect={(date) => onStartTimeChange(null, date)}
+                        initialTime={parseTime(formStartTime)}
+                      />
+                    ) : (
+                      showStartTimePicker && (
+                        <DateTimePicker
+                          value={parseTime(formStartTime)}
+                          mode="time"
+                          display="default"
+                          onChange={onStartTimeChange}
+                          minuteInterval={1}
+                        />
+                      )
+                    )}
+                  </View>
+                  <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
+                    <Text style={styles.label}>종료 시간</Text>
+                    <TouchableOpacity
+                      style={styles.iconInput}
+                      onPress={() => setShowEndTimePicker(true)}
+                    >
+                      <Clock size={18} color={COLORS.neutral700} />
+                      <Text style={styles.inputNoBorder}>{formEndTime || 'HH:MM'}</Text>
+                    </TouchableOpacity>
+                    {Platform.OS === 'web' ? (
+                      <TimePickerModal
+                        visible={showEndTimePicker}
+                        onClose={() => setShowEndTimePicker(false)}
+                        onSelect={(date) => onEndTimeChange(null, date)}
+                        initialTime={parseTime(formEndTime)}
+                      />
+                    ) : (
+                      showEndTimePicker && (
+                        <DateTimePicker
+                          value={parseTime(formEndTime)}
+                          mode="time"
+                          display="default"
+                          onChange={onEndTimeChange}
+                          minuteInterval={1}
+                        />
+                      )
+                    )}
+                  </View>
+                </View>
+              )}
 
               <View style={styles.modalButtons}>
                 <TouchableOpacity
@@ -1106,7 +1235,22 @@ export default function HomeScreen() {
                     </View>
                     <View>
                       <Text style={styles.infoLabel}>시간</Text>
-                      <Text style={styles.infoValue}>{selectedDetailSchedule?.time}</Text>
+                      <Text style={styles.infoValue}>
+                        {(() => {
+                          const timeStr = selectedDetailSchedule?.time || '';
+                          if (timeStr === '00:00 - 23:59' || timeStr === '09:00 - 08:59') return '종일';
+                          const parts = timeStr.split(' - ');
+                          if (parts.length === 2) {
+                            const [sh, sm] = parts[0].split(':').map(Number);
+                            const [eh, em] = parts[1].split(':').map(Number);
+                            const startMins = sh * 60 + sm;
+                            const endMins = eh * 60 + em;
+                            const diff = endMins < startMins ? (24 * 60 - startMins + endMins) : (endMins - startMins);
+                            if (diff >= 23 * 60 + 50) return '종일';
+                          }
+                          return timeStr;
+                        })()}
+                      </Text>
                     </View>
                   </View>
                 </View>
@@ -1123,6 +1267,18 @@ export default function HomeScreen() {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
+
+      {/* Notification Panel */}
+      <NotificationPanel
+        visible={showNotificationPanel}
+        onClose={() => setShowNotificationPanel(false)}
+        pendingRequests={pendingRequests}
+        notifications={notifications}
+        onNavigateToA2A={onNavigateToA2A}
+        onNavigateToFriends={(tab) => {
+          navigation.navigate('Friends', { initialTab: tab });
+        }}
+      />
 
       <BottomNav activeTab={Tab.HOME} />
     </SafeAreaView>
@@ -1277,6 +1433,24 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     padding: 4,
+    position: 'relative',
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#EF4444',
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  notificationBadgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   calendarGrid: {
     marginBottom: 10,
@@ -1629,6 +1803,19 @@ const styles = StyleSheet.create({
   inputNoBorder: {
     fontSize: 16,
     color: COLORS.neutral900,
+  },
+  allDayRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    marginBottom: 8,
+  },
+  allDayLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: COLORS.neutral700,
   },
   modalButtons: {
     flexDirection: 'row',

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { UserPlus, Check, X } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useEffect, useState, useCallback } from 'react';
 import {
@@ -75,16 +75,19 @@ interface Friend {
 
 const FriendsScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, 'Friends'>>();
   const [isAdding, setIsAdding] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [friendSearchQuery, setFriendSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'friends' | 'requests'>('friends');
+  const [activeTab, setActiveTab] = useState<'friends' | 'requests'>(
+    route.params?.initialTab || 'friends'
+  );
 
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [emailInput, setEmailInput] = useState<string>('');
-  const [userInfo, setUserInfo] = useState<{ name: string; email: string } | null>(null);
+  const [userInfo, setUserInfo] = useState<{ name: string; email: string; handle?: string } | null>(null);
 
   // Delete Modal State
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
@@ -279,9 +282,9 @@ const FriendsScreen = () => {
   };
 
   const copyToClipboard = async () => {
-    if (userInfo?.email) {
-      await Clipboard.setStringAsync(userInfo.email);
-      showAlert('복사됨', '아이디(이메일)가 복사되었습니다.');
+    if (userInfo?.handle) {
+      await Clipboard.setStringAsync(userInfo.handle);
+      showAlert('복사 완료!', `@${userInfo.handle}가 클립보드에 복사되었습니다.`);
     }
   };
 
@@ -330,25 +333,33 @@ const FriendsScreen = () => {
 
           {/* My ID Card */}
           <LinearGradient
-            colors={[COLORS.primaryMain, COLORS.primaryLight]}
+            colors={['#4F46E5', '#7C3AED']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.idCard}
           >
-            <View style={styles.idCardDecor} />
-
-            <Text style={styles.idCardLabel}>내 아이디</Text>
-            <View style={styles.idCardContent}>
-              <View>
-                <Text style={styles.idCardValue}>{userInfo?.email || 'Loading...'}</Text>
-                <TouchableOpacity style={styles.copyButton} onPress={copyToClipboard}>
-                  <Ionicons name="copy-outline" size={12} color="white" style={{ marginRight: 4 }} />
-                  <Text style={styles.copyButtonText}>아이디 복사</Text>
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity style={styles.qrButton}>
-                <Ionicons name="qr-code-outline" size={24} color={COLORS.primaryMain} />
+            {/* Top Section */}
+            <View style={styles.idCardTop}>
+              <Text style={styles.idCardLabel}>MY PROFILE</Text>
+              <TouchableOpacity style={styles.copyChip} onPress={copyToClipboard}>
+                <Ionicons name="copy-outline" size={12} color="#4F46E5" />
+                <Text style={styles.copyChipText}>복사</Text>
               </TouchableOpacity>
+            </View>
+
+            {/* Main Info */}
+            <View style={styles.idCardMain}>
+              <Text style={styles.idCardName}>{userInfo?.name || 'Loading...'}</Text>
+              <View style={styles.idCardHandleRow}>
+                <Text style={styles.idCardHandleSymbol}>@</Text>
+                <Text style={styles.idCardHandle}>{userInfo?.handle || ''}</Text>
+              </View>
+            </View>
+
+            {/* Email */}
+            <View style={styles.idCardEmailRow}>
+              <Ionicons name="mail" size={14} color="rgba(255,255,255,0.6)" />
+              <Text style={styles.idCardEmail}>{userInfo?.email || ''}</Text>
             </View>
           </LinearGradient>
         </View>
@@ -361,10 +372,25 @@ const FriendsScreen = () => {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.mainHeader}>
+        {/* Tab Switcher - Moved to top */}
         <View style={styles.mainHeaderTop}>
-          <View>
-            <Text style={styles.mainTitle}>친구</Text>
-            <Text style={styles.mainSubtitle}>전체 {friends.length}명</Text>
+          <View style={styles.tabContainer}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'friends' && styles.activeTab]}
+              onPress={() => setActiveTab('friends')}
+            >
+              <Text style={[styles.tabText, activeTab === 'friends' && styles.activeTabText]}>
+                친구 목록
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'requests' && styles.activeTab]}
+              onPress={() => setActiveTab('requests')}
+            >
+              <Text style={[styles.tabText, activeTab === 'requests' && styles.activeTabText]}>
+                받은 요청 {friendRequests.length > 0 && `(${friendRequests.length})`}
+              </Text>
+            </TouchableOpacity>
           </View>
           <TouchableOpacity
             style={styles.addUserButton}
@@ -374,37 +400,20 @@ const FriendsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Tab Switcher */}
-        <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'friends' && styles.activeTab]}
-            onPress={() => setActiveTab('friends')}
-          >
-            <Text style={[styles.tabText, activeTab === 'friends' && styles.activeTabText]}>
-              친구 목록
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'requests' && styles.activeTab]}
-            onPress={() => setActiveTab('requests')}
-          >
-            <Text style={[styles.tabText, activeTab === 'requests' && styles.activeTabText]}>
-              받은 요청 {friendRequests.length > 0 && `(${friendRequests.length})`}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
         {activeTab === 'friends' && (
-          <View style={styles.mainSearchBox}>
-            <Ionicons name="search" size={18} color={COLORS.neutral400} style={styles.mainSearchIcon} />
-            <TextInput
-              style={styles.mainSearchInput}
-              placeholder="친구 검색..."
-              placeholderTextColor={COLORS.neutral400}
-              value={friendSearchQuery}
-              onChangeText={setFriendSearchQuery}
-            />
-          </View>
+          <>
+            <View style={styles.mainSearchBox}>
+              <Ionicons name="search" size={18} color={COLORS.neutral400} style={styles.mainSearchIcon} />
+              <TextInput
+                style={styles.mainSearchInput}
+                placeholder="친구 검색..."
+                placeholderTextColor={COLORS.neutral400}
+                value={friendSearchQuery}
+                onChangeText={setFriendSearchQuery}
+              />
+            </View>
+            <Text style={styles.friendListCount}>친구목록 {friends.length}명</Text>
+          </>
         )}
       </View>
 
@@ -436,7 +445,6 @@ const FriendsScreen = () => {
                   </View>
                   <View>
                     <Text style={styles.friendName}>{item.friend.name}</Text>
-                    <Text style={styles.friendEmail}>{item.friend.email}</Text>
                   </View>
                 </View>
                 <Pressable
@@ -471,7 +479,6 @@ const FriendsScreen = () => {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.friendName}>{item.from_user.name}</Text>
-                    <Text style={styles.friendEmail}>{item.from_user.email}</Text>
                   </View>
                 </View>
                 <View style={styles.requestActions}>
@@ -627,64 +634,74 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   idCard: {
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: COLORS.primaryMain,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-    position: 'relative',
-    overflow: 'hidden',
+    borderRadius: 20,
+    padding: 24,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 8,
   },
-  idCardDecor: {
-    position: 'absolute',
-    top: -40,
-    right: -40,
-    width: 128,
-    height: 128,
-    backgroundColor: 'white',
-    opacity: 0.1,
-    borderRadius: 64,
-  },
-  idCardLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.8)',
-    marginBottom: 16,
-  },
-  idCardContent: {
+  idCardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    alignItems: 'center',
+    marginBottom: 20,
   },
-  idCardValue: {
-    fontSize: 20, // Reduced from 24 to fit email
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 4,
+  idCardLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.6)',
+    letterSpacing: 1.5,
   },
-  copyButton: {
+  copyChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-  },
-  copyButtonText: {
-    fontSize: 10,
-    color: 'white',
-  },
-  qrButton: {
     backgroundColor: 'white',
-    padding: 12,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    gap: 4,
+  },
+  copyChipText: {
+    fontSize: 11,
+    color: '#4F46E5',
+    fontWeight: '600',
+  },
+  idCardMain: {
+    marginBottom: 16,
+  },
+  idCardName: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 6,
+  },
+  idCardHandleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  idCardHandleSymbol: {
+    fontSize: 18,
+    color: 'rgba(255,255,255,0.5)',
+    fontWeight: '500',
+  },
+  idCardHandle: {
+    fontSize: 18,
+    color: 'rgba(255,255,255,0.95)',
+    fontWeight: '600',
+  },
+  idCardEmailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.15)',
+  },
+  idCardEmail: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.6)',
   },
 
   // Main View Styles
@@ -745,6 +762,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.neutralSlate,
     fontWeight: '500',
+  },
+  friendListCount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.neutralSlate,
+    marginTop: 8,
+    marginLeft: 4,
   },
   listContainer: {
     flex: 1,
@@ -949,76 +973,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: 'white',
   },
-  // Friend Request Styles
-  requestsContainer: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: COLORS.neutralSlate,
-    marginBottom: 12,
-    marginLeft: 4,
-  },
-  requestItem: {
-    backgroundColor: COLORS.white,
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: COLORS.neutral100,
-  },
-  requestInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  requestAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    marginRight: 12,
-    backgroundColor: COLORS.neutral100,
-  },
-  requestName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: COLORS.neutralSlate,
-    marginBottom: 2,
-  },
-  requestEmail: {
-    fontSize: 12,
-    color: COLORS.neutral500,
-  },
-  requestActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  acceptButton: {
-    backgroundColor: COLORS.primaryMain,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  acceptButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  rejectButton: {
-    backgroundColor: COLORS.neutral100,
-    padding: 8,
-    borderRadius: 20,
-  },
+
   divider: {
     height: 1,
     backgroundColor: COLORS.neutral200,

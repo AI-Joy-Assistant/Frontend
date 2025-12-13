@@ -6,7 +6,7 @@ export type RootStackParamList = {
   LoginDetailScreen: undefined;
   Home: undefined;
   Chat: undefined;
-  Friends: undefined;
+  Friends: { initialTab?: 'friends' | 'requests' } | undefined;
   A2A: { initialLogId?: string } | undefined;
   User: undefined;
   MyPage: undefined;
