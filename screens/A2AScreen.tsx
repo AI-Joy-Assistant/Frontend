@@ -98,6 +98,7 @@ const A2AScreen = () => {
     const [negotiatingSessionId, setNegotiatingSessionId] = useState<string | null>(null);
     const [showHumanDecision, setShowHumanDecision] = useState(false);
     const [lastProposalForDecision, setLastProposalForDecision] = useState<any>(null);
+    const [isModalClosing, setIsModalClosing] = useState(false);  // 모달 닫힘 중 버튼 숨김용
 
     // 재조율 시작시간/종료시간 상태
     const [startTimeExpanded, setStartTimeExpanded] = useState(true);
@@ -621,7 +622,8 @@ const A2AScreen = () => {
                 date: startDate,
                 time: startTime,
                 endDate: endDate,
-                endTime: endTime
+                endTime: endTime,
+                reason: `${startDate} ${startTime} 제안`  // 요청 시간을 사유에 표시
             };
 
             const response = await fetch(`${API_BASE}/a2a/session/${selectedLog.id}/reschedule`, {
@@ -818,6 +820,7 @@ const A2AScreen = () => {
     // =============================================
 
     const handleClose = () => {
+        setIsModalClosing(true);  // 버튼 즉시 숨기기
         setSelectedLog(null);
         setIsRescheduling(false);
         setIsConfirmed(false);
@@ -825,20 +828,30 @@ const A2AScreen = () => {
         setIsProcessExpanded(false);
         setManualInput('');
         setPreferredTime('');
+        // isModalClosing은 모달이 다시 열릴 때 리셋됨
     };
 
     const handleLogClick = async (log: A2ALog) => {
+        // 모달 열기 전 닫힘 상태 리셋
+        setIsModalClosing(false);
         // 먼저 기본 정보로 모달을 즉시 열고, 로딩 상태 표시
         setSelectedLog({ ...log, details: { ...log.details, _loading: true } } as any);
         setIsProcessExpanded(false);
         setIsConfirmed(false);
         setIsRescheduling(false);
 
+        const startTime = Date.now();
+        console.log('⏱️ [Modal] API 호출 시작');
+
         try {
             const token = await AsyncStorage.getItem('accessToken');
             const res = await fetch(`${API_BASE}/a2a/session/${log.id}`, {
                 headers: { 'Authorization': `Bearer ${token}` },
             });
+
+            const apiTime = Date.now() - startTime;
+            console.log(`⏱️ [Modal] API 응답 시간: ${apiTime}ms`);
+
             if (res.ok) {
                 const data = await res.json();
                 const newDetails = data.details || {};
@@ -855,6 +868,8 @@ const A2AScreen = () => {
                     details: { ...(log.details || {}), ...newDetails }
                 });
 
+                const totalTime = Date.now() - startTime;
+                console.log(`⏱️ [Modal] 전체 처리 시간: ${totalTime}ms`);
                 console.log('📋 [DEBUG] Updated status:', newStatus, 'rescheduleRequestedBy:', newDetails.rescheduleRequestedBy);
             } else {
                 // API 실패 시 기존 데이터로 표시
@@ -1369,7 +1384,7 @@ const A2AScreen = () => {
 
                                             {/* Attendees */}
                                             <View style={styles.attendeesSection}>
-                                                <Text style={styles.attendeesLabel}>Attendees</Text>
+                                                <Text style={styles.attendeesLabel}>참여자</Text>
                                                 <View style={styles.attendeeStack}>
                                                     {(selectedLog.details as any)?.attendees?.map((attendee: any, idx: number) => (
                                                         attendee.isCurrentUser ? (
@@ -1436,33 +1451,38 @@ const A2AScreen = () => {
 
                                 <View style={styles.modalFooter}>
                                     <View style={styles.buttonRow}>
-                                        <TouchableOpacity onPress={handleRescheduleClick} style={styles.rescheduleButton}>
-                                            <Text style={styles.rescheduleButtonText}>재조율</Text>
-                                        </TouchableOpacity>
+                                        {/* 모달이 닫히는 중이 아닐 때만 버튼 표시 */}
+                                        {!isModalClosing && (
+                                            <>
+                                                <TouchableOpacity onPress={handleRescheduleClick} style={styles.rescheduleButton}>
+                                                    <Text style={styles.rescheduleButtonText}>재조율</Text>
+                                                </TouchableOpacity>
 
-                                        {/* 승인/거절 버튼: 로딩 중이 아닐 때만 표시 */}
-                                        {selectedLog?.status?.toLowerCase() !== 'completed' && !(selectedLog?.details as any)?._loading && (() => {
-                                            const rescheduleRequestedBy = (selectedLog?.details as any)?.rescheduleRequestedBy;
-                                            // 재조율 요청이 있으면: 요청한 사람이 아닌 사람에게 버튼 표시
-                                            // 재조율 요청이 없으면: initiator가 아닌 사람에게 버튼 표시
-                                            const showButtons = rescheduleRequestedBy
-                                                ? currentUserId !== rescheduleRequestedBy
-                                                : currentUserId !== selectedLog?.initiator_user_id;
+                                                {/* 승인/거절 버튼: initiator_user_id는 리스트에서 이미 가져옴 (API 대기 불필요) */}
+                                                {selectedLog?.status?.toLowerCase() !== 'completed' && (() => {
+                                                    const rescheduleRequestedBy = (selectedLog?.details as any)?.rescheduleRequestedBy;
+                                                    // 재조율 요청이 있으면: 요청한 사람이 아닌 사람에게 버튼 표시
+                                                    // 재조율 요청이 없으면: initiator가 아닌 사람에게 버튼 표시
+                                                    const showButtons = rescheduleRequestedBy
+                                                        ? currentUserId !== rescheduleRequestedBy
+                                                        : currentUserId !== selectedLog?.initiator_user_id;
 
-                                            return showButtons ? (
-                                                <>
-                                                    <TouchableOpacity onPress={handleApproveClick} style={styles.approveButton}>
-                                                        <CheckCircle2 size={16} color="white" style={{ marginRight: 6 }} />
-                                                        <Text style={styles.approveButtonText}>승인</Text>
-                                                    </TouchableOpacity>
+                                                    return showButtons ? (
+                                                        <>
+                                                            <TouchableOpacity onPress={handleApproveClick} style={styles.approveButton}>
+                                                                <CheckCircle2 size={16} color="white" style={{ marginRight: 6 }} />
+                                                                <Text style={styles.approveButtonText}>승인</Text>
+                                                            </TouchableOpacity>
 
-                                                    <TouchableOpacity onPress={handleRejectClick} style={styles.rejectButton}>
-                                                        <X size={16} color="white" style={{ marginRight: 6 }} />
-                                                        <Text style={styles.rejectButtonText}>거절</Text>
-                                                    </TouchableOpacity>
-                                                </>
-                                            ) : null;
-                                        })()}
+                                                            <TouchableOpacity onPress={handleRejectClick} style={styles.rejectButton}>
+                                                                <X size={16} color="white" style={{ marginRight: 6 }} />
+                                                                <Text style={styles.rejectButtonText}>거절</Text>
+                                                            </TouchableOpacity>
+                                                        </>
+                                                    ) : null;
+                                                })()}
+                                            </>
+                                        )}
                                     </View>
                                 </View>
                             </View>
