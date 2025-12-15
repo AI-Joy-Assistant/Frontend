@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect, useSyncExternalStore } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList, Tab } from '../types';
+
 
 interface BottomNavProps {
     activeTab: Tab;
@@ -17,10 +18,15 @@ const COLORS = {
     lightGray: '#CBD5E1',   // Light Gray - Inactive
     darkGray: '#334155',    // Dark Gray
     white: '#FFFFFF',
+    badge: '#FF3B30',       // 배지 색상 (빨간색)
 };
 
 const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
+
+
+
 
     const navItems = [
         { id: Tab.HOME, label: 'Home', icon: 'home', route: 'Home' },
@@ -31,6 +37,8 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
     ];
 
     const handlePress = (item: any) => {
+
+
         if (activeTab !== item.id) {
             navigation.navigate(item.route as any);
         }
@@ -42,6 +50,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
                 {navItems.map((item) => {
                     const isActive = activeTab === item.id;
                     const iconName = isActive ? item.icon : `${item.icon}-outline`;
+
 
                     return (
                         <TouchableOpacity
@@ -57,6 +66,8 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
                                     color={isActive ? COLORS.white : COLORS.lightGray}
                                     style={{ opacity: isActive ? 1 : 0.7 }}
                                 />
+                                {/* 배지 표시 */}
+
                             </View>
                             <Text style={[
                                 styles.label,
@@ -107,11 +118,29 @@ const styles = StyleSheet.create({
     },
     iconContainer: {
         marginBottom: 4,
+        position: 'relative',
     },
     label: {
         fontSize: 10,
         fontWeight: '500',
-    }
+    },
+    badge: {
+        position: 'absolute',
+        top: -6,
+        right: -10,
+        backgroundColor: COLORS.badge,
+        borderRadius: 10,
+        minWidth: 18,
+        height: 18,
+        paddingHorizontal: 4,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    badgeText: {
+        color: COLORS.white,
+        fontSize: 10,
+        fontWeight: 'bold',
+    },
 });
 
 export default BottomNav;
