@@ -6,7 +6,7 @@ export type RootStackParamList = {
   LoginDetailScreen: undefined;
   Home: undefined;
   Chat: undefined;
-  Friends: undefined;
+  Friends: { initialTab?: 'friends' | 'requests' } | undefined;
   A2A: { initialLogId?: string } | undefined;
   User: undefined;
   MyPage: undefined;
@@ -37,6 +37,9 @@ export interface A2ALog {
     proposedTime: string;
     location: string;
     process: { step: string; description: string }[];
+    participants?: string[];
+    thread_id?: string;
+    rescheduleRequestedBy?: string;
   };
   initiator_user_id?: string;
 }

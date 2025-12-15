@@ -53,9 +53,9 @@ const COLORS = {
     neutral200: '#E5E7EB',
     neutral300: '#D1D5DB',
     neutral400: '#9CA3AF',
-    neutral400: '#9CA3AF',
     neutral500: '#6B7280',
     neutral600: '#4B5563',
+    neutral700: '#374151',
     neutral900: '#111827', // Added for calendar title
     white: '#FFFFFF',
     green600: '#16A34A',
@@ -932,38 +932,48 @@ const A2AScreen = () => {
 
     const handleRejectClick = async () => {
         if (!selectedLog) return;
-        // currently reuse reschedule logic or simple alert
-        // User asked for "Reject" button specifically. 
-        // For now, let's treat it as a hard reject (maybe same as reschedule or just alert).
-        // If we want a distinct reject API call, we need one. 
-        // For now, let's just log it and maybe call reschedule api with a "reject" reason or similar if needed.
-        // Or simply alert "거절하시겠습니까?" and then maybe just close or call an API.
 
-        // Let's implement a basic alert for now as safety
-        // In a real flow, this might call a "reject" endpoint.
         try {
             const token = await AsyncStorage.getItem('accessToken');
-            const res = await fetch(`${API_BASE}/a2a/session/${selectedLog.id}/reject`, { // Assuming an endpoint might exist or we use reschedule
+
+            // 세션 상세 정보에서 proposal 구성
+            const proposal = {
+                date: selectedLog.details?.proposedDate || '',
+                time: selectedLog.details?.proposedTime || '',
+                location: selectedLog.details?.location || '',
+                activity: selectedLog.details?.purpose || selectedLog.title || '',
+                participants: selectedLog.details?.participants || []
+            };
+
+            // /chat/approve-schedule API를 approved: false로 호출
+            const res = await fetch(`${API_BASE}/chat/approve-schedule`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                }
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    thread_id: selectedLog.details?.thread_id || null,
+                    session_ids: [selectedLog.id],
+                    approved: false,
+                    proposal: proposal
+                })
             });
+
+            const data = await res.json();
+            console.log('🔴 거절 API 응답:', data);
+
             if (res.ok) {
-                alert("일정이 거절되었습니다.");
+                alert("일정이 거절되었습니다. 재조율을 위해 채팅에서 새로운 시간을 입력해주세요.");
                 handleClose();
                 fetchA2ALogs();
             } else {
-                // if 404/405, maybe fallback to reschedule logic or manually set status?
-                // For this demo, let's just alert.
-                console.log("Reject endpoint might not exist, but UI updated.");
-                alert("일정을 거절했습니다.");
-                handleClose();
+                console.error("Reject failed:", data);
+                alert(data.detail || data.error || "거절 처리에 실패했습니다.");
             }
         } catch (e) {
-            console.log(e);
-            alert("일정을 거절했습니다."); // Optimistic UI
-            handleClose();
+            console.error("Reject error:", e);
+            alert("거절 처리 중 오류가 발생했습니다.");
         }
     };
 
