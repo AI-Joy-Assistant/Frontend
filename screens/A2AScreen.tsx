@@ -24,7 +24,10 @@ import {
     CalendarCheck,
     ArrowLeft,
     Trash2,
-    AlertCircle
+    AlertCircle,
+    ChevronLeft,
+    ChevronUp,
+    ChevronDown
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import TimePickerModal from '../components/TimePickerModal';
@@ -95,6 +98,50 @@ const A2AScreen = () => {
     const [negotiatingSessionId, setNegotiatingSessionId] = useState<string | null>(null);
     const [showHumanDecision, setShowHumanDecision] = useState(false);
     const [lastProposalForDecision, setLastProposalForDecision] = useState<any>(null);
+    const [isModalClosing, setIsModalClosing] = useState(false);  // 모달 닫힘 중 버튼 숨김용
+
+    // 재조율 시작시간/종료시간 상태
+    const [startTimeExpanded, setStartTimeExpanded] = useState(true);
+    const [endTimeExpanded, setEndTimeExpanded] = useState(false);
+    const [startDate, setStartDate] = useState<string | null>(null);
+    const [startTime, setStartTime] = useState<string | null>(null);
+    const [endDate, setEndDate] = useState<string | null>(null);
+    const [endTime, setEndTime] = useState<string | null>(null);
+    const [startMonth, setStartMonth] = useState(new Date());
+    const [endMonth, setEndMonth] = useState(new Date());
+
+    // 바쁜 시간대 (캘린더 일정이 있는 시간)
+    const [busyTimes, setBusyTimes] = useState<{ [date: string]: string[] }>({});
+
+    // 날짜 선택 시 해당 날짜의 바쁜 시간대 조회
+    const fetchBusyTimes = async (dateStr: string) => {
+        try {
+            const token = await AsyncStorage.getItem('accessToken');
+            const res = await fetch(`${API_BASE}/calendar/busy-times?date=${dateStr}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setBusyTimes(prev => ({ ...prev, [dateStr]: data.busy_times || [] }));
+            }
+        } catch (e) {
+            console.error("Failed to fetch busy times:", e);
+        }
+    };
+
+    // startDate 변경 시 바쁜 시간 조회
+    useEffect(() => {
+        if (startDate) {
+            fetchBusyTimes(startDate);
+        }
+    }, [startDate]);
+
+    // endDate 변경 시 바쁜 시간 조회
+    useEffect(() => {
+        if (endDate) {
+            fetchBusyTimes(endDate);
+        }
+    }, [endDate]);
 
     useEffect(() => {
         if (selectedReason === "날짜를 변경하고 싶어요" && selectedLog) {
@@ -294,23 +341,290 @@ const A2AScreen = () => {
         );
     };
 
+    // 오전/오후 시간 버튼 생성
+    const AM_TIMES = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30'];
+    const PM_TIMES = ['12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30', '20:00', '20:30', '21:00', '21:30'];
+
+    // 시간 선택 렌더링 (시작/종료 공용) - 4열 그리드, 바쁜 시간 비활성화
+    // minTime: 종료 시간 선택 시 시작 시간 이후만 선택 가능하도록 설정
+    // minDate: 같은 날짜인 경우에만 minTime 적용
+    const renderTimeButtons = (selectedTime: string | null, onSelect: (time: string) => void, dateStr: string | null, minTime?: string | null, minDate?: string | null) => {
+        const busyTimesForDate = dateStr ? (busyTimes[dateStr] || []) : [];
+
+        // 시간 비교 함수 (HH:MM 형식)
+        const isBeforeMinTime = (time: string): boolean => {
+            if (!minTime || !minDate || dateStr !== minDate) return false;
+            const [h1, m1] = time.split(':').map(Number);
+            const [h2, m2] = minTime.split(':').map(Number);
+            return h1 * 60 + m1 <= h2 * 60 + m2;  // 시작시간과 같거나 이전이면 비활성화
+        };
+
+        return (
+            <View style={{ marginTop: 12 }}>
+                <Text style={{ fontSize: 10, fontWeight: 'bold', color: COLORS.neutral400, marginBottom: 8 }}>오전</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 }}>
+                    {AM_TIMES.map((time) => {
+                        const isBusy = busyTimesForDate.includes(time);
+                        const isBeforeStart = isBeforeMinTime(time);
+                        const isDisabled = isBusy || isBeforeStart;
+                        return (
+                            <TouchableOpacity
+                                key={time}
+                                onPress={() => !isDisabled && onSelect(time)}
+                                disabled={isDisabled}
+                                style={{
+                                    width: '25%',
+                                    paddingHorizontal: 4,
+                                    marginBottom: 8,
+                                }}
+                            >
+                                <View style={{
+                                    paddingVertical: 10,
+                                    borderRadius: 8,
+                                    borderWidth: isDisabled ? 0 : 1,
+                                    borderColor: selectedTime === time ? COLORS.primaryMain : COLORS.primaryMain,
+                                    backgroundColor: isDisabled ? COLORS.neutral100 : (selectedTime === time ? COLORS.primaryMain : 'white'),
+                                    alignItems: 'center',
+                                }}>
+                                    <Text style={{
+                                        color: isDisabled ? COLORS.neutral300 : (selectedTime === time ? 'white' : COLORS.neutralSlate),
+                                        fontSize: 10,
+                                        fontWeight: 'bold'
+                                    }}>{time}</Text>
+                                </View>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
+                <Text style={{ fontSize: 10, fontWeight: 'bold', color: COLORS.neutral400, marginTop: 12, marginBottom: 8 }}>오후</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 }}>
+                    {PM_TIMES.map((time) => {
+                        const isBusy = busyTimesForDate.includes(time);
+                        const isBeforeStart = isBeforeMinTime(time);
+                        const isDisabled = isBusy || isBeforeStart;
+                        return (
+                            <TouchableOpacity
+                                key={time}
+                                onPress={() => !isDisabled && onSelect(time)}
+                                disabled={isDisabled}
+                                style={{
+                                    width: '25%',
+                                    paddingHorizontal: 4,
+                                    marginBottom: 8,
+                                }}
+                            >
+                                <View style={{
+                                    paddingVertical: 10,
+                                    borderRadius: 8,
+                                    borderWidth: isDisabled ? 0 : 1,
+                                    borderColor: selectedTime === time ? COLORS.primaryMain : COLORS.primaryMain,
+                                    backgroundColor: isDisabled ? COLORS.neutral100 : (selectedTime === time ? COLORS.primaryMain : 'white'),
+                                    alignItems: 'center',
+                                }}>
+                                    <Text style={{
+                                        color: isDisabled ? COLORS.neutral300 : (selectedTime === time ? 'white' : COLORS.neutralSlate),
+                                        fontSize: 10,
+                                        fontWeight: 'bold'
+                                    }}>{time}</Text>
+                                </View>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
+            </View>
+        );
+    };
+
+    // 달력 렌더링 (시작/종료 공용)
+    const renderScheduleCalendar = (selectedDateVal: string | null, onSelectDate: (date: string) => void, month: Date, onMonthChange: (dir: 'prev' | 'next') => void) => {
+        const year = month.getFullYear();
+        const monthNum = month.getMonth();
+        const firstDay = new Date(year, monthNum, 1).getDay();
+        const daysInMonth = new Date(year, monthNum + 1, 0).getDate();
+        const today = new Date();
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+        // 기존 약속 날짜 (proposedDate 또는 requestedDate)
+        let originalDateRaw = (selectedLog?.details as any)?.proposedDate || (selectedLog?.details as any)?.requestedDate || '';
+
+        // 한국어 날짜 형식 파싱 (예: "12월 13일" -> "2025-12-13")
+        let originalDate = '';
+        if (originalDateRaw) {
+            const koreanDateMatch = originalDateRaw.match(/(\d+)월\s*(\d+)일/);
+            if (koreanDateMatch) {
+                const parsedMonth = koreanDateMatch[1].padStart(2, '0');
+                const parsedDay = koreanDateMatch[2].padStart(2, '0');
+                originalDate = `${year}-${parsedMonth}-${parsedDay}`;
+            } else if (originalDateRaw.includes('-')) {
+                // 이미 ISO 형식인 경우
+                originalDate = originalDateRaw;
+            }
+        }
+        console.log('📅 [Calendar] originalDate:', originalDate, 'raw:', originalDateRaw);
+
+        const weeks: (number | null)[][] = [];
+        let currentWeek: (number | null)[] = Array(firstDay).fill(null);
+
+        for (let day = 1; day <= daysInMonth; day++) {
+            currentWeek.push(day);
+            if (currentWeek.length === 7) {
+                weeks.push(currentWeek);
+                currentWeek = [];
+            }
+        }
+        if (currentWeek.length > 0) {
+            while (currentWeek.length < 7) currentWeek.push(null);
+            weeks.push(currentWeek);
+        }
+
+        return (
+            <View style={{ marginTop: 16 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <TouchableOpacity onPress={() => onMonthChange('prev')}>
+                        <ChevronLeft size={20} color={COLORS.neutral500} />
+                    </TouchableOpacity>
+                    <Text style={{ fontSize: 16, fontWeight: '600', color: COLORS.neutralSlate }}>
+                        {year}.{String(monthNum + 1).padStart(2, '0')}
+                    </Text>
+                    <TouchableOpacity onPress={() => onMonthChange('next')}>
+                        <ChevronRight size={20} color={COLORS.neutral500} />
+                    </TouchableOpacity>
+                </View>
+                <View style={{ flexDirection: 'row', marginBottom: 8 }}>
+                    {['일', '월', '화', '수', '목', '금', '토'].map((d, i) => (
+                        <Text key={i} style={{ flex: 1, textAlign: 'center', fontSize: 12, color: i === 0 ? '#EF4444' : COLORS.neutral500 }}>{d}</Text>
+                    ))}
+                </View>
+                {weeks.map((week, wIdx) => (
+                    <View key={wIdx} style={{ flexDirection: 'row', marginBottom: 4 }}>
+                        {week.map((day, dIdx) => {
+                            if (!day) return <View key={dIdx} style={{ flex: 1, height: 40 }} />;
+                            const dateStr = `${year}-${String(monthNum + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                            const isSelected = selectedDateVal === dateStr;
+                            const isOriginalDate = dateStr === originalDate;  // 기존 약속 날짜
+                            const isPast = new Date(dateStr) < new Date(todayStr);
+
+                            return (
+                                <TouchableOpacity
+                                    key={dIdx}
+                                    onPress={() => !isPast && onSelectDate(dateStr)}
+                                    disabled={isPast}
+                                    style={{ flex: 1, height: 40, justifyContent: 'center', alignItems: 'center' }}
+                                >
+                                    <View style={{
+                                        width: 32, height: 32, borderRadius: 16,
+                                        backgroundColor: isSelected ? COLORS.primaryMain : isOriginalDate ? COLORS.primaryBg : 'transparent',
+                                        justifyContent: 'center', alignItems: 'center'
+                                    }}>
+                                        <Text style={{
+                                            color: isSelected ? 'white' : isPast ? COLORS.neutral300 : dIdx === 0 ? '#EF4444' : COLORS.neutralSlate,
+                                            fontSize: 14, fontWeight: isOriginalDate ? '700' : '400'
+                                        }}>{day}</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </View>
+                ))}
+            </View>
+        );
+    };
+
+    // 시작시간/종료시간 토글 렌더링 (참고 디자인 적용)
+    const renderRescheduleTimeSelection = () => (
+        <View style={{ paddingHorizontal: 8, paddingVertical: 12 }}>
+            {/* 상단 요약 박스 */}
+            <View style={{
+                backgroundColor: `${COLORS.primaryBg}80`,
+                borderRadius: 12,
+                padding: 12,
+                marginBottom: 12,
+                borderWidth: 1,
+                borderColor: `${COLORS.primaryLight}30`,
+                alignItems: 'center'
+            }}>
+                <Text style={{ fontSize: 11, color: COLORS.neutral500, marginBottom: 4 }}>선택된 재조율 시간</Text>
+                <Text style={{ fontSize: 13, fontWeight: 'bold', color: COLORS.primaryMain }}>
+                    {startDate && startTime && endDate && endTime
+                        ? `${startDate} ${startTime} ~ ${endDate} ${endTime}`
+                        : '시간을 선택해주세요'}
+                </Text>
+            </View>
+
+            {/* 시작시간 토글 */}
+            <TouchableOpacity
+                onPress={() => setStartTimeExpanded(!startTimeExpanded)}
+                style={{
+                    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                    padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginBottom: 4,
+                    borderWidth: 1, borderColor: COLORS.neutral200
+                }}
+            >
+                <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate }}>시작 시간</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 12, fontWeight: 'bold', color: COLORS.primaryMain, marginRight: 8 }}>
+                        {startDate && startTime ? `${startDate} ${startTime}` : '선택'}
+                    </Text>
+                    {startTimeExpanded ? <ChevronUp size={16} color={COLORS.neutral400} /> : <ChevronDown size={16} color={COLORS.neutral400} />}
+                </View>
+            </TouchableOpacity>
+
+            {startTimeExpanded && (
+                <View style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: COLORS.neutral100 }}>
+                    {renderScheduleCalendar(startDate, setStartDate, startMonth, (dir) => {
+                        const newDate = new Date(startMonth);
+                        newDate.setMonth(newDate.getMonth() + (dir === 'prev' ? -1 : 1));
+                        setStartMonth(newDate);
+                    })}
+                    {startDate && renderTimeButtons(startTime, setStartTime, startDate)}
+                </View>
+            )}
+
+            {/* 종료시간 토글 */}
+            <TouchableOpacity
+                onPress={() => setEndTimeExpanded(!endTimeExpanded)}
+                style={{
+                    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                    padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginBottom: 4,
+                    borderWidth: 1, borderColor: COLORS.neutral200
+                }}
+            >
+                <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate }}>종료 시간</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 12, fontWeight: 'bold', color: COLORS.primaryMain, marginRight: 8 }}>
+                        {endDate && endTime ? `${endDate} ${endTime}` : '선택'}
+                    </Text>
+                    {endTimeExpanded ? <ChevronUp size={16} color={COLORS.neutral400} /> : <ChevronDown size={16} color={COLORS.neutral400} />}
+                </View>
+            </TouchableOpacity>
+
+            {endTimeExpanded && (
+                <View style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: COLORS.neutral100 }}>
+                    {renderScheduleCalendar(endDate, setEndDate, endMonth, (dir) => {
+                        const newDate = new Date(endMonth);
+                        newDate.setMonth(newDate.getMonth() + (dir === 'prev' ? -1 : 1));
+                        setEndMonth(newDate);
+                    })}
+                    {endDate && renderTimeButtons(endTime, setEndTime, endDate, startTime, startDate)}
+                </View>
+            )}
+        </View>
+    );
+
     const handleSubmitReschedule = async () => {
         if (!selectedLog) return;
         try {
             setLoading(true);
             const token = await AsyncStorage.getItem('accessToken');
 
-            // Construct proposal details based on reason
-            let proposalDetails: any = {
-                reason: selectedReason,
-                note: manualInput
+            // 시작시간/종료시간 기반으로 proposal 구성
+            const proposalDetails = {
+                date: startDate,
+                time: startTime,
+                endDate: endDate,
+                endTime: endTime,
+                reason: `${startDate} ${startTime} 제안`  // 요청 시간을 사유에 표시
             };
-
-            if (selectedReason === "날짜를 변경하고 싶어요" && selectedDate) {
-                proposalDetails.date = selectedDate;
-            } else if (selectedReason === "시간을 변경하고 싶어요" && selectedNewTime) {
-                proposalDetails.time = selectedNewTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-            }
 
             const response = await fetch(`${API_BASE}/a2a/session/${selectedLog.id}/reschedule`, {
                 method: 'POST',
@@ -322,12 +636,8 @@ const A2AScreen = () => {
             });
 
             if (response.ok) {
-                // 새로운 날짜/시간 계산
-                const newDate = selectedDate || selectedLog?.details?.proposedDate || '';
-                const newTime = selectedNewTime
-                    ? selectedNewTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                    : (selectedLog?.details?.proposedTime || '');
-                const newTimeRange = `${newDate} ${newTime}`.trim();
+                // 시간 범위 형식으로 표시
+                const newTimeRange = `${startDate} ${startTime} ~ ${endDate} ${endTime}`;
 
                 // 선택된 로그의 상세 정보를 새로운 날짜/시간으로 업데이트
                 if (selectedLog) {
@@ -335,8 +645,10 @@ const A2AScreen = () => {
                         ...selectedLog,
                         details: {
                             ...selectedLog.details,
-                            proposedDate: newDate,
-                            proposedTime: newTime
+                            proposedDate: startDate,
+                            proposedTime: startTime,
+                            proposedEndDate: endDate,
+                            proposedEndTime: endTime
                         },
                         timeRange: newTimeRange
                     };
@@ -345,17 +657,23 @@ const A2AScreen = () => {
                     // 로그 목록도 즉시 업데이트
                     setLogs(prevLogs => prevLogs.map(log =>
                         log.id === selectedLog.id
-                            ? { ...log, timeRange: newTimeRange, details: { ...(log.details || {}), proposedDate: newDate, proposedTime: newTime } as typeof log.details }
+                            ? { ...log, timeRange: newTimeRange, details: { ...(log.details || {}), proposedDate: startDate, proposedTime: startTime } as typeof log.details }
                             : log
                     ));
                 }
                 setConfirmationType('reschedule');
                 setIsConfirmed(true);
                 setIsRescheduling(false);
+
+                // 상태 초기화
+                setStartDate(null);
+                setStartTime(null);
+                setEndDate(null);
+                setEndTime(null);
+
                 fetchA2ALogs(false);
             } else {
                 console.error("Reschedule failed");
-                // TODO: Show error toast
             }
         } catch (error) {
             console.error("Error submitting reschedule:", error);
@@ -502,6 +820,7 @@ const A2AScreen = () => {
     // =============================================
 
     const handleClose = () => {
+        setIsModalClosing(true);  // 버튼 즉시 숨기기
         setSelectedLog(null);
         setIsRescheduling(false);
         setIsConfirmed(false);
@@ -509,34 +828,56 @@ const A2AScreen = () => {
         setIsProcessExpanded(false);
         setManualInput('');
         setPreferredTime('');
+        // isModalClosing은 모달이 다시 열릴 때 리셋됨
     };
 
     const handleLogClick = async (log: A2ALog) => {
-        setSelectedLog(log);
+        // 모달 열기 전 닫힘 상태 리셋
+        setIsModalClosing(false);
+        // 먼저 기본 정보로 모달을 즉시 열고, 로딩 상태 표시
+        setSelectedLog({ ...log, details: { ...log.details, _loading: true } } as any);
         setIsProcessExpanded(false);
         setIsConfirmed(false);
         setIsRescheduling(false);
+
+        const startTime = Date.now();
+        console.log('⏱️ [Modal] API 호출 시작');
 
         try {
             const token = await AsyncStorage.getItem('accessToken');
             const res = await fetch(`${API_BASE}/a2a/session/${log.id}`, {
                 headers: { 'Authorization': `Bearer ${token}` },
             });
+
+            const apiTime = Date.now() - startTime;
+            console.log(`⏱️ [Modal] API 응답 시간: ${apiTime}ms`);
+
             if (res.ok) {
                 const data = await res.json();
                 const newDetails = data.details || {};
+                const newStatus = data.status;
 
                 if (newDetails.proposer === "알 수 없음" && log.details?.proposer) {
                     newDetails.proposer = log.details.proposer;
                 }
 
-                setSelectedLog((prev: A2ALog | null) => prev ? {
-                    ...prev,
-                    details: { ...(prev.details || {}), ...newDetails }
-                } : null);
+                // API 응답으로 완전한 데이터를 받은 후에 모달 표시
+                setSelectedLog({
+                    ...log,
+                    status: newStatus || log.status,
+                    details: { ...(log.details || {}), ...newDetails }
+                });
+
+                const totalTime = Date.now() - startTime;
+                console.log(`⏱️ [Modal] 전체 처리 시간: ${totalTime}ms`);
+                console.log('📋 [DEBUG] Updated status:', newStatus, 'rescheduleRequestedBy:', newDetails.rescheduleRequestedBy);
+            } else {
+                // API 실패 시 기존 데이터로 표시
+                setSelectedLog(log);
             }
         } catch (e) {
             console.error("Failed to fetch log details:", e);
+            setSelectedLog(log);
         }
     };
 
@@ -572,7 +913,10 @@ const A2AScreen = () => {
                     // It's Official 화면을 유지하기 위해 fetchA2ALogs를 호출하지 않음
                 } else {
                     // 아직 다른 참여자 승인 대기 중
-                    alert(`승인 완료! 남은 승인 대기: ${data.approved_by_list ? 2 - data.approved_by_list.length : 1}명`);
+                    const totalNeeded = data.total_participants || 2;
+                    const approvedCount = data.approved_by_list ? data.approved_by_list.length : 1;
+                    const remaining = Math.max(totalNeeded - approvedCount, 0);
+                    alert(`승인 완료! 남은 승인 대기: ${remaining}명`);
                     handleClose();
                     fetchA2ALogs();
                 }
@@ -698,21 +1042,21 @@ const A2AScreen = () => {
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <View style={[
                         styles.statusBadge,
-                        item.status === 'COMPLETED' ? styles.statusCompleted : styles.statusInProgress
+                        item.status?.toLowerCase() === 'completed' ? styles.statusCompleted : styles.statusInProgress
                     ]}>
                         <View style={{
                             width: 6, height: 6, borderRadius: 3,
-                            backgroundColor: item.status === 'COMPLETED' ? COLORS.green600 : COLORS.amber600,
+                            backgroundColor: item.status?.toLowerCase() === 'completed' ? COLORS.green600 : COLORS.amber600,
                             marginRight: 6
                         }} />
                         <Text style={[
                             styles.statusText,
-                            { color: item.status === 'COMPLETED' ? COLORS.green600 : COLORS.amber600 }
+                            { color: item.status?.toLowerCase() === 'completed' ? COLORS.green600 : COLORS.amber600 }
                         ]}>
-                            {item.status === 'COMPLETED' ? '완료됨' : '진행중'}
+                            {item.status?.toLowerCase() === 'completed' ? '완료됨' : '진행중'}
                         </Text>
                     </View>
-                    {item.status === 'COMPLETED' && (
+                    {item.status?.toLowerCase() === 'completed' && (
                         <TouchableOpacity
                             onPress={(e) => {
                                 console.log("Trash icon pressed");
@@ -741,10 +1085,6 @@ const A2AScreen = () => {
 
     return (
         <SafeAreaView style={styles.container}>
-            {/* Header */}
-            <View style={styles.headerContainer}>
-                <Text style={styles.headerTitle}>Event</Text>
-            </View>
 
             {/* List */}
             <View style={styles.listContainer}>
@@ -929,31 +1269,8 @@ const A2AScreen = () => {
                                 </View>
 
                                 <ScrollView style={styles.rescheduleContent}>
-                                    {/* Reasons */}
-                                    <View style={styles.section}>
-                                        <Text style={styles.sectionLabel}>재조율 이유</Text>
-                                        <View style={styles.reasonGrid}>
-                                            {reasons.map((reason, idx) => (
-                                                <TouchableOpacity
-                                                    key={idx}
-                                                    onPress={() => setSelectedReason(reason)}
-                                                    style={[
-                                                        styles.reasonChip,
-                                                        selectedReason === reason ? styles.reasonChipSelected : styles.reasonChipUnselected
-                                                    ]}
-                                                >
-                                                    <Text style={[
-                                                        styles.reasonText,
-                                                        selectedReason === reason ? styles.reasonTextSelected : styles.reasonTextUnselected
-                                                    ]}>{reason}</Text>
-                                                </TouchableOpacity>
-                                            ))}
-                                        </View>
-                                    </View>
-
-                                    {/* Manual Input and Preferred Time removed as per request */}
-                                    {selectedReason === "날짜를 변경하고 싶어요" && renderCalendar()}
-                                    {selectedReason === "시간을 변경하고 싶어요" && renderTimeSelection()}
+                                    {/* 새로운 시작/종료 시간 선택 UI */}
+                                    {renderRescheduleTimeSelection()}
                                 </ScrollView>
 
                                 <View style={styles.rescheduleFooter}>
@@ -962,10 +1279,10 @@ const A2AScreen = () => {
                                     </TouchableOpacity>
                                     <TouchableOpacity
                                         onPress={handleSubmitReschedule}
-                                        disabled={!selectedReason}
+                                        disabled={!startDate || !startTime || !endDate || !endTime}
                                         style={[
                                             styles.confirmBtn,
-                                            !selectedReason && styles.submitButtonDisabled
+                                            (!startDate || !startTime || !endDate || !endTime) && styles.submitButtonDisabled
                                         ]}
                                     >
                                         <Text style={styles.confirmBtnText}>AI에게 재협상 요청</Text>
@@ -998,6 +1315,7 @@ const A2AScreen = () => {
                                 <ScrollView style={styles.detailContent}>
                                     {selectedLog?.details && (
                                         <>
+                                            {console.log('🔍 [DEBUG] selectedLog.status:', selectedLog.status, 'toLowerCase:', selectedLog.status?.toLowerCase?.())}
                                             {/* Proposer */}
                                             <View style={styles.proposerCard}>
                                                 <Image source={{ uri: selectedLog.details.proposerAvatar }} style={styles.proposerAvatar} />
@@ -1024,49 +1342,70 @@ const A2AScreen = () => {
                                                         <Clock size={20} color={COLORS.primaryMain} />
                                                     </View>
                                                     <View>
-                                                        <Text style={styles.infoLabel}>Proposed Time</Text>
+                                                        <Text style={styles.infoLabel}>요청시간</Text>
                                                         <Text style={styles.infoValue}>
-                                                            {selectedLog.details.proposedDate
-                                                                ? `${selectedLog.details.proposedDate} ${selectedLog.details.proposedTime}`
-                                                                : selectedLog.details.proposedTime}
+                                                            {/* 요청시간: requestedDate/Time 우선, 없으면 proposedDate/Time fallback */}
+                                                            {(selectedLog.details as any)?.requestedDate || selectedLog.details.proposedDate
+                                                                ? `${(selectedLog.details as any)?.requestedDate || selectedLog.details.proposedDate} ${(selectedLog.details as any)?.requestedTime || selectedLog.details.proposedTime}`
+                                                                : (selectedLog.details as any)?.requestedTime || selectedLog.details.proposedTime || '미정'}
                                                         </Text>
                                                     </View>
                                                 </View>
 
-                                                {/* 캘린더 충돌 경고 */}
-                                                {(selectedLog.details as any)?.has_conflict && (selectedLog.details as any)?.conflicting_event && (
-                                                    <View style={[styles.infoCard, { backgroundColor: '#FEF3C7', borderColor: '#F59E0B', borderWidth: 1 }]}>
-                                                        <View style={[styles.infoIconBox, { backgroundColor: '#FEF3C7' }]}>
-                                                            <AlertCircle size={20} color="#F59E0B" />
+                                                {/* 확정시간 - 협상 완료 상태(completed/pending_approval)일 때 표시 */}
+                                                {['pending_approval', 'completed'].includes((selectedLog as any).status?.toLowerCase?.() || '') && (
+                                                    <View style={styles.infoCard}>
+                                                        <View style={[styles.infoIconBox, { backgroundColor: COLORS.primaryBg }]}>
+                                                            <CheckCircle2 size={20} color={COLORS.primaryMain} />
                                                         </View>
-                                                        <View style={{ flex: 1 }}>
-                                                            <Text style={[styles.infoLabel, { color: '#B45309' }]}>⚠️ 일정 충돌</Text>
-                                                            <Text style={[styles.infoValue, { color: '#92400E' }]}>
-                                                                "{(selectedLog.details as any).conflicting_event.title}" ({(selectedLog.details as any).conflicting_event.start} ~ {(selectedLog.details as any).conflicting_event.end})
+                                                        <View>
+                                                            <Text style={styles.infoLabel}>확정시간</Text>
+                                                            <Text style={styles.infoValue}>
+                                                                {/* agreedDate/Time 우선, 없으면 proposedDate/Time fallback */}
+                                                                {(selectedLog.details as any)?.agreedDate || selectedLog.details.proposedDate
+                                                                    ? `${(selectedLog.details as any)?.agreedDate || selectedLog.details.proposedDate} ${(selectedLog.details as any)?.agreedTime || selectedLog.details.proposedTime}`
+                                                                    : (selectedLog.details as any)?.agreedTime || selectedLog.details.proposedTime || '협상 중'}
                                                             </Text>
                                                         </View>
                                                     </View>
                                                 )}
+
 
                                                 <View style={styles.infoCard}>
                                                     <View style={[styles.infoIconBox, { backgroundColor: COLORS.primaryBg }]}>
                                                         <MapPin size={20} color={COLORS.primaryMain} />
                                                     </View>
                                                     <View>
-                                                        <Text style={styles.infoLabel}>Location</Text>
-                                                        <Text style={styles.infoValue}>{selectedLog.details.location}</Text>
+                                                        <Text style={styles.infoLabel}>위치</Text>
+                                                        <Text style={styles.infoValue}>{selectedLog.details.location || '미정'}</Text>
                                                     </View>
                                                 </View>
                                             </View>
 
                                             {/* Attendees */}
                                             <View style={styles.attendeesSection}>
-                                                <Text style={styles.attendeesLabel}>Attendees</Text>
+                                                <Text style={styles.attendeesLabel}>참여자</Text>
                                                 <View style={styles.attendeeStack}>
-                                                    <Image source={{ uri: selectedLog.details.proposerAvatar }} style={styles.attendeeAvatar} />
-                                                    <View style={[styles.attendeeAvatar, styles.attendeeYou]}>
-                                                        <Text style={styles.attendeeYouText}>You</Text>
-                                                    </View>
+                                                    {(selectedLog.details as any)?.attendees?.map((attendee: any, idx: number) => (
+                                                        attendee.isCurrentUser ? (
+                                                            <View key={idx} style={[styles.attendeeAvatar, styles.attendeeYou]}>
+                                                                <Text style={styles.attendeeYouText}>You</Text>
+                                                            </View>
+                                                        ) : (
+                                                            <Image
+                                                                key={idx}
+                                                                source={{ uri: attendee.avatar }}
+                                                                style={styles.attendeeAvatar}
+                                                            />
+                                                        )
+                                                    )) || (
+                                                            <>
+                                                                <Image source={{ uri: selectedLog.details.proposerAvatar }} style={styles.attendeeAvatar} />
+                                                                <View style={[styles.attendeeAvatar, styles.attendeeYou]}>
+                                                                    <Text style={styles.attendeeYouText}>You</Text>
+                                                                </View>
+                                                            </>
+                                                        )}
                                                 </View>
                                             </View>
 
@@ -1090,8 +1429,15 @@ const A2AScreen = () => {
                                                         {selectedLog.details.process.map((step: any, idx: number) => (
                                                             <View key={idx} style={styles.processItem}>
                                                                 <View style={styles.processDot} />
-                                                                <View>
-                                                                    <Text style={styles.processStep}>[{step.step}]</Text>
+                                                                <View style={{ flex: 1 }}>
+                                                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                        <Text style={styles.processStep}>[{step.step}]</Text>
+                                                                        {step.created_at && (
+                                                                            <Text style={{ fontSize: 10, color: COLORS.neutral400 }}>
+                                                                                {new Date(step.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                                                                            </Text>
+                                                                        )}
+                                                                    </View>
                                                                     <Text style={styles.processDesc}>{step.description}</Text>
                                                                 </View>
                                                             </View>
@@ -1105,21 +1451,36 @@ const A2AScreen = () => {
 
                                 <View style={styles.modalFooter}>
                                     <View style={styles.buttonRow}>
-                                        <TouchableOpacity onPress={handleRescheduleClick} style={styles.rescheduleButton}>
-                                            <Text style={styles.rescheduleButtonText}>재조율</Text>
-                                        </TouchableOpacity>
-
-                                        {selectedLog?.status !== 'COMPLETED' && currentUserId !== selectedLog?.initiator_user_id && (
+                                        {/* 모달이 닫히는 중이 아닐 때만 버튼 표시 */}
+                                        {!isModalClosing && (
                                             <>
-                                                <TouchableOpacity onPress={handleApproveClick} style={styles.approveButton}>
-                                                    <CheckCircle2 size={16} color="white" style={{ marginRight: 6 }} />
-                                                    <Text style={styles.approveButtonText}>승인</Text>
+                                                <TouchableOpacity onPress={handleRescheduleClick} style={styles.rescheduleButton}>
+                                                    <Text style={styles.rescheduleButtonText}>재조율</Text>
                                                 </TouchableOpacity>
 
-                                                <TouchableOpacity onPress={handleRejectClick} style={styles.rejectButton}>
-                                                    <X size={16} color="white" style={{ marginRight: 6 }} />
-                                                    <Text style={styles.rejectButtonText}>거절</Text>
-                                                </TouchableOpacity>
+                                                {/* 승인/거절 버튼: initiator_user_id는 리스트에서 이미 가져옴 (API 대기 불필요) */}
+                                                {selectedLog?.status?.toLowerCase() !== 'completed' && (() => {
+                                                    const rescheduleRequestedBy = (selectedLog?.details as any)?.rescheduleRequestedBy;
+                                                    // 재조율 요청이 있으면: 요청한 사람이 아닌 사람에게 버튼 표시
+                                                    // 재조율 요청이 없으면: initiator가 아닌 사람에게 버튼 표시
+                                                    const showButtons = rescheduleRequestedBy
+                                                        ? currentUserId !== rescheduleRequestedBy
+                                                        : currentUserId !== selectedLog?.initiator_user_id;
+
+                                                    return showButtons ? (
+                                                        <>
+                                                            <TouchableOpacity onPress={handleApproveClick} style={styles.approveButton}>
+                                                                <CheckCircle2 size={16} color="white" style={{ marginRight: 6 }} />
+                                                                <Text style={styles.approveButtonText}>승인</Text>
+                                                            </TouchableOpacity>
+
+                                                            <TouchableOpacity onPress={handleRejectClick} style={styles.rejectButton}>
+                                                                <X size={16} color="white" style={{ marginRight: 6 }} />
+                                                                <Text style={styles.rejectButtonText}>거절</Text>
+                                                            </TouchableOpacity>
+                                                        </>
+                                                    ) : null;
+                                                })()}
                                             </>
                                         )}
                                     </View>
@@ -1253,9 +1614,9 @@ const styles = StyleSheet.create({
 
     logItem: {
         backgroundColor: COLORS.white,
-        padding: 20,
-        borderRadius: 16,
-        marginBottom: 16,
+        padding: 12,
+        borderRadius: 12,
+        marginBottom: 10,
         borderWidth: 1,
         borderColor: COLORS.neutral100,
         shadowColor: '#000',
@@ -1264,16 +1625,16 @@ const styles = StyleSheet.create({
         shadowRadius: 2,
         elevation: 2
     },
-    logHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
-    logTitle: { fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate },
-    statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, borderWidth: 1 },
+    logHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
+    logTitle: { fontSize: 15, fontWeight: 'bold', color: COLORS.neutralSlate },
+    statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 10, borderWidth: 1 },
     statusCompleted: { backgroundColor: COLORS.green50, borderColor: COLORS.green100 },
     statusInProgress: { backgroundColor: COLORS.amber50, borderColor: COLORS.amber100 },
-    statusText: { fontSize: 10, fontWeight: 'bold' },
-    logSummary: { marginBottom: 16 },
-    logSummaryText: { fontSize: 12, color: COLORS.neutral500 },
-    logFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.neutral50 },
-    logTime: { fontSize: 12, color: COLORS.neutral400 },
+    statusText: { fontSize: 9, fontWeight: 'bold' },
+    logSummary: { marginBottom: 10 },
+    logSummaryText: { fontSize: 11, color: COLORS.neutral500 },
+    logFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderTopColor: COLORS.neutral50 },
+    logTime: { fontSize: 11, color: COLORS.neutral400 },
 
     // Modal
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
@@ -1401,43 +1762,43 @@ const styles = StyleSheet.create({
     },
 
     // Detail View
-    detailHeader: { padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    detailHeader: { padding: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     detailHeaderContent: { flexDirection: 'row', alignItems: 'center' },
-    detailHeaderIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-    detailHeaderSub: { fontSize: 12, color: 'rgba(255,255,255,0.8)' },
-    detailHeaderTime: { fontSize: 12, fontWeight: 'bold', color: 'white' },
+    detailHeaderIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
+    detailHeaderSub: { fontSize: 11, color: 'rgba(255,255,255,0.8)' },
+    detailHeaderTime: { fontSize: 11, fontWeight: 'bold', color: 'white' },
     detailCloseBtn: { padding: 4 },
-    detailContent: { flex: 1, padding: 24, backgroundColor: COLORS.neutralLight },
+    detailContent: { flex: 1, padding: 16, backgroundColor: COLORS.neutralLight },
 
-    proposerCard: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginBottom: 24, borderWidth: 1, borderColor: COLORS.neutral100, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4 },
-    proposerAvatar: { width: 48, height: 48, borderRadius: 24, marginRight: 16 },
-    proposerLabel: { fontSize: 12, color: COLORS.neutral500, fontWeight: '500' },
-    proposerName: { fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate },
+    proposerCard: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: COLORS.white, borderRadius: 12, marginBottom: 16, borderWidth: 1, borderColor: COLORS.neutral100, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4 },
+    proposerAvatar: { width: 40, height: 40, borderRadius: 20, marginRight: 12 },
+    proposerLabel: { fontSize: 11, color: COLORS.neutral500, fontWeight: '500' },
+    proposerName: { fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate },
 
-    infoStack: { gap: 12, marginBottom: 24 },
-    infoCard: { padding: 16, backgroundColor: COLORS.white, borderRadius: 16, flexDirection: 'row', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4 },
-    infoIconBox: { width: 36, height: 36, borderRadius: 8, backgroundColor: COLORS.neutral50, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
-    infoLabel: { fontSize: 12, color: COLORS.neutral400, fontWeight: 'bold', marginBottom: 4 },
-    infoValue: { fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate },
+    infoStack: { gap: 8, marginBottom: 16 },
+    infoCard: { padding: 10, backgroundColor: COLORS.white, borderRadius: 12, flexDirection: 'row', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4 },
+    infoIconBox: { width: 30, height: 30, borderRadius: 6, backgroundColor: COLORS.neutral50, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+    infoLabel: { fontSize: 11, color: COLORS.neutral400, fontWeight: 'bold', marginBottom: 2 },
+    infoValue: { fontSize: 13, fontWeight: 'bold', color: COLORS.neutralSlate },
 
-    attendeesSection: { marginBottom: 24 },
-    attendeesLabel: { fontSize: 12, color: COLORS.neutral400, fontWeight: 'bold', marginBottom: 8, paddingLeft: 4 },
+    attendeesSection: { marginBottom: 16 },
+    attendeesLabel: { fontSize: 11, color: COLORS.neutral400, fontWeight: 'bold', marginBottom: 6, paddingLeft: 4 },
     attendeeStack: { flexDirection: 'row', marginLeft: 8 },
-    attendeeAvatar: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: COLORS.white, marginLeft: -8 },
+    attendeeAvatar: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: COLORS.white, marginLeft: -8 },
     attendeeYou: { backgroundColor: COLORS.primaryBg, justifyContent: 'center', alignItems: 'center' },
-    attendeeYouText: { fontSize: 10, fontWeight: 'bold', color: COLORS.primaryMain },
+    attendeeYouText: { fontSize: 9, fontWeight: 'bold', color: COLORS.primaryMain },
     attendeePlus: { backgroundColor: COLORS.neutral100, justifyContent: 'center', alignItems: 'center' },
-    attendeePlusText: { fontSize: 10, fontWeight: 'bold', color: COLORS.neutral400 },
+    attendeePlusText: { fontSize: 9, fontWeight: 'bold', color: COLORS.neutral400 },
 
-    processCard: { padding: 16, backgroundColor: COLORS.white, borderRadius: 16, borderWidth: 1, borderColor: COLORS.neutral100, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4 },
+    processCard: { padding: 12, backgroundColor: COLORS.white, borderRadius: 12, borderWidth: 1, borderColor: COLORS.neutral100, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4 },
     processHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    processTitle: { fontSize: 12, fontWeight: 'bold', color: COLORS.neutral500 },
-    processList: { marginTop: 16, paddingLeft: 8, position: 'relative' },
-    processLine: { position: 'absolute', left: 12, top: 0, bottom: 0, width: 2, backgroundColor: COLORS.neutral100 },
-    processItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16, position: 'relative', zIndex: 1 },
-    processDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.neutral200, borderWidth: 2, borderColor: COLORS.white, marginRight: 16, marginTop: 4 },
-    processStep: { fontSize: 10, fontWeight: 'bold', color: COLORS.neutral400, marginBottom: 2 },
-    processDesc: { fontSize: 12, color: COLORS.neutral600 },
+    processTitle: { fontSize: 11, fontWeight: 'bold', color: COLORS.neutral500 },
+    processList: { marginTop: 12, paddingLeft: 6, position: 'relative' },
+    processLine: { position: 'absolute', left: 10, top: 0, bottom: 0, width: 2, backgroundColor: COLORS.neutral100 },
+    processItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12, position: 'relative', zIndex: 1 },
+    processDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.neutral200, borderWidth: 2, borderColor: COLORS.white, marginRight: 12, marginTop: 4 },
+    processStep: { fontSize: 9, fontWeight: 'bold', color: COLORS.neutral400, marginBottom: 2 },
+    processDesc: { fontSize: 11, color: COLORS.neutral600 },
 
     modalFooter: { padding: 16, borderTopWidth: 1, borderTopColor: COLORS.neutral100, backgroundColor: COLORS.white },
     buttonRow: { flexDirection: 'row', gap: 12 },

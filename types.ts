@@ -25,7 +25,7 @@ export enum Tab {
 export interface A2ALog {
   id: string;
   title: string;
-  status: 'COMPLETED' | 'IN_PROGRESS';
+  status: 'pending' | 'in_progress' | 'pending_approval' | 'completed' | 'failed';
   summary: string;
   timeRange: string;
   createdAt: string;
