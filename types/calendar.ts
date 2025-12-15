@@ -26,6 +26,7 @@ export interface CreateEventRequest {
   end_time: string;
   attendees?: string[];
   location?: string;
+  is_all_day?: boolean;
 }
 
 export interface CalendarDay {

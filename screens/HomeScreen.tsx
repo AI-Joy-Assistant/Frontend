@@ -63,6 +63,7 @@ interface PendingRequest {
   proposed_time?: string;
   status: string;
   created_at: string;
+  type?: 'new' | 'reschedule';
 }
 
 type CalendarViewMode = 'CONDENSED' | 'STACKED' | 'DETAILED';
@@ -118,8 +119,13 @@ export default function HomeScreen() {
   };
 
   const markNotificationsAsViewed = async () => {
+    // pending requests 카운트 업데이트
     const count = pendingRequests.length;
     setViewedRequestCount(count);
+
+    // notifications를 로컬에서 읽음 처리
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+
     try {
       await AsyncStorage.setItem('viewedRequestCount', count.toString());
     } catch (error) {
@@ -350,21 +356,44 @@ export default function HomeScreen() {
       const events = await calendarService.getCalendarEvents(startOfMonth, endOfMonth);
 
       const mappedSchedules: ScheduleItem[] = events.map(event => {
-        const start = new Date(event.start.dateTime || event.start.date || '');
-        const end = new Date(event.end.dateTime || event.end.date || '');
+        // Check if it's an all-day event (has date but no dateTime)
+        const isAllDayEvent = event.start.date && !event.start.dateTime;
 
-        const date = start.toISOString().split('T')[0];
-        const endDateStr = end.toISOString().split('T')[0];
+        let date: string;
+        let endDateStr: string;
+        let startTime: string;
+        let endTime: string;
 
-        const startTime = start.toTimeString().slice(0, 5);
-        const endTime = end.toTimeString().slice(0, 5);
+        if (isAllDayEvent) {
+          // For all-day events, use the date directly
+          date = event.start.date!;
+          // Google Calendar's all-day event end date is exclusive (next day)
+          // So we need to subtract 1 day for display
+          const endDateObj = new Date(event.end.date + 'T00:00:00');
+          endDateObj.setDate(endDateObj.getDate() - 1);
+          const endYear = endDateObj.getFullYear();
+          const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
+          const endDay = String(endDateObj.getDate()).padStart(2, '0');
+          endDateStr = `${endYear}-${endMonth}-${endDay}`;
+          startTime = '종일';
+          endTime = '';
+        } else {
+          const start = new Date(event.start.dateTime || event.start.date || '');
+          const end = new Date(event.end.dateTime || event.end.date || '');
+
+          date = start.toISOString().split('T')[0];
+          endDateStr = end.toISOString().split('T')[0];
+
+          startTime = start.toTimeString().slice(0, 5);
+          endTime = end.toTimeString().slice(0, 5);
+        }
 
         return {
           id: event.id,
           title: event.summary,
           date: date,
           endDate: date !== endDateStr ? endDateStr : undefined,
-          time: `${startTime} - ${endTime}`,
+          time: isAllDayEvent ? '종일' : `${startTime} - ${endTime}`,
           participants: event.attendees?.map(a => a.displayName || a.email) || [],
           type: 'NORMAL'
         };
@@ -533,17 +562,27 @@ export default function HomeScreen() {
 
       let startTimeStr = formStartTime || '00:00';
       let endTimeStr = formEndTime || '23:59';
+      let endDateForEvent = formEndDate || formStartDate;
 
       // If all-day is selected, set time to full day
+      // Google Calendar expects all-day events to end at 00:00 of the NEXT day
       if (isAllDay) {
         startTimeStr = '00:00';
-        endTimeStr = '23:59';
+        endTimeStr = '00:00';
+
+        // Calculate next day for end date (without UTC conversion)
+        const [year, month, day] = formStartDate.split('-').map(Number);
+        const startDateObj = new Date(year, month - 1, day);
+        startDateObj.setDate(startDateObj.getDate() + 1);
+
+        const nextYear = startDateObj.getFullYear();
+        const nextMonth = String(startDateObj.getMonth() + 1).padStart(2, '0');
+        const nextDay = String(startDateObj.getDate()).padStart(2, '0');
+        endDateForEvent = `${nextYear}-${nextMonth}-${nextDay}`;
       }
 
       const startDateTimeStr = `${formStartDate}T${startTimeStr}:00`;
-      const endDateTimeStr = formEndDate
-        ? `${formEndDate}T${endTimeStr}:00`
-        : `${formStartDate}T${endTimeStr}:00`;
+      const endDateTimeStr = `${endDateForEvent}T${endTimeStr}:00`;
 
       // Create ISO string with KST timezone offset (+09:00)
       const formatKSTISO = (dateTimeStr: string) => {
@@ -555,6 +594,7 @@ export default function HomeScreen() {
         summary: formTitle,
         start_time: formatKSTISO(startDateTimeStr),
         end_time: formatKSTISO(endDateTimeStr),
+        is_all_day: isAllDay,
       };
 
       if (editingScheduleId) {
@@ -709,13 +749,22 @@ export default function HomeScreen() {
                   style={styles.iconButton}
                 >
                   <Bell size={20} color={COLORS.neutral400} />
-                  {pendingRequests.length > viewedRequestCount && (
-                    <View style={styles.notificationBadge}>
-                      <Text style={styles.notificationBadgeText}>
-                        {pendingRequests.length - viewedRequestCount}
-                      </Text>
-                    </View>
-                  )}
+                  {(() => {
+                    // 새 요청 수 + 읽지 않은 알림 수
+                    const newRequestCount = pendingRequests.length > viewedRequestCount
+                      ? pendingRequests.length - viewedRequestCount
+                      : 0;
+                    const unreadNotificationCount = notifications.filter(n => !n.read).length;
+                    const totalCount = newRequestCount + unreadNotificationCount;
+
+                    return totalCount > 0 ? (
+                      <View style={styles.notificationBadge}>
+                        <Text style={styles.notificationBadgeText}>
+                          {totalCount > 99 ? '99+' : totalCount}
+                        </Text>
+                      </View>
+                    ) : null;
+                  })()}
                 </TouchableOpacity>
 
                 <TouchableOpacity

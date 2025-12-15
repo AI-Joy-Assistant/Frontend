@@ -843,12 +843,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   tab: {
-    flex: 1,
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 12,
     alignItems: 'center',
     backgroundColor: COLORS.neutralLight,
+    flexShrink: 0,
   },
   activeTab: {
     backgroundColor: COLORS.primaryMain,

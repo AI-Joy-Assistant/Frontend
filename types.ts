@@ -37,6 +37,9 @@ export interface A2ALog {
     proposedTime: string;
     location: string;
     process: { step: string; description: string }[];
+    participants?: string[];
+    thread_id?: string;
+    rescheduleRequestedBy?: string;
   };
   initiator_user_id?: string;
 }

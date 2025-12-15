@@ -62,6 +62,15 @@ interface Notification {
     message: string;
     created_at: string;
     read: boolean;
+    metadata?: {
+        session_ids?: string[];
+        thread_id?: string;
+        from_user_id?: string;
+        schedule_date?: string;
+        schedule_time?: string;
+        schedule_activity?: string;
+        [key: string]: any;
+    };
 }
 
 interface NotificationPanelProps {
@@ -172,7 +181,10 @@ export default function NotificationPanel({
                     onNavigateToFriends?.('friends');
                     break;
                 case 'schedule_rejected':
-                    // Could navigate to A2A or stay
+                    // 관련 A2A 세션으로 이동
+                    if (item.metadata?.session_ids?.[0]) {
+                        onNavigateToA2A(item.metadata.session_ids[0]);
+                    }
                     break;
                 default:
                     break;
