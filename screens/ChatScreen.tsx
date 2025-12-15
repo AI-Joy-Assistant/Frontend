@@ -26,6 +26,7 @@ import { RootStackParamList, Tab } from "../types";
 import BottomNav from "../components/BottomNav";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "../constants/config";
+import { badgeStore } from "../store/badgeStore";
 
 import { LinearGradient } from "expo-linear-gradient";
 import {
@@ -113,7 +114,7 @@ export default function ChatScreen() {
   // Chat State
   const [input, setInput] = useState("");
   const [pendingDate, setPendingDate] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // 초기 로딩 상태를 true로 설정
   const [showFriendModal, setShowFriendModal] = useState(false);
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -192,14 +193,20 @@ export default function ChatScreen() {
     }
   };
 
+  // 기본 세션 초기화 여부 추적
+  const defaultSessionInitialized = useRef(false);
+
   // 채팅 세션 목록 불러오기
-  const fetchSessions = async () => {
+  const fetchSessions = async (forceDefaultCheck = false) => {
     try {
       const token = await AsyncStorage.getItem("accessToken");
       if (!token) return;
 
-      // 먼저 기본 세션 확인/생성 (NULL 메시지 마이그레이션 포함)
-      await fetchDefaultSession();
+      // 기본 세션 확인/생성은 최초 1회만 수행
+      if (!defaultSessionInitialized.current || forceDefaultCheck) {
+        await fetchDefaultSession();
+        defaultSessionInitialized.current = true;
+      }
 
       const res = await fetch(`${API_BASE}/chat/sessions`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -596,20 +603,36 @@ export default function ChatScreen() {
   // legacy 세션 코드 제거 - fetchDefaultSession에서 기본 채팅 세션 생성/조회 처리
   // (더 이상 가상의 'legacy' ID를 사용하지 않고 DB에서 실제 UUID 사용)
 
+  // 화면 포커스 시에만 실행 (1회)
   useFocusEffect(
     React.useCallback(() => {
-      // 화면 들어올 때 세션 목록과 히스토리 불러오기
+      // 화면 들어올 때 세션 목록 불러오기
       fetchSessions();
-      loadChatHistory(true);
 
-      // 3초마다 폴링
+      // 채팅 화면 들어오면 lastReadAt을 현재 시간으로 강제 리셋 (배지 즉시 제거)
+      badgeStore.forceResetLastReadAt();
+
+      // 10초마다 폴링 (성능 최적화: 3초 → 10초)
       const interval = setInterval(() => {
         loadChatHistory(false);
-      }, 3000);
+      }, 10000);
 
-      return () => clearInterval(interval);
-    }, [currentSessionId])
+      return () => {
+        clearInterval(interval);
+        // 화면을 떠날 때도 읽음 처리 (채팅 중 받은 메시지들도 읽음으로 표시)
+        badgeStore.forceResetLastReadAt();
+      };
+    }, []) // 의존성 배열 비움 - 화면 포커스 시 1회만 실행
   );
+
+  // 세션 변경 시 히스토리 로드 (깜빡임 없이)
+  useEffect(() => {
+    if (currentSessionId) {
+      // 이미 메시지가 있으면 로딩 표시 안함 (깜빡임 방지)
+      const hasMessages = sessions.find(s => s.id === currentSessionId)?.messages.length ?? 0;
+      loadChatHistory(hasMessages === 0);
+    }
+  }, [currentSessionId]);
 
   const handleScroll = (
     event: NativeSyntheticEvent<NativeScrollEvent>
@@ -1986,10 +2009,9 @@ const styles = StyleSheet.create({
     color: COLORS.neutral400,
   },
   loadingContainer: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    paddingHorizontal: 16,
-    marginBottom: 20,
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
   },
   loadingAvatar: {
     width: 32,

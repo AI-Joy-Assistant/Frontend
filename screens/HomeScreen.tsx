@@ -48,6 +48,7 @@ import DatePickerModal from '../components/DatePickerModal';
 import TimePickerModal from '../components/TimePickerModal';
 import { API_BASE } from '../constants/config';
 import NotificationPanel from '../components/NotificationPanel';
+import { badgeStore } from '../store/badgeStore';
 
 // Pending 요청 타입 정의
 interface PendingRequest {
@@ -183,6 +184,7 @@ export default function HomeScreen() {
     useCallback(() => {
       fetchPendingRequests();
       fetchNotifications();
+      // 배지 폴링은 BottomNav에서 처리하므로 여기서는 제거
     }, [])
   );
 
