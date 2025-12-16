@@ -113,6 +113,9 @@ const A2AScreen = () => {
     // 바쁜 시간대 (캘린더 일정이 있는 시간)
     const [busyTimes, setBusyTimes] = useState<{ [date: string]: string[] }>({});
 
+    // 참여자 이름 툴팁 상태 (index 추적)
+    const [tooltipIndex, setTooltipIndex] = useState<number | null>(null);
+
     // 날짜 선택 시 해당 날짜의 바쁜 시간대 조회
     const fetchBusyTimes = async (dateStr: string) => {
         try {
@@ -820,18 +823,32 @@ const A2AScreen = () => {
     // =============================================
 
     const handleClose = () => {
-        setIsModalClosing(true);  // 버튼 즉시 숨기기
-        setSelectedLog(null);
-        setIsRescheduling(false);
-        setIsConfirmed(false);
-        setSelectedReason(null);
-        setIsProcessExpanded(false);
-        setManualInput('');
-        setPreferredTime('');
-        // isModalClosing은 모달이 다시 열릴 때 리셋됨
+        setIsModalClosing(true);  // 버튼 이상하게 구려짐 방지
+        setTooltipIndex(null);  // 툴팁 초기화
+        setTimeout(() => {
+            setSelectedLog(null);
+            setIsRescheduling(false);
+            setIsConfirmed(false);
+            setSelectedReason(null);
+            setIsProcessExpanded(false);
+            setManualInput('');
+            setPreferredTime('');
+            // isModalClosing은 모달이 다시 열릴 때 리셋됨
+        }, 100);
     };
 
-    const handleLogClick = async (log: A2ALog) => {
+    const formatExactTime = (dateString: string) => {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${year}.${month}.${day} ${hours}:${minutes}`;
+    };
+
+    const handleLogClick = async (log: any) => {
         // 모달 열기 전 닫힘 상태 리셋
         setIsModalClosing(false);
         // 먼저 기본 정보로 모달을 즉시 열고, 로딩 상태 표시
@@ -1313,8 +1330,16 @@ const A2AScreen = () => {
                                             <CheckCircle2 size={20} color="white" />
                                         </View>
                                         <View>
-                                            <Text style={styles.detailHeaderSub}>새로운 일정 요청</Text>
-                                            <Text style={styles.detailHeaderTime}>{formatTimeAgo(selectedLog?.createdAt || '')}</Text>
+                                            <Text style={styles.detailHeaderSub}>
+                                                {(selectedLog?.details as any)?.rescheduleRequestedBy ? "재조율 요청" : "새로운 일정 요청"}
+                                            </Text>
+                                            <Text style={styles.detailHeaderTime}>
+                                                {(() => {
+                                                    const details = selectedLog?.details as any;
+                                                    const timestamp = details?.rescheduleRequestedAt || selectedLog?.createdAt;
+                                                    return formatExactTime(timestamp || '');
+                                                })()}
+                                            </Text>
                                         </View>
                                     </View>
                                     <TouchableOpacity onPress={handleClose} style={styles.detailCloseBtn}>
@@ -1395,27 +1420,46 @@ const A2AScreen = () => {
                                             {/* Attendees */}
                                             <View style={styles.attendeesSection}>
                                                 <Text style={styles.attendeesLabel}>참여자</Text>
-                                                <View style={styles.attendeeStack}>
-                                                    {(selectedLog.details as any)?.attendees?.map((attendee: any, idx: number) => (
-                                                        attendee.isCurrentUser ? (
-                                                            <View key={idx} style={[styles.attendeeAvatar, styles.attendeeYou]}>
-                                                                <Text style={styles.attendeeYouText}>You</Text>
-                                                            </View>
-                                                        ) : (
-                                                            <Image
+                                                <View style={styles.attendeeStackContainer}>
+                                                    <View style={styles.attendeeStack}>
+                                                        {(selectedLog.details as any)?.attendees?.map((attendee: any, idx: number) => (
+                                                            <TouchableOpacity
                                                                 key={idx}
-                                                                source={{ uri: attendee.avatar }}
-                                                                style={styles.attendeeAvatar}
-                                                            />
-                                                        )
-                                                    )) || (
-                                                            <>
-                                                                <Image source={{ uri: selectedLog.details.proposerAvatar }} style={styles.attendeeAvatar} />
-                                                                <View style={[styles.attendeeAvatar, styles.attendeeYou]}>
-                                                                    <Text style={styles.attendeeYouText}>You</Text>
-                                                                </View>
-                                                            </>
-                                                        )}
+                                                                onPress={() => setTooltipIndex(tooltipIndex === idx ? null : idx)}
+                                                                style={[styles.attendeeWrapper, tooltipIndex === idx && styles.attendeeSelected]}
+                                                            >
+                                                                {attendee.isCurrentUser ? (
+                                                                    <View style={[styles.attendeeAvatar, styles.attendeeYou]}>
+                                                                        <Text style={styles.attendeeYouText}>You</Text>
+                                                                    </View>
+                                                                ) : (
+                                                                    <Image
+                                                                        source={{ uri: attendee.avatar }}
+                                                                        style={styles.attendeeAvatar}
+                                                                    />
+                                                                )}
+                                                            </TouchableOpacity>
+                                                        )) || (
+                                                                <>
+                                                                    <Image source={{ uri: selectedLog.details.proposerAvatar }} style={styles.attendeeAvatar} />
+                                                                    <View style={[styles.attendeeAvatar, styles.attendeeYou, { marginLeft: -8 }]}>
+                                                                        <Text style={styles.attendeeYouText}>You</Text>
+                                                                    </View>
+                                                                </>
+                                                            )}
+                                                    </View>
+                                                    {tooltipIndex !== null && (selectedLog.details as any)?.attendees?.[tooltipIndex] && (
+                                                        <View style={styles.tooltipRow}>
+                                                            <View style={[styles.tooltipSpacer, { width: 8 + tooltipIndex * 15 }]} />
+                                                            <View style={styles.tooltipContainer}>
+                                                                <Text style={styles.tooltipText}>
+                                                                    {(selectedLog.details as any).attendees[tooltipIndex].isCurrentUser
+                                                                        ? '나'
+                                                                        : ((selectedLog.details as any).attendees[tooltipIndex].name || '알 수 없음')}
+                                                                </Text>
+                                                            </View>
+                                                        </View>
+                                                    )}
                                                 </View>
                                             </View>
 
@@ -1793,8 +1837,15 @@ const styles = StyleSheet.create({
 
     attendeesSection: { marginBottom: 16 },
     attendeesLabel: { fontSize: 11, color: COLORS.neutral400, fontWeight: 'bold', marginBottom: 6, paddingLeft: 4 },
+    attendeeStackContainer: {},
     attendeeStack: { flexDirection: 'row', marginLeft: 8 },
-    attendeeAvatar: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: COLORS.white, marginLeft: -8 },
+    attendeeWrapper: { marginLeft: -8 },
+    attendeeSelected: { zIndex: 10 },
+    attendeeAvatar: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: COLORS.white, backgroundColor: COLORS.neutral100 },
+    tooltipRow: { flexDirection: 'row', marginTop: 6 },
+    tooltipSpacer: {},
+    tooltipContainer: { backgroundColor: COLORS.white, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1.5, borderColor: COLORS.primaryMain },
+    tooltipText: { color: COLORS.neutral700, fontSize: 11, fontWeight: '600' },
     attendeeYou: { backgroundColor: COLORS.primaryBg, justifyContent: 'center', alignItems: 'center' },
     attendeeYouText: { fontSize: 9, fontWeight: 'bold', color: COLORS.primaryMain },
     attendeePlus: { backgroundColor: COLORS.neutral100, justifyContent: 'center', alignItems: 'center' },
