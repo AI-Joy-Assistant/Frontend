@@ -1302,9 +1302,10 @@ const A2AScreen = () => {
                                     <View style={[styles.ticketCircle, { left: -12 }]} />
                                     <View style={[styles.ticketCircle, { right: -12 }]} />
 
+                                    {/* 날짜 / 시간 Row */}
                                     <View style={styles.ticketHeader}>
                                         <View>
-                                            <Text style={styles.ticketLabel}>DATE</Text>
+                                            <Text style={styles.ticketLabel}>날짜</Text>
                                             <Text style={styles.ticketValue}>
                                                 {confirmationType === 'reschedule' && selectedDate
                                                     ? selectedDate
@@ -1312,24 +1313,38 @@ const A2AScreen = () => {
                                             </Text>
                                         </View>
                                         <View style={{ alignItems: 'flex-end' }}>
-                                            <Text style={styles.ticketLabel}>TIME</Text>
+                                            <Text style={styles.ticketLabel}>시간</Text>
                                             <Text style={[styles.ticketValue, { color: COLORS.primaryMain }]}>
-                                                {confirmationType === 'reschedule' && selectedNewTime
-                                                    ? selectedNewTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                                                    : (selectedLog?.details?.proposedTime?.match(/\d{1,2}시/)?.[0] || selectedLog?.details?.proposedTime || '시간 미정')}
+                                                {confirmationType === 'reschedule' && startTime
+                                                    ? `${startTime}${endTime ? `~${endTime}` : ''}`
+                                                    : (selectedLog?.details?.proposedTime?.match(/\d{1,2}:\d{2}/)?.[0] || selectedLog?.details?.proposedTime || '시간 미정')}
                                             </Text>
                                         </View>
                                     </View>
 
-                                    <View style={styles.ticketFooter}>
+                                    {/* 장소 / 참여자 Row - ticketHeader와 동일한 스타일 적용 */}
+                                    <View style={[styles.ticketHeader, { marginBottom: 0, paddingTop: 16, borderTopWidth: 1, borderTopColor: COLORS.neutral100 }]}>
                                         <View>
-                                            <Text style={styles.ticketLocationTitle}>{selectedLog?.details?.location?.split(',')[0] || selectedLog?.details?.purpose || '약속'}</Text>
-                                            <Text style={styles.ticketLocationSub}>{selectedLog?.details?.location?.split(',')[1] || ''}</Text>
+                                            <Text style={styles.ticketLabel}>장소</Text>
+                                            <Text style={styles.ticketValue}>
+                                                {selectedLog?.details?.location || '미정'}
+                                            </Text>
                                         </View>
-                                        <View style={styles.attendeeStack}>
-                                            <Image source={{ uri: selectedLog?.details?.proposerAvatar || 'https://picsum.photos/150' }} style={styles.attendeeAvatar} />
-                                            <View style={[styles.attendeeAvatar, styles.attendeeYou]}>
-                                                <Text style={styles.attendeeYouText}>You</Text>
+                                        <View style={{ alignItems: 'flex-end' }}>
+                                            <Text style={styles.ticketLabel}>참여자</Text>
+                                            <View style={[styles.attendeeStack, { marginTop: 4 }]}>
+                                                {/* 참여자 프로필 이미지 (최대 3개) */}
+                                                {(selectedLog?.details?.participantImages || ['https://picsum.photos/150']).slice(0, 3).map((uri: string, idx: number) => (
+                                                    <Image
+                                                        key={idx}
+                                                        source={{ uri: uri || 'https://picsum.photos/150' }}
+                                                        style={[styles.attendeeAvatar, { marginLeft: idx > 0 ? -8 : 0 }]}
+                                                    />
+                                                ))}
+                                                {/* 본인 표시 */}
+                                                <View style={[styles.attendeeAvatar, styles.attendeeYou, { marginLeft: -8 }]}>
+                                                    <Text style={styles.attendeeYouText}>You</Text>
+                                                </View>
                                             </View>
                                         </View>
                                     </View>
