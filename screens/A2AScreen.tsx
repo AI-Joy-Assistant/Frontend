@@ -64,7 +64,7 @@ const COLORS = {
     amber600: '#D97706',
     amber50: '#FFFBEB',
     amber100: '#FEF3C7',
-    approveBtn: '#3730A3'
+    approveBtn: '#0E004E'
 };
 
 const A2AScreen = () => {
@@ -100,6 +100,7 @@ const A2AScreen = () => {
     const [showHumanDecision, setShowHumanDecision] = useState(false);
     const [lastProposalForDecision, setLastProposalForDecision] = useState<any>(null);
     const [isModalClosing, setIsModalClosing] = useState(false);  // 모달 닫힘 중 버튼 숨김용
+    const [showRejectConfirm, setShowRejectConfirm] = useState(false);  // 거절 확인 팝업 상태
 
     // 재조율 시작시간/종료시간 상태
     const [startTimeExpanded, setStartTimeExpanded] = useState(true);
@@ -1037,9 +1038,17 @@ const A2AScreen = () => {
             console.log('🔴 거절 API 응답:', data);
 
             if (res.ok) {
-                alert("일정이 거절되었습니다. 재조율을 위해 채팅에서 새로운 시간을 입력해주세요.");
-                handleClose();
-                fetchA2ALogs();
+                // 세션 삭제 API 호출 (thread_id가 있으면 thread 삭제, 없으면 session 삭제)
+                const deleteId = selectedLog.details?.thread_id || selectedLog.id;
+                await fetch(`${API_BASE}/a2a/room/${deleteId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                    },
+                });
+
+                // 스타일된 확인 카드 표시
+                setShowRejectConfirm(true);
             } else {
                 console.error("Reject failed:", data);
                 alert(data.detail || data.error || "거절 처리에 실패했습니다.");
@@ -1273,6 +1282,71 @@ const A2AScreen = () => {
             >
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
+
+                        {/* 거절 확인 카드 팝업 (오버레이) */}
+                        {showRejectConfirm && (
+                            <View style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                backgroundColor: 'rgba(0,0,0,0.5)',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                zIndex: 100,
+                            }}>
+                                <View style={{
+                                    backgroundColor: COLORS.white,
+                                    borderRadius: 16,
+                                    padding: 20,
+                                    width: '60%',
+                                    alignItems: 'center',
+                                    shadowColor: '#000',
+                                    shadowOffset: { width: 0, height: 4 },
+                                    shadowOpacity: 0.2,
+                                    shadowRadius: 12,
+                                    elevation: 8,
+                                }}>
+                                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 6 }}>거절되었습니다</Text>
+                                    <Text style={{ fontSize: 12, color: COLORS.neutral500, marginBottom: 20 }}>일정이 삭제됩니다.</Text>
+
+                                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                                        {/* 취소 버튼 */}
+                                        <TouchableOpacity
+                                            style={{
+                                                backgroundColor: COLORS.neutral200,
+                                                paddingVertical: 8,
+                                                paddingHorizontal: 20,
+                                                borderRadius: 10,
+                                            }}
+                                            onPress={() => {
+                                                setShowRejectConfirm(false);
+                                            }}
+                                        >
+                                            <Text style={{ color: COLORS.neutral600, fontSize: 14, fontWeight: '600' }}>취소</Text>
+                                        </TouchableOpacity>
+
+                                        {/* 확인 버튼 */}
+                                        <TouchableOpacity
+                                            style={{
+                                                backgroundColor: '#0E004E',
+                                                paddingVertical: 8,
+                                                paddingHorizontal: 20,
+                                                borderRadius: 10,
+                                            }}
+                                            onPress={() => {
+                                                setShowRejectConfirm(false);
+                                                handleClose();
+                                                fetchA2ALogs();
+                                            }}
+                                        >
+                                            <Text style={{ color: COLORS.white, fontSize: 14, fontWeight: '600' }}>확인</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            </View>
+                        )}
 
                         {isConfirmed ? (
                             /* --- CONFIRMATION VIEW --- */
@@ -1779,6 +1853,7 @@ const styles = StyleSheet.create({
     confirmationContainer: { flex: 1, alignItems: 'center', padding: 24, backgroundColor: COLORS.neutralLight },
     closeButtonAbsolute: { position: 'absolute', top: 24, right: 24, zIndex: 10 },
     confirmIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.primaryBg, justifyContent: 'center', alignItems: 'center', marginBottom: 24, marginTop: 32 },
+    confirmEmoji: { fontSize: 48, marginBottom: 16, marginTop: 32 },
     confirmTitle: { fontSize: 24, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 8 },
     confirmDesc: { fontSize: 14, color: COLORS.neutral500, textAlign: 'center', lineHeight: 20, marginBottom: 32 },
 
@@ -1942,7 +2017,7 @@ const styles = StyleSheet.create({
     rescheduleButtonText: { color: COLORS.neutralSlate, fontWeight: 'bold', fontSize: 14 },
     approveButton: { flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: COLORS.approveBtn, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', shadowColor: COLORS.approveBtn, shadowOpacity: 0.3, shadowRadius: 8 },
     approveButtonText: { color: 'white', fontWeight: 'bold', fontSize: 14 },
-    rejectButton: { flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: '#EF4444', alignItems: 'center', flexDirection: 'row', justifyContent: 'center', shadowColor: '#EF4444', shadowOpacity: 0.3, shadowRadius: 8 },
+    rejectButton: { flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: '#EF4444', alignItems: 'center', flexDirection: 'row', justifyContent: 'center', shadowColor: '#FECACA', shadowOpacity: 0.3, shadowRadius: 8 },
     rejectButtonText: { color: 'white', fontWeight: 'bold', fontSize: 14 },
 });
 
