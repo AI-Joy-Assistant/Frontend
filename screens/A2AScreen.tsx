@@ -782,7 +782,7 @@ const A2AScreen = () => {
                 const data = await response.json();
                 const mappedLogs: A2ALog[] = data.sessions.map((session: any) => ({
                     id: session.id,
-                    title: session.title || "일정 조율",
+                    title: session.details?.purpose || session.title || "일정 조율",
                     status: session.status === 'completed' ? 'COMPLETED' : 'IN_PROGRESS',
                     // [✅ 수정] 요약에는 참여자 이름만 표시 (이모지 옆 텍스트)
                     summary: session.participant_names?.join(', ') || "참여자 없음",
@@ -1408,7 +1408,8 @@ const A2AScreen = () => {
                                             <Text style={styles.ticketLabel}>참여자</Text>
                                             <View style={[styles.attendeeStack, { marginTop: 4 }]}>
                                                 {/* 참여자 프로필 이미지 (최대 3개) */}
-                                                {(selectedLog?.details?.participantImages || ['https://picsum.photos/150']).slice(0, 3).map((uri: string, idx: number) => (
+                                                {/* 참여자 프로필 이미지 (최대 3개) */}
+                                                {((selectedLog?.details as any)?.attendees?.map((a: any) => a.avatar) || (selectedLog?.details as any)?.participantImages || ['https://picsum.photos/150']).slice(0, 3).map((uri: string, idx: number) => (
                                                     <Image
                                                         key={idx}
                                                         source={{ uri: uri || 'https://picsum.photos/150' }}
