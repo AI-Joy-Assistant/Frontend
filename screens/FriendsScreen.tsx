@@ -284,11 +284,9 @@ const FriendsScreen = () => {
   const copyToClipboard = async () => {
     if (userInfo?.handle) {
       await Clipboard.setStringAsync(userInfo.handle);
-      showAlert('복사 완료!', `@${userInfo.handle}가 클립보드에 복사되었습니다.`);
+      showAlert('복사 완료!', `${userInfo.handle}가 클립보드에 복사되었습니다.`);
     }
   };
-
-
 
   // --- Render Views ---
 
@@ -333,19 +331,12 @@ const FriendsScreen = () => {
 
           {/* My ID Card */}
           <LinearGradient
-            colors={['#4F46E5', '#7C3AED']}
+            colors={['#818CF8', '#3730A3']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.idCard}
           >
-            {/* Top Section */}
-            <View style={styles.idCardTop}>
-              <Text style={styles.idCardLabel}>MY PROFILE</Text>
-              <TouchableOpacity style={styles.copyChip} onPress={copyToClipboard}>
-                <Ionicons name="copy-outline" size={12} color="#4F46E5" />
-                <Text style={styles.copyChipText}>복사</Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={[styles.idCardLabel, { letterSpacing: 0 }]}>내 프로필</Text>
 
             {/* Main Info */}
             <View style={styles.idCardMain}>
@@ -353,6 +344,12 @@ const FriendsScreen = () => {
               <View style={styles.idCardHandleRow}>
                 <Text style={styles.idCardHandleSymbol}>@</Text>
                 <Text style={styles.idCardHandle}>{userInfo?.handle || ''}</Text>
+                <TouchableOpacity
+                  style={{ marginLeft: 2, padding: 4, justifyContent: 'center', alignItems: 'center', marginTop: 5 }}
+                  onPress={copyToClipboard}
+                >
+                  <Ionicons name="copy-outline" size={16} color="rgba(255,255,255,0.8)" />
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -635,41 +632,22 @@ const styles = StyleSheet.create({
   },
   idCard: {
     borderRadius: 20,
-    padding: 24,
+    padding: 20,
     shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
     shadowRadius: 16,
     elevation: 8,
   },
-  idCardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
   idCardLabel: {
     fontSize: 11,
     fontWeight: '600',
     color: 'rgba(255,255,255,0.6)',
     letterSpacing: 1.5,
-  },
-  copyChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
-    gap: 4,
-  },
-  copyChipText: {
-    fontSize: 11,
-    color: '#4F46E5',
-    fontWeight: '600',
+    marginBottom: 8,
   },
   idCardMain: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   idCardName: {
     fontSize: 28,
@@ -724,7 +702,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 8,
     paddingHorizontal: 4,
   },
   mainTitle: {
@@ -839,7 +817,7 @@ const styles = StyleSheet.create({
   tabContainer: {
     flexDirection: 'row',
     marginTop: 16,
-    marginBottom: 12,
+    marginBottom: 0,
     gap: 8,
   },
   tab: {

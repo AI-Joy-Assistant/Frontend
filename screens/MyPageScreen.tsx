@@ -47,6 +47,7 @@ const MyPageScreen = () => {
   const [nickname, setNickname] = useState('');
   const [newNickname, setNewNickname] = useState('');
   const [nicknameModalVisible, setNicknameModalVisible] = useState(false);
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [withdrawModalVisible, setWithdrawModalVisible] = useState(false);
 
   // 사용자 정보 불러오기
@@ -127,10 +128,16 @@ const MyPageScreen = () => {
     }
   };
 
-  // 로그아웃
-  const handleLogout = async () => {
+  // 로그아웃 버튼 클릭 시
+  const handleLogout = () => {
+    setLogoutModalVisible(true);
+  };
+
+  // 실제 로그아웃 실행
+  const confirmLogout = async () => {
     try {
       await AsyncStorage.removeItem('accessToken');
+      setLogoutModalVisible(false);
       navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
     } catch (error) {
       console.error('로그아웃 오류:', error);
@@ -200,6 +207,22 @@ const MyPageScreen = () => {
     </TouchableOpacity>
   );
 
+  const PenSquareIcon = ({ size, color }: { size: number, color: string }) => (
+    <Image
+      source={require('../assets/images/name.png')}
+      style={{ width: size, height: size, tintColor: color }}
+      resizeMode="contain"
+    />
+  );
+
+  const SettingsIcon = ({ size, color }: { size: number, color: string }) => (
+    <Image
+      source={require('../assets/images/settings.png')}
+      style={{ width: size, height: size, tintColor: color }}
+      resizeMode="contain"
+    />
+  );
+
   const Divider = () => <View style={styles.divider} />;
 
   return (
@@ -230,9 +253,9 @@ const MyPageScreen = () => {
         {/* Settings List */}
         <View style={styles.settingsContainer}>
           <View style={styles.settingsCard}>
-            <SettingItem icon={Bot} label="AI 설정" onPress={() => Alert.alert('알림', '준비 중인 기능입니다.')} />
+            <SettingItem icon={PenSquareIcon} label="닉네임 설정" onPress={() => setNicknameModalVisible(true)} />
             <Divider />
-            <SettingItem icon={Settings} label="앱 설정" onPress={() => setNicknameModalVisible(true)} />
+            <SettingItem icon={SettingsIcon} label="앱 설정" onPress={() => Alert.alert('알림', '준비 중인 기능입니다.')} />
             <Divider />
             <SettingItem icon={LogOut} label="로그아웃" isDanger onPress={handleLogout} />
             <Divider />
@@ -240,7 +263,7 @@ const MyPageScreen = () => {
           </View>
 
           <Text style={styles.versionText}>
-            Version 1.0.2 • AI Scheduler App
+            JOYNER
           </Text>
         </View>
       </ScrollView>
@@ -283,45 +306,91 @@ const MyPageScreen = () => {
         </View>
       </Modal>
 
-      {/* 탈퇴 확인 모달 */}
-      <Modal
-        visible={withdrawModalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setWithdrawModalVisible(false)}
+      {/* 로그아웃 확인 모달 */}
+      <ConfirmationModal
+        visible={logoutModalVisible}
+        onClose={() => setLogoutModalVisible(false)}
+        onConfirm={confirmLogout}
+        title="로그아웃"
+        icon={<LogOut size={24} color={COLORS.red400} />}
+        confirmLabel="로그아웃"
+        confirmColor={COLORS.red400}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalIconContainer}>
-              <Trash2 size={24} color={COLORS.red400} />
-            </View>
-            <Text style={styles.modalTitle}>회원탈퇴</Text>
-            <Text style={styles.modalMessage}>
-              탈퇴 시 데이터가 삭제되며 복구할 수 없습니다.{'\n'}
-              <Text style={{ fontWeight: 'bold' }}>정말 탈퇴하시겠습니까?</Text>
-            </Text>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={() => setWithdrawModalVisible(false)}
-              >
-                <Text style={styles.cancelButtonText}>취소</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={handleWithdraw}
-              >
-                <Text style={styles.deleteButtonText}>탈퇴</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        <Text style={{ fontWeight: 'bold' }}>정말 로그아웃 하시겠습니까?</Text>
+      </ConfirmationModal>
+
+      {/* 탈퇴 확인 모달 */}
+      <ConfirmationModal
+        visible={withdrawModalVisible}
+        onClose={() => setWithdrawModalVisible(false)}
+        onConfirm={handleWithdraw}
+        title="회원탈퇴"
+        icon={<Trash2 size={24} color={COLORS.red400} />}
+        confirmLabel="탈퇴"
+        confirmColor={COLORS.red400}
+      >
+        {`탈퇴 시 데이터가 삭제되며 복구할 수 없습니다.\n`}
+        <Text style={{ fontWeight: 'bold' }}>정말 탈퇴 하시겠습니까?</Text>
+      </ConfirmationModal>
 
       <BottomNav activeTab={Tab.USER} />
     </View>
   );
 };
+
+// 재사용 가능한 확인 모달 컴포넌트
+const ConfirmationModal = ({
+  visible,
+  onClose,
+  onConfirm,
+  title,
+  icon,
+  children,
+  confirmLabel,
+  confirmColor
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  title: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  confirmLabel: string;
+  confirmColor: string;
+}) => (
+  <Modal
+    visible={visible}
+    transparent={true}
+    animationType="fade"
+    onRequestClose={onClose}
+  >
+    <View style={styles.modalOverlay}>
+      <View style={styles.modalContent}>
+        <View style={[styles.modalIconContainer, { backgroundColor: COLORS.red50 }]}>
+          {icon}
+        </View>
+        <Text style={styles.modalTitle}>{title}</Text>
+        <Text style={styles.modalMessage}>
+          {children}
+        </Text>
+        <View style={styles.modalButtons}>
+          <TouchableOpacity
+            style={styles.cancelButton}
+            onPress={onClose}
+          >
+            <Text style={styles.cancelButtonText}>취소</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.deleteButton, { backgroundColor: confirmColor }]}
+            onPress={onConfirm}
+          >
+            <Text style={styles.deleteButtonText}>{confirmLabel}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  </Modal>
+);
 
 const styles = StyleSheet.create({
   container: {
