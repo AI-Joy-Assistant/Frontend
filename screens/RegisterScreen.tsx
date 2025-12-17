@@ -77,7 +77,7 @@ const RegisterScreen = () => {
             <View style={styles.header}>
                 <View style={styles.iconContainer}>
                     <Image
-                        source={require('../assets/images/register-icon.png')}
+                        source={require('../assets/images/register.png')}
                         style={styles.iconImage}
                         resizeMode="contain"
                     />

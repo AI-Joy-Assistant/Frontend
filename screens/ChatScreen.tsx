@@ -230,8 +230,15 @@ export default function ChatScreen() {
 
           // 현재 세션이 없으면 기본 채팅 또는 첫 번째 세션 선택
           if (!currentSessionId) {
+            const lastActiveId = await AsyncStorage.getItem('lastActiveSessionId');
             const defaultSession = loadedSessions.find(s => s.title === "기본 채팅");
-            setCurrentSessionId(defaultSession?.id || backendSessions[0].id);
+
+            // 저장된 마지막 세션이 있고 실제 목록에도 존재하면 해당 세션 복구
+            if (lastActiveId && loadedSessions.some(s => s.id === lastActiveId)) {
+              setCurrentSessionId(lastActiveId);
+            } else {
+              setCurrentSessionId(defaultSession?.id || backendSessions[0].id);
+            }
           }
         }
       }
@@ -239,6 +246,15 @@ export default function ChatScreen() {
       console.error("Failed to fetch sessions", e);
     }
   };
+
+  // 세션 ID가 변경될 때마다 저장
+  useEffect(() => {
+    if (currentSessionId) {
+      AsyncStorage.setItem('lastActiveSessionId', currentSessionId).catch(err =>
+        console.error("Failed to save last active session", err)
+      );
+    }
+  }, [currentSessionId]);
 
   useEffect(() => {
     fetchFriends();
@@ -774,6 +790,7 @@ export default function ChatScreen() {
 
     try {
       const token = await AsyncStorage.getItem("accessToken");
+      console.log("DEBUG: Sending message with session_id:", activeSessionId); // 디버깅용 로그
       const res = await fetch(`${API_BASE}/chat/chat`, {
         method: "POST",
         headers: {
@@ -830,6 +847,42 @@ export default function ChatScreen() {
       } else {
         console.log("ChatScreen: No AI response in data", data);
       }
+
+      // [추가] 첫 메시지 전송 시 세션 제목 업데이트 (로컬 반영 + 백엔드 명시적 요청)
+      setSessions((prev) => {
+        return prev.map((s) => {
+          // [수정] 이미 로컬 타이틀이 업데이트된 경우("안녕")에도 백엔드 동기화를 위해 조건 포함
+          // 메시지가 아직 많지 않을 때(첫 메시지)만 제목 변경 시도
+          const isNewChat = s.title === "새 채팅" || s.title.includes("새 채팅") || s.title === "New Chat";
+          const newTitle = userText.length > 20 ? userText.substring(0, 20) + "..." : userText;
+          const isLocallyUpdated = s.title === newTitle;
+
+          // 타이틀이 "새 채팅"이거나, 이미 로컬에서 변경된 상태(동기화 필요)이고 메시지 수가 적다면 업데이트 시도
+          if (s.id === activeSessionId && (isNewChat || isLocallyUpdated)) {
+
+            // 백엔드 명시적 요청 (비동기) - 중복 호출 방지를 위해 로컬 상태 확인
+            (async () => {
+              try {
+                const token = await AsyncStorage.getItem("accessToken");
+                if (!token) return;
+                // console.log("Updating session title on backend:", newTitle);
+                await fetch(`${API_BASE}/chat/sessions/${activeSessionId}`, {
+                  method: "PUT",
+                  headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                  body: JSON.stringify({ title: newTitle })
+                });
+                loadChatHistory(true);
+              } catch (e) { console.error(e); }
+            })();
+
+            return { ...s, title: newTitle };
+          }
+          return s;
+        });
+      });
+
+
+
     } catch (e) {
       console.error("ChatScreen: Error sending message", e);
       addMessage(
@@ -933,10 +986,16 @@ export default function ChatScreen() {
           "일정이 확정되어 모든 참여자 캘린더에 추가되었습니다."
         );
       } else {
-        addMessage(
-          "ai",
-          result.message || "일정이 거절되었습니다. 재조율을 진행합니다."
-        );
+        // [수정] 거절 시에도 명확하게 메시지 추가
+        // 백엔드에서 "일정을 거절했습니다." 메시지를 내려주므로 그것을 우선 사용
+        const rejectionMsg = result.message || "일정이 거절되었습니다.";
+        addMessage("ai", rejectionMsg);
+
+        // [추가] 메시지 목록 전체 리로드 (백엔드에서 생성된 시스템 메시지 동기화)
+        // A2A 서비스에서 거절 시 ChatRepository.create_chat_log로 메시지를 DB에 추가했으므로,
+        // 새로고침하면 해당 메시지들이 불러와짐.
+        // 여기서는 UX를 위해 즉시 리로드를 수행하는 것이 좋음.
+        loadChatHistory(true);
       }
     } catch (error) {
       console.error("승인 처리 오류:", error);
@@ -1020,7 +1079,7 @@ export default function ChatScreen() {
     <SafeAreaView style={styles.container}>
       {/* 1. Header */}
       <LinearGradient
-        colors={[COLORS.primaryLight, COLORS.primaryMain]}
+        colors={['#818CF8', '#3730A3']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={styles.header}
@@ -1030,7 +1089,7 @@ export default function ChatScreen() {
           <View style={styles.headerLeft}>
             <View style={styles.headerIconContainer}>
               <Image
-                source={require("../assets/images/ai agent.png")}
+                source={require("../assets/images/agent.png")}
                 style={styles.headerIconImage}
                 resizeMode="contain"
               />
@@ -1182,14 +1241,23 @@ export default function ChatScreen() {
         ) : (
           <FlatList
             ref={messagesEndRef}
-            data={currentMessages}
+            data={[
+              {
+                id: 'welcome-message',
+                // [수정] 기본 멘트
+                text: `안녕하세요! ${userName}님, 저는 당신의 AI 비서입니다.\n무엇을 도와드릴까요?`,
+                sender: 'ai',
+                timestamp: sessions.find(s => s.id === currentSessionId)?.messages[0]?.timestamp || new Date().toISOString(), // 첫 메시지 시간 또는 현재 시간
+              },
+              ...currentMessages
+            ]}
             keyExtractor={(item, index) =>
               item.id || index.toString()
             }
             renderItem={renderItem}
             contentContainerStyle={[
               styles.messagesContainer,
-              currentMessages.length > 0 &&
+              (currentMessages.length > 0 || true) && // 항상 컨텐츠가 있다고 가정 (웰컴 메시지 포함)
               styles.messagesContainerWithContent,
             ]}
             showsVerticalScrollIndicator={false}
@@ -1206,13 +1274,7 @@ export default function ChatScreen() {
                 });
               }
             }}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>
-                  아직 대화가 없습니다.
-                </Text>
-              </View>
-            }
+            ListEmptyComponent={null}
             style={{ flex: 1 }}
           />
         )}
