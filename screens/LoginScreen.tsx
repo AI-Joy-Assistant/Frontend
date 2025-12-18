@@ -45,9 +45,7 @@ const LoginScreen = () => {
                 if (redirectUri.startsWith('http')) {
                     redirectUri = redirectUri.replace(/^http(s)?/, 'exp');
                 }
-                if (redirectUri.includes('localhost')) {
-                    redirectUri = redirectUri.replace('localhost', '192.168.45.131');
-                }
+
             }
 
             const authUrl = `${BACKEND_URL}/auth/google?redirect_scheme=${encodeURIComponent(redirectUri)}`;
@@ -61,7 +59,7 @@ const LoginScreen = () => {
             if (finalUrl.includes('auth-register')) {
                 const params = new URLSearchParams(finalUrl.split('?')[1]);
                 navigation.navigate('Register', {
-                    register_token: params.get('register_token'),
+                    register_token: params.get('register_token') || '',
                     email: params.get('email') || '',
                     name: params.get('name') || '',
                     picture: params.get('picture') || ''
@@ -82,6 +80,7 @@ const LoginScreen = () => {
             const tokenResponse = await fetch(`${BACKEND_URL}/auth/token`, {
                 method: 'GET',
                 credentials: 'include',
+                headers: { 'bypass-tunnel-reminder': 'true' }
             });
 
             if (tokenResponse.ok) {

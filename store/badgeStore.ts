@@ -81,7 +81,8 @@ export const badgeStore = {
 
             const res = await fetch(`${API_BASE}/chat/unread-count?last_read_at=${encodeURIComponent(lastReadAt)}`, {
                 headers: {
-                    Authorization: `Bearer ${token}`
+                    Authorization: `Bearer ${token}`,
+                    'bypass-tunnel-reminder': 'true',
                 }
             });
 

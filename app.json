@@ -22,7 +22,6 @@
       "bundler": "metro",
       "favicon": "./assets/images/favicon.png"
     },
-    "scheme": "frontend",
     "experiments": {
       "tsconfigPaths": true
     },
@@ -35,8 +34,9 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-      ]
+      ],
+      "expo-router",
+      "expo-web-browser"
     ]
   }
 }
-

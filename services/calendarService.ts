@@ -24,7 +24,9 @@ class CalendarService {
 
   async getGoogleAuthUrl(): Promise<string> {
     try {
-      const response = await fetch(`${API_BASE_URL}/calendar/auth-url`);
+      const response = await fetch(`${API_BASE_URL}/calendar/auth-url`, {
+        headers: { 'bypass-tunnel-reminder': 'true' }
+      });
       const data = await response.json();
       return data.auth_url;
     } catch (error) {
@@ -44,6 +46,7 @@ class CalendarService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'bypass-tunnel-reminder': 'true',
         },
         body: JSON.stringify({
           code,
@@ -88,7 +91,8 @@ class CalendarService {
 
       const response = await fetch(`${API_BASE_URL}/calendar/events?${params}`, {
         headers: {
-          'Authorization': `Bearer ${accessToken}`
+          'Authorization': `Bearer ${accessToken}`,
+          'bypass-tunnel-reminder': 'true',
         }
       });
 
@@ -122,7 +126,8 @@ class CalendarService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
+          'Authorization': `Bearer ${accessToken}`,
+          'bypass-tunnel-reminder': 'true',
         },
         body: JSON.stringify(eventData),
       });
@@ -155,7 +160,8 @@ class CalendarService {
       const response = await fetch(`${API_BASE_URL}/calendar/events/${eventId}?${params}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${accessToken}`
+          'Authorization': `Bearer ${accessToken}`,
+          'bypass-tunnel-reminder': 'true',
         }
       });
 

@@ -5,6 +5,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { User, AtSign, Sparkles, ArrowRight } from 'lucide-react-native';
 import { COLORS } from '../constants/Colors';
+import { getBackendUrl } from '../utils/environment';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type RegisterScreenRouteProp = RouteProp<RootStackParamList, 'Register'>;
@@ -37,10 +38,11 @@ const RegisterScreen = () => {
         setIsLoading(true);
         try {
             // NOTE: 실제 배포 시에는 환경 변수나 설정 파일에서 URL을 가져와야 합니다.
-            const response = await fetch('http://localhost:8000/auth/register/google', {
+            const response = await fetch(`${getBackendUrl()}/auth/register/google`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'bypass-tunnel-reminder': 'true',
                 },
                 body: JSON.stringify({
                     register_token,

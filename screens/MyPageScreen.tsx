@@ -65,6 +65,7 @@ const MyPageScreen = () => {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
+          'bypass-tunnel-reminder': 'true',
         },
       });
 
@@ -104,6 +105,7 @@ const MyPageScreen = () => {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
+          'bypass-tunnel-reminder': 'true',
         },
         body: JSON.stringify({ name: newNickname.trim() }),
       });
@@ -159,6 +161,7 @@ const MyPageScreen = () => {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
+          'bypass-tunnel-reminder': 'true',
         },
       });
 

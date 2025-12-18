@@ -37,11 +37,13 @@ class NegotiationEmitter {
 
 const emitter = new NegotiationEmitter();
 
-async function baseUrl(): Promise<string> { return 'http://localhost:3000'; }
+import { getBackendUrl } from '../utils/environment';
+
+async function baseUrl(): Promise<string> { return getBackendUrl(); }
 
 async function authHeaders(): Promise<Record<string, string>> {
   const token = await AsyncStorage.getItem('accessToken');
-  return token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+  return token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'bypass-tunnel-reminder': 'true' } : { 'Content-Type': 'application/json', 'bypass-tunnel-reminder': 'true' };
 }
 
 export const NegotiationService = {
@@ -84,7 +86,7 @@ export const NegotiationService = {
     try {
       const res = await fetch(`${await baseUrl()}/a2a/negotiations/${id}`, { headers: await authHeaders() });
       if (res.ok) return await res.json();
-    } catch {}
+    } catch { }
     return null;
   },
 
@@ -96,7 +98,7 @@ export const NegotiationService = {
   async accept(negotiationId: string, friendId: string, candidate: TimeCandidate): Promise<void> {
     try {
       await fetch(`${await baseUrl()}/a2a/negotiations/${negotiationId}/accept`, { method: 'POST', headers: await authHeaders(), body: JSON.stringify(candidate) });
-    } catch {}
+    } catch { }
     const confirmed: Negotiation = { id: negotiationId, friendId, status: 'CONFIRMED', candidates: [candidate] } as Negotiation;
     emitter.emit(confirmed);
   },

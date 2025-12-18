@@ -126,7 +126,10 @@ const A2AScreen = () => {
         try {
             const token = await AsyncStorage.getItem('accessToken');
             const res = await fetch(`${API_BASE}/calendar/busy-times?date=${dateStr}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'bypass-tunnel-reminder': 'true',
+                }
             });
             if (res.ok) {
                 const data = await res.json();
@@ -163,7 +166,10 @@ const A2AScreen = () => {
         try {
             const token = await AsyncStorage.getItem('accessToken');
             const res = await fetch(`${API_BASE}/a2a/session/${selectedLog.id}/availability?year=${year}&month=${month}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'bypass-tunnel-reminder': 'true',
+                }
             });
             if (res.ok) {
                 const data = await res.json();
@@ -692,6 +698,7 @@ const A2AScreen = () => {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
+                    'bypass-tunnel-reminder': 'true',
                 },
                 body: JSON.stringify(proposalDetails),
             });
@@ -750,7 +757,10 @@ const A2AScreen = () => {
             const token = await AsyncStorage.getItem('accessToken');
             if (!token) return;
             const res = await fetch(`${API_BASE}/auth/me`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'bypass-tunnel-reminder': 'true',
+                }
             });
             if (res.ok) {
                 const data = await res.json();
@@ -775,6 +785,7 @@ const A2AScreen = () => {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
+                    'bypass-tunnel-reminder': 'true',
                 },
             });
 
@@ -857,6 +868,7 @@ const A2AScreen = () => {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
+                    'bypass-tunnel-reminder': 'true',
                 },
                 body: JSON.stringify({
                     approved,
@@ -923,7 +935,10 @@ const A2AScreen = () => {
         try {
             const token = await AsyncStorage.getItem('accessToken');
             const res = await fetch(`${API_BASE}/a2a/session/${log.id}`, {
-                headers: { 'Authorization': `Bearer ${token}` },
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'bypass-tunnel-reminder': 'true',
+                },
             });
 
             const apiTime = Date.now() - startTime;
@@ -975,6 +990,7 @@ const A2AScreen = () => {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
+                    'bypass-tunnel-reminder': 'true',
                 }
             });
             console.log('� 승인 API 응답 상태:', res.status);
@@ -1025,6 +1041,7 @@ const A2AScreen = () => {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
+                    'bypass-tunnel-reminder': 'true',
                 },
                 body: JSON.stringify({
                     thread_id: selectedLog.details?.thread_id || null,
@@ -1044,6 +1061,7 @@ const A2AScreen = () => {
                     method: 'DELETE',
                     headers: {
                         'Authorization': `Bearer ${token}`,
+                        'bypass-tunnel-reminder': 'true',
                     },
                 });
 
@@ -1083,7 +1101,10 @@ const A2AScreen = () => {
             const token = await AsyncStorage.getItem('accessToken');
             const res = await fetch(`${API_BASE}/a2a/session/${logId}`, {
                 method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'bypass-tunnel-reminder': 'true',
+                }
             });
             if (res.ok) {
                 fetchA2ALogs();

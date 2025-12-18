@@ -34,17 +34,17 @@ export function useGoogleCalendar() {
     const next = new Date(d);
     next.setDate(d.getDate() + 1);
     const toYmd = (x: Date) =>
-        `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+      `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
     return {
       from: `${dateISO}T00:00:00+09:00`,
-      to:   `${toYmd(next)}T00:00:00+09:00`,
+      to: `${toYmd(next)}T00:00:00+09:00`,
     };
   };
 
   async function tryRefreshToken(oldJwt: string) {
     const res = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${oldJwt}` },
+      headers: { Authorization: `Bearer ${oldJwt}`, 'bypass-tunnel-reminder': 'true' },
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -60,17 +60,17 @@ export function useGoogleCalendar() {
     const jwt = await getAppJwt();
     const qs = new URLSearchParams({ time_min: fromISO, time_max: toISO }).toString();
     let res = await fetch(`${API_BASE}/calendar/events?${qs}`, {
-      headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json', 'bypass-tunnel-reminder': 'true' },
     });
 
     if (res.status === 401) {
       let body: any = {};
-      try { body = await res.clone().json(); } catch {}
+      try { body = await res.clone().json(); } catch { }
       if (body?.detail === 'token_expired') {
         const newJwt = await tryRefreshToken(jwt);
         if (newJwt) {
           res = await fetch(`${API_BASE}/calendar/events?${qs}`, {
-            headers: { Authorization: `Bearer ${newJwt}`, 'Content-Type': 'application/json' },
+            headers: { Authorization: `Bearer ${newJwt}`, 'Content-Type': 'application/json', 'bypass-tunnel-reminder': 'true' },
           });
         }
       }
@@ -106,10 +106,10 @@ export function useGoogleCalendar() {
 
   // 월 전체
   const fetchMonthEvents = async (year: number, month: number) => {
-    const first = `${year}-${String(month).padStart(2,'0')}-01T00:00:00+09:00`;
+    const first = `${year}-${String(month).padStart(2, '0')}-01T00:00:00+09:00`;
     const nextMonth = month === 12 ? 1 : month + 1;
-    const nextYear  = month === 12 ? year + 1 : year;
-    const nextFirst = `${nextYear}-${String(nextMonth).padStart(2,'0')}-01T00:00:00+09:00`;
+    const nextYear = month === 12 ? year + 1 : year;
+    const nextFirst = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01T00:00:00+09:00`;
     await fetchEventsRangeForMonth(first, nextFirst);
   };
 
@@ -123,7 +123,7 @@ export function useGoogleCalendar() {
   // (옵션) OAuth 도우미들
   const getGoogleAuthUrl = async () => {
     try {
-      const res = await fetch(`${API_BASE}/calendar/auth-url`);
+      const res = await fetch(`${API_BASE}/calendar/auth-url`, { headers: { 'bypass-tunnel-reminder': 'true' } });
       if (!res.ok) return null;
       const data = await res.json();
       return data.auth_url as string;
@@ -133,8 +133,8 @@ export function useGoogleCalendar() {
     try {
       const res = await fetch(`${API_BASE}/calendar/auth`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, redirect_uri: 'http://localhost:8000/auth/google/callback' }),
+        headers: { 'Content-Type': 'application/json', 'bypass-tunnel-reminder': 'true' },
+        body: JSON.stringify({ code, redirect_uri: `${API_BASE}/auth/google/callback` }),
       });
       if (!res.ok) return null;
       const data = await res.json();
@@ -148,7 +148,7 @@ export function useGoogleCalendar() {
       const jwt = await getAppJwt();
       const res = await fetch(`${API_BASE}/calendar/subscribe`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${jwt}` },
+        headers: { Authorization: `Bearer ${jwt}`, 'bypass-tunnel-reminder': 'true' },
       });
       if (!res.ok) {
         console.error('웹훅 구독 실패:', res.status, await res.text());
@@ -168,7 +168,7 @@ export function useGoogleCalendar() {
       const jwt = await getAppJwt();
       const res = await fetch(`${API_BASE}/calendar/renew-subscription`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${jwt}` },
+        headers: { Authorization: `Bearer ${jwt}`, 'bypass-tunnel-reminder': 'true' },
       });
       if (!res.ok) {
         console.error('웹훅 갱신 실패:', res.status, await res.text());
@@ -190,16 +190,16 @@ export function useGoogleCalendar() {
   // ---- 시간/겹침 유틸 ----
   const eventInterval = (ev: CalendarEvent) => {
     const s = ev.start?.dateTime
-        ? new Date(ev.start.dateTime)
-        : ev.start?.date
-            ? new Date(`${ev.start.date}T00:00:00+09:00`)
-            : null;
+      ? new Date(ev.start.dateTime)
+      : ev.start?.date
+        ? new Date(`${ev.start.date}T00:00:00+09:00`)
+        : null;
 
     const e = ev.end?.dateTime
-        ? new Date(ev.end.dateTime)
-        : ev.end?.date
-            ? new Date(`${ev.end.date}T00:00:00+09:00`) // 구글 종일 종료일은 배타
-            : null;
+      ? new Date(ev.end.dateTime)
+      : ev.end?.date
+        ? new Date(`${ev.end.date}T00:00:00+09:00`) // 구글 종일 종료일은 배타
+        : null;
 
     return { start: s, end: e };
   };
@@ -293,7 +293,7 @@ export function useGoogleCalendar() {
       };
       const res = await fetch(`${API_BASE}/calendar/events?calendar_id=primary`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}`, 'bypass-tunnel-reminder': 'true' },
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -315,7 +315,7 @@ export function useGoogleCalendar() {
       const jwt = await getAppJwt();
       const res = await fetch(`${API_BASE}/calendar/events/${eventId}?calendar_id=primary`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${jwt}` },
+        headers: { Authorization: `Bearer ${jwt}`, 'bypass-tunnel-reminder': 'true' },
       });
       if (!res.ok) throw new Error(await res.text());
 

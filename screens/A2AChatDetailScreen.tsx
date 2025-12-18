@@ -97,7 +97,10 @@ const A2AChatDetailScreen = () => {
             const token = await AsyncStorage.getItem('accessToken');
             if (!token) return null;
             const response = await fetch(`${API_BASE}/auth/me`, {
-                headers: { 'Authorization': `Bearer ${token}` },
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'bypass-tunnel-reminder': 'true',
+                },
             });
             if (response.ok) {
                 const me = await response.json();
@@ -115,7 +118,10 @@ const A2AChatDetailScreen = () => {
             const token = await AsyncStorage.getItem('accessToken');
             if (!token) return {};
             const res = await fetch(`${API_BASE}/chat/friends`, {
-                headers: { 'Authorization': `Bearer ${token}` },
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'bypass-tunnel-reminder': 'true',
+                },
             });
             if (res.ok) {
                 const data = await res.json();
@@ -135,7 +141,10 @@ const A2AChatDetailScreen = () => {
         try {
             const token = await AsyncStorage.getItem('accessToken');
             const res = await fetch(`${API_BASE}/a2a/session/${sid}/messages`, {
-                headers: { 'Authorization': `Bearer ${token}` },
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'bypass-tunnel-reminder': 'true',
+                },
             });
 
             if (res.ok) {

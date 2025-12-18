@@ -143,7 +143,10 @@ export default function ChatScreen() {
       if (!token) return;
 
       const response = await fetch(`${API_BASE}/friends/list`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'bypass-tunnel-reminder': 'true',
+        },
       });
 
       if (response.ok) {
@@ -161,7 +164,10 @@ export default function ChatScreen() {
       if (!token) return;
 
       const res = await fetch(`${API_BASE}/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'bypass-tunnel-reminder': 'true',
+        },
       });
       if (res.ok) {
         const data = await res.json();
@@ -179,7 +185,10 @@ export default function ChatScreen() {
       if (!token) return null;
 
       const res = await fetch(`${API_BASE}/chat/default-session`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'bypass-tunnel-reminder': 'true',
+        },
       });
 
       if (res.ok) {
@@ -209,7 +218,10 @@ export default function ChatScreen() {
       }
 
       const res = await fetch(`${API_BASE}/chat/sessions`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'bypass-tunnel-reminder': 'true',
+        },
       });
 
       if (res.ok) {
@@ -325,6 +337,7 @@ export default function ChatScreen() {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
+          "bypass-tunnel-reminder": "true",
         },
         body: JSON.stringify({ title: "새 채팅" }),
       });
@@ -386,6 +399,7 @@ export default function ChatScreen() {
               headers: {
                 Authorization: `Bearer ${token}`,
                 "Content-Type": "application/json",
+                "bypass-tunnel-reminder": "true",
               },
               body: JSON.stringify({ title: newTitle }),
             });
@@ -421,7 +435,10 @@ export default function ChatScreen() {
           if (token) {
             await fetch(`${API_BASE}/chat/sessions/${sessionIdToDelete}`, {
               method: "DELETE",
-              headers: { Authorization: `Bearer ${token}` },
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "bypass-tunnel-reminder": "true",
+              },
             });
           }
         } catch (e) {
@@ -539,6 +556,7 @@ export default function ChatScreen() {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
+          "bypass-tunnel-reminder": "true",
         },
       });
 
@@ -796,6 +814,7 @@ export default function ChatScreen() {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
+          "bypass-tunnel-reminder": "true",
         },
         body: JSON.stringify({
           message: userText,
@@ -868,7 +887,11 @@ export default function ChatScreen() {
                 // console.log("Updating session title on backend:", newTitle);
                 await fetch(`${API_BASE}/chat/sessions/${activeSessionId}`, {
                   method: "PUT",
-                  headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                    "bypass-tunnel-reminder": "true",
+                  },
                   body: JSON.stringify({ title: newTitle })
                 });
                 loadChatHistory(true);
@@ -909,6 +932,7 @@ export default function ChatScreen() {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
+          "bypass-tunnel-reminder": "true",
         },
         body: JSON.stringify({
           thread_id: threadId,

@@ -144,7 +144,8 @@ export default function HomeScreen() {
       const response = await fetch(`${API_BASE}/a2a/pending-requests`, {
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'bypass-tunnel-reminder': 'true'
         }
       });
 
@@ -172,7 +173,8 @@ export default function HomeScreen() {
       const response = await fetch(`${API_BASE}/chat/notifications`, {
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'bypass-tunnel-reminder': 'true'
         }
       });
 
