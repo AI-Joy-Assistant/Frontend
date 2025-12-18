@@ -18,7 +18,7 @@ import {
   Dimensions,
   Keyboard,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -85,6 +85,7 @@ interface ChatSession {
 }
 
 export default function ChatScreen() {
+  const insets = useSafeAreaInsets();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
@@ -1100,15 +1101,16 @@ export default function ChatScreen() {
   }, []);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       {/* 1. Header */}
       <LinearGradient
         colors={['#818CF8', '#3730A3']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
-        style={styles.header}
+        style={[styles.header, { paddingTop: insets.top > 0 ? insets.top + 10 : 20 }]}
       >
-        <View style={styles.headerDecor} />
+
+
         <View style={styles.headerContent}>
           <View style={styles.headerLeft}>
             <View style={styles.headerIconContainer}>
@@ -1281,8 +1283,7 @@ export default function ChatScreen() {
             renderItem={renderItem}
             contentContainerStyle={[
               styles.messagesContainer,
-              (currentMessages.length > 0 || true) && // 항상 컨텐츠가 있다고 가정 (웰컴 메시지 포함)
-              styles.messagesContainerWithContent,
+              { paddingBottom: 40 }
             ]}
             showsVerticalScrollIndicator={false}
             onScroll={handleScroll}
@@ -1310,8 +1311,8 @@ export default function ChatScreen() {
               paddingBottom: isKeyboardVisible
                 ? 10
                 : Platform.OS === "ios"
-                  ? 90
-                  : 80,
+                  ? 90 // Increased to prevent overlap
+                  : 40, // Increased to prevent overlap
             },
           ]}
         >
@@ -1721,7 +1722,7 @@ export default function ChatScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -1731,11 +1732,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.neutralLight,
   },
   header: {
-    paddingTop: 20,
     paddingBottom: 24,
     paddingHorizontal: 24,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
+    borderBottomLeftRadius: 22, // Removed for flat design
+    borderBottomRightRadius: 22, // Removed for flat design
     shadowColor: COLORS.primaryMain,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
