@@ -61,7 +61,7 @@ const LoginScreen = () => {
             if (finalUrl.includes('auth-register')) {
                 const params = new URLSearchParams(finalUrl.split('?')[1]);
                 navigation.navigate('Register', {
-                    register_token: params.get('register_token'),
+                    register_token: params.get('register_token') || '',
                     email: params.get('email') || '',
                     name: params.get('name') || '',
                     picture: params.get('picture') || ''

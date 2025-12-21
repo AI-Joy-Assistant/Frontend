@@ -1,3 +1,23 @@
+// Legacy theme colors for Expo template components
+export const Colors = {
+    light: {
+        text: '#11181C',
+        background: '#fff',
+        tint: '#4F46E5',
+        icon: '#687076',
+        tabIconDefault: '#687076',
+        tabIconSelected: '#4F46E5',
+    },
+    dark: {
+        text: '#ECEDEE',
+        background: '#151718',
+        tint: '#818CF8',
+        icon: '#9BA1A6',
+        tabIconDefault: '#9BA1A6',
+        tabIconSelected: '#818CF8',
+    },
+};
+
 export const COLORS = {
     // Primary
     primaryMain: '#4F46E5', // Indigo 600
