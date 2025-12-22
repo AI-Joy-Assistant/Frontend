@@ -844,6 +844,12 @@ export default function ChatScreen() {
         } else {
           addMessage("ai", aiResponse, undefined, undefined, undefined, undefined, activeSessionId);
         }
+
+        // [✅ FIX] 메시지 추가 후 즉시 히스토리 동기화 (다중 메시지 대응)
+        // 백엔드에서 여러 메시지가 생성되었을 수 있으므로 동기화
+        setTimeout(() => {
+          loadChatHistory(false);
+        }, 500);
       } else {
         console.log("ChatScreen: No AI response in data", data);
       }
