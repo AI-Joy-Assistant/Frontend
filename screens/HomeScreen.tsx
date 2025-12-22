@@ -34,7 +34,8 @@ import {
   MoreHorizontal,
   Check,
   Trash2,
-  AlertCircle
+  AlertCircle,
+  Star
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { ScheduleItem } from '../types/schedule';
@@ -72,10 +73,15 @@ type CalendarViewMode = 'CONDENSED' | 'STACKED' | 'DETAILED';
 export default function HomeScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
+  // 현재 사용자 ID
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
   // Pending 요청 카드 State
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
   const [dismissedRequestIds, setDismissedRequestIds] = useState<string[]>([]);
-  const [viewedRequestCount, setViewedRequestCount] = useState<number>(0);
+  const [dismissedNotificationIds, setDismissedNotificationIds] = useState<string[]>([]);
+  const [viewedRequestIds, setViewedRequestIds] = useState<string[]>([]);
+  const [viewedNotificationIds, setViewedNotificationIds] = useState<string[]>([]);
   const [notifications, setNotifications] = useState<{
     id: string;
     type: 'schedule_rejected' | 'friend_request' | 'friend_accepted' | 'general';
@@ -94,9 +100,17 @@ export default function HomeScreen() {
         if (storedDismissed) {
           setDismissedRequestIds(JSON.parse(storedDismissed));
         }
-        const storedViewedCount = await AsyncStorage.getItem('viewedRequestCount');
-        if (storedViewedCount) {
-          setViewedRequestCount(parseInt(storedViewedCount, 10));
+        const storedDismissedNotifications = await AsyncStorage.getItem('dismissedNotificationIds');
+        if (storedDismissedNotifications) {
+          setDismissedNotificationIds(JSON.parse(storedDismissedNotifications));
+        }
+        const storedViewedRequests = await AsyncStorage.getItem('viewedRequestIds');
+        if (storedViewedRequests) {
+          setViewedRequestIds(JSON.parse(storedViewedRequests));
+        }
+        const storedViewedNotifications = await AsyncStorage.getItem('viewedNotificationIds');
+        if (storedViewedNotifications) {
+          setViewedNotificationIds(JSON.parse(storedViewedNotifications));
         }
       } catch (error) {
         console.error('Failed to load stored data:', error);
@@ -119,18 +133,37 @@ export default function HomeScreen() {
     }
   };
 
-  const markNotificationsAsViewed = async () => {
-    // pending requests 카운트 업데이트
-    const count = pendingRequests.length;
-    setViewedRequestCount(count);
-
-    // notifications를 로컬에서 읽음 처리
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-
+  const onDismissNotification = async (notificationId: string) => {
+    const newDismissedIds = [...dismissedNotificationIds, notificationId];
+    setDismissedNotificationIds(newDismissedIds);
     try {
-      await AsyncStorage.setItem('viewedRequestCount', count.toString());
+      await AsyncStorage.setItem('dismissedNotificationIds', JSON.stringify(newDismissedIds));
     } catch (error) {
-      console.error('Failed to save viewed request count:', error);
+      console.error('Failed to save dismissed notification IDs:', error);
+    }
+  };
+
+  const markNotificationsAsViewed = async () => {
+    // 현재 보이는 요청들의 ID를 viewed로 저장
+    const currentRequestIds = pendingRequests
+      .filter(r => !dismissedRequestIds.includes(r.id))
+      .map(r => r.id);
+    const newViewedRequestIds = [...new Set([...viewedRequestIds, ...currentRequestIds])];
+    setViewedRequestIds(newViewedRequestIds);
+
+    // 현재 보이는 알림들의 ID를 viewed로 저장
+    const currentNotificationIds = notifications
+      .filter(n => !dismissedNotificationIds.includes(n.id))
+      .map(n => n.id);
+    const newViewedNotificationIds = [...new Set([...viewedNotificationIds, ...currentNotificationIds])];
+    setViewedNotificationIds(newViewedNotificationIds);
+
+    // AsyncStorage에 저장
+    try {
+      await AsyncStorage.setItem('viewedRequestIds', JSON.stringify(newViewedRequestIds));
+      await AsyncStorage.setItem('viewedNotificationIds', JSON.stringify(newViewedNotificationIds));
+    } catch (error) {
+      console.error('Failed to save viewed IDs:', error);
     }
   };
 
@@ -185,9 +218,29 @@ export default function HomeScreen() {
     }
   };
 
+  // 현재 사용자 정보 조회
+  const fetchCurrentUser = async () => {
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) return;
+
+      const response = await fetch(`${API_BASE}/auth/me`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCurrentUserId(data.id);
+      }
+    } catch (error) {
+      console.error('사용자 정보 조회 실패:', error);
+    }
+  };
+
   // 화면에 포커스될 때마다 요청 및 알림 새로고침
   useFocusEffect(
     useCallback(() => {
+      fetchCurrentUser();
       fetchPendingRequests();
       fetchNotifications();
       // 배지 폴링은 BottomNav에서 처리하므로 여기서는 제거
@@ -390,6 +443,10 @@ export default function HomeScreen() {
           endTime = end.toTimeString().slice(0, 5);
         }
 
+        // A2A 일정인지 확인 (백엔드에서 A2A 일정 생성 시 description에 마커 저장)
+        const description = event.description || '';
+        const isA2A = description.includes('A2A Agent') || description.includes('session_id:') || description.includes('[A2A]');
+
         return {
           id: event.id,
           title: event.summary,
@@ -397,7 +454,7 @@ export default function HomeScreen() {
           endDate: date !== endDateStr ? endDateStr : undefined,
           time: isAllDayEvent ? '종일' : `${startTime} - ${endTime}`,
           participants: event.attendees?.map(a => a.displayName || a.email) || [],
-          type: 'NORMAL'
+          type: isA2A ? 'A2A' : 'NORMAL'
         };
       });
 
@@ -550,13 +607,37 @@ export default function HomeScreen() {
   };
 
   const handleSaveSchedule = async () => {
+    // 웹/모바일 모두 지원하는 alert 함수
+    const showAlert = (title: string, message: string) => {
+      if (Platform.OS === 'web') {
+        window.alert(`${title}: ${message}`);
+      } else {
+        Alert.alert(title, message);
+      }
+    };
+
     if (!formTitle.trim()) {
-      Alert.alert('Error', '일정 제목을 입력해주세요.');
+      showAlert('오류', '일정 제목을 입력해주세요.');
       return;
     }
     if (!formStartDate) {
-      Alert.alert('Error', '시작 날짜를 선택해주세요.');
+      showAlert('오류', '시작 날짜를 선택해주세요.');
       return;
+    }
+
+    // 종료 날짜가 시작 날짜보다 이전인지 검사
+    if (formEndDate && formEndDate < formStartDate) {
+      showAlert('오류', '종료 날짜가 시작 날짜보다 이전일 수 없습니다.');
+      return;
+    }
+
+    // 같은 날짜일 경우 종료 시간이 시작 시간보다 이전인지 검사 (종일이 아닐 때만)
+    if (!isAllDay && formStartTime && formEndTime) {
+      const isSameDay = !formEndDate || formEndDate === formStartDate;
+      if (isSameDay && formEndTime <= formStartTime) {
+        showAlert('오류', '종료 시간이 시작 시간보다 이전이거나 같을 수 없습니다.');
+        return;
+      }
     }
 
     try {
@@ -573,13 +654,15 @@ export default function HomeScreen() {
         endTimeStr = '00:00';
 
         // Calculate next day for end date (without UTC conversion)
-        const [year, month, day] = formStartDate.split('-').map(Number);
-        const startDateObj = new Date(year, month - 1, day);
-        startDateObj.setDate(startDateObj.getDate() + 1);
+        // 종료 날짜가 있으면 그 날짜 + 1일, 없으면 시작 날짜 + 1일
+        const baseEndDate = formEndDate || formStartDate;
+        const [year, month, day] = baseEndDate.split('-').map(Number);
+        const endDateObj = new Date(year, month - 1, day);
+        endDateObj.setDate(endDateObj.getDate() + 1);
 
-        const nextYear = startDateObj.getFullYear();
-        const nextMonth = String(startDateObj.getMonth() + 1).padStart(2, '0');
-        const nextDay = String(startDateObj.getDate()).padStart(2, '0');
+        const nextYear = endDateObj.getFullYear();
+        const nextMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
+        const nextDay = String(endDateObj.getDate()).padStart(2, '0');
         endDateForEvent = `${nextYear}-${nextMonth}-${nextDay}`;
       }
 
@@ -669,48 +752,6 @@ export default function HomeScreen() {
           contentContainerStyle={{ paddingBottom: 100 }}
           showsVerticalScrollIndicator={false}
         >
-          {/* Request Cards - 모든 요청 표시 */}
-          {visibleRequests.length > 0 && visibleRequests.map((request) => (
-            <View key={request.id} style={styles.requestCardContainer}>
-              <View style={styles.requestCard}>
-                <View style={styles.requestCardBgCircle} />
-
-                <View style={styles.requestCardHeader}>
-                  <View style={styles.requestCardBadge}>
-                    <View style={styles.iconCircle}>
-                      <Bell size={16} color={COLORS.primaryMain} fill={COLORS.primaryMain} />
-                    </View>
-                    <Text style={styles.requestCardBadgeText}>새로운 일정 요청</Text>
-                    <View style={styles.redDot} />
-                  </View>
-                  <TouchableOpacity onPress={() => onDismissRequest(request.id)}>
-                    <X size={18} color={COLORS.neutral300} />
-                  </TouchableOpacity>
-                </View>
-
-                <Text style={styles.requestCardTitle}>{request.title}</Text>
-
-                {request.proposed_date && (
-                  <Text style={[styles.requestCardSubtitle, { marginTop: 4, color: COLORS.primaryMain, fontWeight: '600' }]}>
-                    📅 {request.proposed_date} {request.proposed_time}
-                  </Text>
-                )}
-                <Text style={styles.requestCardSubtitle}>
-                  👤 {request.initiator_name}님 요청  •  {request.participant_count}명 참가
-                </Text>
-
-                <TouchableOpacity
-                  onPress={() => {
-                    onDismissRequest(request.id);
-                    onNavigateToA2A(request.id);  // session ID로 A2A 화면 이동
-                  }}
-                  style={styles.viewButton}
-                >
-                  <Text style={styles.viewButtonText}>보기</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
 
           {/* Calendar Section  */}
           <View style={[
@@ -750,22 +791,27 @@ export default function HomeScreen() {
                   }}
                   style={styles.iconButton}
                 >
-                  <Bell size={20} color={COLORS.neutral400} />
                   {(() => {
-                    // 새 요청 수 + 읽지 않은 알림 수
-                    const newRequestCount = pendingRequests.length > viewedRequestCount
-                      ? pendingRequests.length - viewedRequestCount
-                      : 0;
-                    const unreadNotificationCount = notifications.filter(n => !n.read).length;
-                    const totalCount = newRequestCount + unreadNotificationCount;
+                    // 새 요청 수: viewed에 없는 요청들 (내가 보낸 것 제외)
+                    const visibleRequests = pendingRequests.filter(r => !dismissedRequestIds.includes(r.id) && r.initiator_id !== currentUserId);
+                    const newRequestCount = visibleRequests.filter(r => !viewedRequestIds.includes(r.id)).length;
 
-                    return totalCount > 0 ? (
-                      <View style={styles.notificationBadge}>
-                        <Text style={styles.notificationBadgeText}>
-                          {totalCount > 99 ? '99+' : totalCount}
-                        </Text>
-                      </View>
-                    ) : null;
+                    // 새 알림 수: viewed에 없는 알림들 (내가 거절한 것 제외)
+                    const visibleNotifications = notifications.filter(n => {
+                      if (dismissedNotificationIds.includes(n.id)) return false;
+                      if (n.type === 'schedule_rejected' && (n.metadata as any)?.rejected_by === currentUserId) return false;
+                      return true;
+                    });
+                    const newNotificationCount = visibleNotifications.filter(n => !viewedNotificationIds.includes(n.id)).length;
+
+                    const hasNotifications = (newRequestCount + newNotificationCount) > 0;
+
+                    return (
+                      <>
+                        <Bell size={20} color={hasNotifications ? '#EF4444' : COLORS.neutral400} />
+                        {hasNotifications && <View style={styles.notificationDot} />}
+                      </>
+                    );
                   })()}
                 </TouchableOpacity>
 
@@ -1261,8 +1307,16 @@ export default function HomeScreen() {
                 </View>
 
                 <View style={styles.tagContainer}>
-                  <View style={styles.typeTag}>
-                    <Text style={styles.typeTagText}>일반 일정</Text>
+                  <View style={[
+                    styles.typeTag,
+                    selectedDetailSchedule?.type === 'A2A' && styles.typeTagA2A
+                  ]}>
+                    <Text style={[
+                      styles.typeTagText,
+                      selectedDetailSchedule?.type === 'A2A' && styles.typeTagTextA2A
+                    ]}>
+                      {selectedDetailSchedule?.type === 'A2A' ? 'A2A 일정' : '일반 일정'}
+                    </Text>
                   </View>
                 </View>
 
@@ -1306,13 +1360,44 @@ export default function HomeScreen() {
                   </View>
                 </View>
 
-                <TouchableOpacity
-                  style={styles.editLinkButton}
-                  onPress={handleMoveToEdit}
-                >
-                  <Text style={styles.editLinkText}>일정 수정하기</Text>
-                  <ChevronRight size={18} color="white" />
-                </TouchableOpacity>
+                <View style={styles.detailButtonRow}>
+                  <TouchableOpacity
+                    style={styles.deleteIconButton}
+                    onPress={async () => {
+                      if (!selectedDetailSchedule) return;
+                      const confirmDelete = Platform.OS === 'web'
+                        ? window.confirm('이 일정을 삭제하시겠습니까?')
+                        : await new Promise<boolean>((resolve) => {
+                          Alert.alert(
+                            '일정 삭제',
+                            '이 일정을 삭제하시겠습니까?',
+                            [
+                              { text: '취소', style: 'cancel', onPress: () => resolve(false) },
+                              { text: '삭제', style: 'destructive', onPress: () => resolve(true) }
+                            ]
+                          );
+                        });
+                      if (confirmDelete) {
+                        try {
+                          await calendarService.deleteCalendarEvent(selectedDetailSchedule.id);
+                          setShowDetailModal(false);
+                          fetchSchedules();
+                        } catch (error) {
+                          console.error('일정 삭제 실패:', error);
+                        }
+                      }
+                    }}
+                  >
+                    <Trash2 size={22} color={COLORS.neutral500} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.editLinkButton}
+                    onPress={handleMoveToEdit}
+                  >
+                    <Text style={styles.editLinkText}>일정 수정하기</Text>
+                    <ChevronRight size={18} color="white" />
+                  </TouchableOpacity>
+                </View>
               </View>
             </TouchableWithoutFeedback>
           </View>
@@ -1323,12 +1408,20 @@ export default function HomeScreen() {
       <NotificationPanel
         visible={showNotificationPanel}
         onClose={() => setShowNotificationPanel(false)}
-        pendingRequests={pendingRequests}
-        notifications={notifications}
+        pendingRequests={pendingRequests.filter(r => !dismissedRequestIds.includes(r.id) && r.initiator_id !== currentUserId)}
+        notifications={notifications.filter(n => {
+          // dismissed된 알림 제외
+          if (dismissedNotificationIds.includes(n.id)) return false;
+          // 거절 알림 중 내가 거절한 것은 제외 (상대방에게만 표시)
+          if (n.type === 'schedule_rejected' && n.metadata?.rejected_by === currentUserId) return false;
+          return true;
+        })}
         onNavigateToA2A={onNavigateToA2A}
         onNavigateToFriends={(tab) => {
           navigation.navigate('Friends', { initialTab: tab });
         }}
+        onDismissRequest={onDismissRequest}
+        onDismissNotification={onDismissNotification}
       />
 
       <BottomNav activeTab={Tab.HOME} />
@@ -1486,22 +1579,14 @@ const styles = StyleSheet.create({
     padding: 4,
     position: 'relative',
   },
-  notificationBadge: {
+  notificationDot: {
     position: 'absolute',
-    top: -2,
-    right: -2,
+    top: 2,
+    right: 2,
     backgroundColor: '#EF4444',
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  notificationBadgeText: {
-    color: 'white',
-    fontSize: 10,
-    fontWeight: 'bold',
+    borderRadius: 5,
+    width: 10,
+    height: 10,
   },
   calendarGrid: {
     marginBottom: 10,
@@ -1944,6 +2029,12 @@ const styles = StyleSheet.create({
     color: COLORS.neutral600,
     fontWeight: '600',
   },
+  typeTagA2A: {
+    backgroundColor: COLORS.primaryBg,
+  },
+  typeTagTextA2A: {
+    color: COLORS.primaryMain,
+  },
   infoSection: {
     gap: 16,
     marginBottom: 24,
@@ -1972,7 +2063,21 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: COLORS.neutral900,
   },
+  detailButtonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  deleteIconButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: COLORS.neutral100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   editLinkButton: {
+    flex: 1,
     backgroundColor: COLORS.primaryMain,
     flexDirection: 'row',
     alignItems: 'center',

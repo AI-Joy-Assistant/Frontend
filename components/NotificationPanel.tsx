@@ -38,6 +38,8 @@ const COLORS = {
     red50: '#FEF2F2',
     green400: '#4ADE80',
     green50: '#F0FDF4',
+    purple400: '#A855F7',
+    purple50: '#FAF5FF',
 };
 
 interface PendingRequest {
@@ -82,6 +84,8 @@ interface NotificationPanelProps {
     onNavigateToFriends?: (tab?: 'friends' | 'requests') => void;
     onAcceptFriendRequest?: (id: string) => void;
     onRejectFriendRequest?: (id: string) => void;
+    onDismissRequest?: (id: string) => void;
+    onDismissNotification?: (id: string) => void;
 }
 
 export default function NotificationPanel({
@@ -91,6 +95,8 @@ export default function NotificationPanel({
     notifications = [],
     onNavigateToA2A,
     onNavigateToFriends,
+    onDismissRequest,
+    onDismissNotification,
 }: NotificationPanelProps) {
     const [activeTab, setActiveTab] = useState<'requests' | 'notifications'>('requests');
     const slideAnim = useRef(new Animated.Value(SCREEN_WIDTH)).current;
@@ -112,8 +118,21 @@ export default function NotificationPanel({
         }
     }, [visible]);
 
-    const newRequests = pendingRequests.filter(r => r.type !== 'reschedule');
-    const rescheduleRequests = pendingRequests.filter(r => r.type === 'reschedule');
+    // 시간순 정렬 (최신순)
+    const sortedRequests = [...pendingRequests].sort((a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    const formatDateTime = (dateStr: string) => {
+        const date = new Date(dateStr);
+        const month = date.getMonth() + 1;
+        const day = date.getDate();
+        const hours = date.getHours();
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        const ampm = hours >= 12 ? '오후' : '오전';
+        const displayHour = hours % 12 || 12;
+        return `${month}. ${day}. ${ampm} ${displayHour}:${minutes}`;
+    };
 
     const renderRequestItem = ({ item, isReschedule }: { item: PendingRequest; isReschedule?: boolean }) => (
         <TouchableOpacity
@@ -125,30 +144,42 @@ export default function NotificationPanel({
                 onNavigateToA2A(item.id);
                 onClose();
             }}
+            activeOpacity={0.7}
         >
             <View style={styles.requestHeader}>
-                <View style={[
-                    styles.requestTypeBadge,
-                    isReschedule ? styles.rescheduleBadge : styles.newBadge
-                ]}>
-                    <Text style={[
-                        styles.requestTypeBadgeText,
-                        isReschedule ? styles.rescheduleBadgeText : styles.newBadgeText
+                <View style={styles.requestHeaderLeft}>
+                    <View style={[
+                        styles.requestTypeBadge,
+                        isReschedule ? styles.rescheduleBadge : styles.newBadge
                     ]}>
-                        {isReschedule ? '재조율' : '새 요청'}
-                    </Text>
+                        <Text style={[
+                            styles.requestTypeBadgeText,
+                            isReschedule ? styles.rescheduleBadgeText : styles.newBadgeText
+                        ]}>
+                            {isReschedule ? '재조율' : '새 일정'}
+                        </Text>
+                    </View>
+                    <Text style={styles.requestTitle} numberOfLines={1}>{item.title}</Text>
                 </View>
-                <Text style={styles.requestDate}>
-                    {new Date(item.created_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}
-                </Text>
+                <View style={styles.requestHeaderRight}>
+                    <Text style={styles.requestDate}>
+                        {formatDateTime(item.created_at)}
+                    </Text>
+                    <TouchableOpacity
+                        style={styles.dismissButton}
+                        onPress={(e) => {
+                            e.stopPropagation();
+                            onDismissRequest?.(item.id);
+                        }}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                        <X size={16} color={COLORS.neutral400} />
+                    </TouchableOpacity>
+                </View>
             </View>
-            <Text style={styles.requestTitle} numberOfLines={1}>{item.title}</Text>
-            <View style={styles.requestInfo}>
-                <Text style={styles.requestInitiator}>👤 {item.initiator_name}</Text>
-                {item.proposed_date && (
-                    <Text style={styles.requestProposed}>📅 {item.proposed_date}</Text>
-                )}
-            </View>
+            <Text style={styles.requestSubInfo}>
+                {item.initiator_name} · {item.proposed_date} {item.proposed_time || ''}
+            </Text>
         </TouchableOpacity>
     );
 
@@ -192,19 +223,32 @@ export default function NotificationPanel({
         };
 
         return (
-            <TouchableOpacity
-                style={[styles.notificationCard, bgColor, !item.read && styles.unread]}
-                onPress={handleNotificationPress}
-            >
-                <View style={styles.notificationIcon}>{icon}</View>
-                <View style={styles.notificationContent}>
-                    <Text style={styles.notificationTitle}>{item.title}</Text>
-                    <Text style={styles.notificationMessage} numberOfLines={2}>{item.message}</Text>
-                    <Text style={styles.notificationDate}>
-                        {new Date(item.created_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    </Text>
-                </View>
-            </TouchableOpacity>
+            <View style={[styles.notificationCard, bgColor, !item.read && styles.unread]}>
+                <TouchableOpacity
+                    style={styles.notificationTouchable}
+                    onPress={handleNotificationPress}
+                    activeOpacity={0.7}
+                >
+                    <View style={styles.notificationIcon}>{icon}</View>
+                    <View style={styles.notificationContent}>
+                        <Text style={styles.notificationTitle}>{item.title}</Text>
+                        <Text style={styles.notificationMessage} numberOfLines={1}>{item.message}</Text>
+                        <Text style={styles.notificationDate}>
+                            {new Date(item.created_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </Text>
+                    </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={styles.notificationDismiss}
+                    onPress={() => {
+                        console.log('🔴 X button pressed for notification:', item.id);
+                        onDismissNotification?.(item.id);
+                    }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                    <X size={14} color={COLORS.neutral400} />
+                </TouchableOpacity>
+            </View>
         );
     };
 
@@ -245,11 +289,6 @@ export default function NotificationPanel({
                                 <Text style={[styles.tabText, activeTab === 'requests' && styles.activeTabText]}>
                                     일정 요청
                                 </Text>
-                                {pendingRequests.length > 0 && (
-                                    <View style={styles.badge}>
-                                        <Text style={styles.badgeText}>{pendingRequests.length}</Text>
-                                    </View>
-                                )}
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={[styles.tab, activeTab === 'notifications' && styles.activeTab]}
@@ -259,11 +298,6 @@ export default function NotificationPanel({
                                 <Text style={[styles.tabText, activeTab === 'notifications' && styles.activeTabText]}>
                                     알림
                                 </Text>
-                                {notifications.filter(n => !n.read).length > 0 && (
-                                    <View style={styles.badge}>
-                                        <Text style={styles.badgeText}>{notifications.filter(n => !n.read).length}</Text>
-                                    </View>
-                                )}
                             </TouchableOpacity>
                         </View>
 
@@ -271,7 +305,7 @@ export default function NotificationPanel({
                         {activeTab === 'requests' ? (
                             <ScrollView
                                 style={styles.content}
-                                contentContainerStyle={{ paddingBottom: 40 }}
+                                contentContainerStyle={{ paddingBottom: 40, flexGrow: 1 }}
                                 showsVerticalScrollIndicator={false}
                             >
                                 {pendingRequests.length === 0 ? (
@@ -281,26 +315,11 @@ export default function NotificationPanel({
                                     </View>
                                 ) : (
                                     <>
-                                        {newRequests.length > 0 && (
-                                            <>
-                                                <Text style={styles.sectionTitle}>새로운 요청</Text>
-                                                {newRequests.map(item => (
-                                                    <View key={item.id}>
-                                                        {renderRequestItem({ item, isReschedule: false })}
-                                                    </View>
-                                                ))}
-                                            </>
-                                        )}
-                                        {rescheduleRequests.length > 0 && (
-                                            <>
-                                                <Text style={[styles.sectionTitle, { marginTop: 20 }]}>재조율 요청</Text>
-                                                {rescheduleRequests.map(item => (
-                                                    <View key={item.id}>
-                                                        {renderRequestItem({ item, isReschedule: true })}
-                                                    </View>
-                                                ))}
-                                            </>
-                                        )}
+                                        {sortedRequests.map(item => (
+                                            <View key={item.id}>
+                                                {renderRequestItem({ item, isReschedule: item.type === 'reschedule' })}
+                                            </View>
+                                        ))}
                                     </>
                                 )}
                             </ScrollView>
@@ -312,13 +331,16 @@ export default function NotificationPanel({
                                         <Text style={styles.emptyText}>알림이 없습니다</Text>
                                     </View>
                                 ) : (
-                                    <FlatList
-                                        data={notifications}
-                                        keyExtractor={(item) => item.id}
-                                        renderItem={renderNotificationItem}
+                                    <ScrollView
                                         contentContainerStyle={{ paddingBottom: 20 }}
                                         showsVerticalScrollIndicator={false}
-                                    />
+                                    >
+                                        {notifications.map(item => (
+                                            <View key={item.id}>
+                                                {renderNotificationItem({ item })}
+                                            </View>
+                                        ))}
+                                    </ScrollView>
                                 )}
                             </View>
                         )}
@@ -429,73 +451,83 @@ const styles = StyleSheet.create({
     },
     requestCard: {
         padding: 16,
-        borderRadius: 12,
-        marginBottom: 10,
-        borderLeftWidth: 4,
+        borderRadius: 16,
+        marginBottom: 12,
     },
     newRequestCard: {
         backgroundColor: COLORS.blue50,
-        borderLeftColor: COLORS.blue400,
     },
     rescheduleCard: {
-        backgroundColor: COLORS.orange50,
-        borderLeftColor: COLORS.orange400,
+        backgroundColor: COLORS.purple50,
     },
     requestHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 8,
+        marginBottom: 10,
+    },
+    requestHeaderLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        gap: 10,
+    },
+    requestHeaderRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
     },
     requestTypeBadge: {
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 8,
+        borderWidth: 1,
+        backgroundColor: COLORS.white,
     },
     newBadge: {
-        backgroundColor: COLORS.blue400,
+        borderColor: COLORS.blue400,
     },
     rescheduleBadge: {
-        backgroundColor: COLORS.orange400,
+        borderColor: COLORS.purple400,
     },
     requestTypeBadgeText: {
-        fontSize: 11,
-        fontWeight: 'bold',
+        fontSize: 12,
+        fontWeight: '600',
     },
     newBadgeText: {
-        color: COLORS.white,
+        color: COLORS.blue400,
     },
     rescheduleBadgeText: {
-        color: COLORS.white,
+        color: COLORS.purple400,
     },
     requestDate: {
         fontSize: 12,
         color: COLORS.neutral400,
     },
+    dismissButton: {
+        padding: 4,
+    },
     requestTitle: {
-        fontSize: 15,
-        fontWeight: '600',
+        fontSize: 16,
+        fontWeight: '700',
         color: COLORS.neutralSlate,
-        marginBottom: 8,
+        flex: 1,
     },
-    requestInfo: {
-        flexDirection: 'row',
-        gap: 12,
-    },
-    requestInitiator: {
+    requestSubInfo: {
         fontSize: 13,
         color: COLORS.neutral500,
     },
-    requestProposed: {
-        fontSize: 13,
-        color: COLORS.primaryMain,
-        fontWeight: '500',
-    },
     notificationCard: {
         flexDirection: 'row',
-        padding: 14,
+        alignItems: 'center',
+        padding: 12,
         borderRadius: 12,
-        marginBottom: 10,
+        marginBottom: 8,
+    },
+    notificationTouchable: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
     },
     notificationGeneral: {
         backgroundColor: COLORS.neutral100,
@@ -510,17 +542,20 @@ const styles = StyleSheet.create({
         backgroundColor: COLORS.green50,
     },
     unread: {
-        borderLeftWidth: 3,
-        borderLeftColor: COLORS.primaryMain,
+        // removed left border
     },
     notificationIcon: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
+        width: 28,
+        height: 28,
+        borderRadius: 14,
         backgroundColor: COLORS.white,
         alignItems: 'center',
         justifyContent: 'center',
-        marginRight: 12,
+        marginRight: 10,
+    },
+    notificationDismiss: {
+        padding: 4,
+        marginLeft: 8,
     },
     notificationContent: {
         flex: 1,
