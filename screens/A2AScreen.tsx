@@ -1038,14 +1038,10 @@ const A2AScreen = () => {
             console.log('🔴 거절 API 응답:', data);
 
             if (res.ok) {
-                // 세션 삭제 API 호출 (thread_id가 있으면 thread 삭제, 없으면 session 삭제)
-                const deleteId = selectedLog.details?.thread_id || selectedLog.id;
-                await fetch(`${API_BASE}/a2a/room/${deleteId}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                    },
-                });
+                // 세션 삭제 API 호출 제거 - 백엔드에서 참여자 목록에서만 제거됨
+
+                // 로컬 목록에서 해당 카드 제거 (본인 화면에서만 사라짐)
+                setLogs(prevLogs => prevLogs.filter(log => log.id !== selectedLog.id));
 
                 // 스타일된 확인 카드 표시
                 setShowRejectConfirm(true);
@@ -1308,8 +1304,8 @@ const A2AScreen = () => {
                                     shadowRadius: 12,
                                     elevation: 8,
                                 }}>
-                                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 6 }}>거절되었습니다</Text>
-                                    <Text style={{ fontSize: 12, color: COLORS.neutral500, marginBottom: 20 }}>일정이 삭제됩니다.</Text>
+                                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 6 }}>약속에서 나가시겠습니까?</Text>
+                                    <Text style={{ fontSize: 12, color: COLORS.neutral500, marginBottom: 20, textAlign: 'center' }}>해당 약속에서 나가게 됩니다.{'\n'}재조율을 원한다면 재조율 버튼을 눌러주세요.</Text>
 
                                     <View style={{ flexDirection: 'row', gap: 12 }}>
                                         {/* 취소 버튼 */}
@@ -1572,7 +1568,11 @@ const A2AScreen = () => {
                                                 <Text style={styles.attendeesLabel}>참여자</Text>
                                                 <View style={styles.attendeeStackContainer}>
                                                     <View style={styles.attendeeStack}>
-                                                        {(selectedLog.details as any)?.attendees?.map((attendee: any, idx: number) => (
+                                                        {(selectedLog.details as any)?.attendees?.filter((attendee: any) => {
+                                                            // left_participants에 있는 사용자는 제외
+                                                            const leftParticipants = (selectedLog.details as any)?.left_participants || [];
+                                                            return !leftParticipants.includes(attendee.id);
+                                                        }).map((attendee: any, idx: number) => (
                                                             <TouchableOpacity
                                                                 key={idx}
                                                                 onPress={() => setTooltipIndex(tooltipIndex === idx ? null : idx)}
@@ -1646,6 +1646,25 @@ const A2AScreen = () => {
                                                                 </View>
                                                             </View>
                                                         ))}
+
+                                                        {/* 나간 사람들 표시 */}
+                                                        {(selectedLog.details as any)?.left_participants?.length > 0 && (
+                                                            <>
+                                                                {(selectedLog.details as any).attendees
+                                                                    ?.filter((a: any) => (selectedLog.details as any).left_participants?.includes(a.id))
+                                                                    .map((leftUser: any, idx: number) => (
+                                                                        <View key={`left-${idx}`} style={styles.processItem}>
+                                                                            <View style={[styles.processDot, { backgroundColor: '#EF4444' }]} />
+                                                                            <View style={{ flex: 1 }}>
+                                                                                <Text style={[styles.processDesc, { color: '#EF4444' }]}>
+                                                                                    {leftUser.name || '참여자'}님이 약속에서 나갔습니다.
+                                                                                </Text>
+                                                                            </View>
+                                                                        </View>
+                                                                    ))
+                                                                }
+                                                            </>
+                                                        )}
                                                     </View>
                                                 )}
                                             </View>
