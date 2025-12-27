@@ -64,6 +64,9 @@ const COLORS = {
     amber600: '#D97706',
     amber50: '#FFFBEB',
     amber100: '#FEF3C7',
+    red600: '#DC2626',   // [NEW] 거절됨 상태용 빨간색
+    red50: '#FEF2F2',    // [NEW] 거절됨 배경색
+    red100: '#FEE2E2',   // [NEW] 거절됨 테두리색
     approveBtn: '#0E004E'
 };
 
@@ -101,6 +104,8 @@ const A2AScreen = () => {
     const [lastProposalForDecision, setLastProposalForDecision] = useState<any>(null);
     const [isModalClosing, setIsModalClosing] = useState(false);  // 모달 닫힘 중 버튼 숨김용
     const [showRejectConfirm, setShowRejectConfirm] = useState(false);  // 거절 확인 팝업 상태
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);  // 삭제 확인 팝업 상태
+    const [deleteTargetLogId, setDeleteTargetLogId] = useState<string | null>(null);  // 삭제 대상 로그 ID
 
     // 재조율 시작시간/종료시간 상태
     const [startTimeExpanded, setStartTimeExpanded] = useState(true);
@@ -783,7 +788,9 @@ const A2AScreen = () => {
                 const mappedLogs: A2ALog[] = data.sessions.map((session: any) => ({
                     id: session.id,
                     title: session.details?.purpose || session.title || "일정 조율",
-                    status: session.status === 'completed' ? 'COMPLETED' : 'IN_PROGRESS',
+                    status: session.status === 'completed' ? 'COMPLETED'
+                        : session.status === 'rejected' ? 'REJECTED'
+                            : 'IN_PROGRESS',
                     // [✅ 수정] 요약에는 참여자 이름만 표시 (이모지 옆 텍스트)
                     summary: session.participant_names?.join(', ') || "참여자 없음",
                     timeRange: (session.details?.proposedDate ? `${session.details.proposedDate} ` : '') + (session.details?.proposedTime || "미정"),
@@ -1004,7 +1011,7 @@ const A2AScreen = () => {
         }
     };
 
-    const handleRejectClick = async () => {
+    const submitReject = async () => {
         if (!selectedLog) return;
 
         try {
@@ -1038,13 +1045,11 @@ const A2AScreen = () => {
             console.log('🔴 거절 API 응답:', data);
 
             if (res.ok) {
-                // 세션 삭제 API 호출 제거 - 백엔드에서 참여자 목록에서만 제거됨
-
-                // 로컬 목록에서 해당 카드 제거 (본인 화면에서만 사라짐)
-                setLogs(prevLogs => prevLogs.filter(log => log.id !== selectedLog.id));
-
-                // 스타일된 확인 카드 표시
-                setShowRejectConfirm(true);
+                // 처리가 완료되면 모달 닫기 및 목록 갱신
+                setShowRejectConfirm(false);
+                handleClose();
+                fetchA2ALogs();
+                Alert.alert("알림", "약속에서 나갔습니다.");
             } else {
                 console.error("Reject failed:", data);
                 alert(data.detail || data.error || "거절 처리에 실패했습니다.");
@@ -1053,6 +1058,11 @@ const A2AScreen = () => {
             console.error("Reject error:", e);
             alert("거절 처리 중 오류가 발생했습니다.");
         }
+    };
+
+    const handleRejectClick = () => {
+        // [수정] 바로 API를 호출하지 않고 확인 팝업만 표시
+        setShowRejectConfirm(true);
     };
 
 
@@ -1094,27 +1104,17 @@ const A2AScreen = () => {
 
     const handleDeleteLog = (logId: string) => {
         console.log("Delete triggered for:", logId);
-        if (Platform.OS === 'web') {
-            // Web Environment Support
-            const confirmed = window.confirm("정말 이 일정을 삭제하시겠습니까?");
-            if (confirmed) {
-                confirmDeleteLog(logId);
-            }
-        } else {
-            // Native Environment Support
-            Alert.alert(
-                "일정 삭제",
-                "정말 이 일정을 삭제하시겠습니까?",
-                [
-                    { text: "취소", style: "cancel" },
-                    {
-                        text: "삭제",
-                        style: "destructive",
-                        onPress: () => confirmDeleteLog(logId)
-                    }
-                ]
-            );
+        // [수정] 커스텀 모달로 변경
+        setDeleteTargetLogId(logId);
+        setShowDeleteConfirm(true);
+    };
+
+    const executeDelete = async () => {
+        if (deleteTargetLogId) {
+            await confirmDeleteLog(deleteTargetLogId);
         }
+        setShowDeleteConfirm(false);
+        setDeleteTargetLogId(null);
     };
 
     const renderLogItem = ({ item }: { item: A2ALog }) => (
@@ -1130,21 +1130,31 @@ const A2AScreen = () => {
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <View style={[
                         styles.statusBadge,
-                        item.status?.toLowerCase() === 'completed' ? styles.statusCompleted : styles.statusInProgress
+                        item.status?.toLowerCase() === 'completed' ? styles.statusCompleted
+                            : item.status?.toLowerCase() === 'rejected' ? styles.statusRejected
+                                : styles.statusInProgress
                     ]}>
                         <View style={{
                             width: 6, height: 6, borderRadius: 3,
-                            backgroundColor: item.status?.toLowerCase() === 'completed' ? COLORS.green600 : COLORS.amber600,
+                            backgroundColor: item.status?.toLowerCase() === 'completed' ? COLORS.green600
+                                : item.status?.toLowerCase() === 'rejected' ? COLORS.red600
+                                    : COLORS.amber600,
                             marginRight: 6
                         }} />
                         <Text style={[
                             styles.statusText,
-                            { color: item.status?.toLowerCase() === 'completed' ? COLORS.green600 : COLORS.amber600 }
+                            {
+                                color: item.status?.toLowerCase() === 'completed' ? COLORS.green600
+                                    : item.status?.toLowerCase() === 'rejected' ? COLORS.red600
+                                        : COLORS.amber600
+                            }
                         ]}>
-                            {item.status?.toLowerCase() === 'completed' ? '완료됨' : '진행중'}
+                            {item.status?.toLowerCase() === 'completed' ? '완료됨'
+                                : item.status?.toLowerCase() === 'rejected' ? '거절됨'
+                                    : '진행중'}
                         </Text>
                     </View>
-                    {item.status?.toLowerCase() === 'completed' && (
+                    {(item.status?.toLowerCase() === 'completed' || item.status?.toLowerCase() === 'rejected') && (
                         <TouchableOpacity
                             onPress={(e) => {
                                 console.log("Trash icon pressed");
@@ -1194,6 +1204,69 @@ const A2AScreen = () => {
             </View>
 
             <BottomNav activeTab={Tab.A2A} />
+
+            {/* 삭제 확인 팝업 모달 */}
+            <Modal
+                visible={showDeleteConfirm}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowDeleteConfirm(false)}
+            >
+                <View style={{
+                    flex: 1,
+                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                }}>
+                    <View style={{
+                        backgroundColor: COLORS.white,
+                        borderRadius: 16,
+                        padding: 20,
+                        width: '70%',
+                        alignItems: 'center',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.2,
+                        shadowRadius: 12,
+                        elevation: 8,
+                    }}>
+                        <Trash2 size={32} color={COLORS.red600} style={{ marginBottom: 12 }} />
+                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 6 }}>일정을 삭제하시겠습니까?</Text>
+                        <Text style={{ fontSize: 12, color: COLORS.neutral500, marginBottom: 20, textAlign: 'center' }}>삭제된 일정은 복구할 수 없습니다.</Text>
+
+                        <View style={{ flexDirection: 'row', gap: 12 }}>
+                            {/* 취소 버튼 */}
+                            <TouchableOpacity
+                                style={{
+                                    backgroundColor: COLORS.neutral200,
+                                    paddingVertical: 10,
+                                    paddingHorizontal: 24,
+                                    borderRadius: 10,
+                                }}
+                                onPress={() => {
+                                    setShowDeleteConfirm(false);
+                                    setDeleteTargetLogId(null);
+                                }}
+                            >
+                                <Text style={{ color: COLORS.neutral600, fontSize: 14, fontWeight: '600' }}>취소</Text>
+                            </TouchableOpacity>
+
+                            {/* 삭제 버튼 */}
+                            <TouchableOpacity
+                                style={{
+                                    backgroundColor: COLORS.red600,
+                                    paddingVertical: 10,
+                                    paddingHorizontal: 24,
+                                    borderRadius: 10,
+                                }}
+                                onPress={executeDelete}
+                            >
+                                <Text style={{ color: COLORS.white, fontSize: 14, fontWeight: '600' }}>삭제</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
 
             {/* True A2A Real-time Negotiation View */}
             {negotiatingSessionId && (
@@ -1331,11 +1404,7 @@ const A2AScreen = () => {
                                                 paddingHorizontal: 20,
                                                 borderRadius: 10,
                                             }}
-                                            onPress={() => {
-                                                setShowRejectConfirm(false);
-                                                handleClose();
-                                                fetchA2ALogs();
-                                            }}
+                                            onPress={submitReject}
                                         >
                                             <Text style={{ color: COLORS.white, fontSize: 14, fontWeight: '600' }}>확인</Text>
                                         </TouchableOpacity>
@@ -1853,6 +1922,7 @@ const styles = StyleSheet.create({
     statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 10, borderWidth: 1 },
     statusCompleted: { backgroundColor: COLORS.green50, borderColor: COLORS.green100 },
     statusInProgress: { backgroundColor: COLORS.amber50, borderColor: COLORS.amber100 },
+    statusRejected: { backgroundColor: COLORS.red50, borderColor: COLORS.red100 },
     statusText: { fontSize: 9, fontWeight: 'bold' },
     logSummary: { marginBottom: 10 },
     logSummaryText: { fontSize: 11, color: COLORS.neutral500 },
