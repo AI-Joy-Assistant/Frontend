@@ -65,6 +65,7 @@ interface PendingRequest {
   proposed_time?: string;
   status: string;
   created_at: string;
+  reschedule_requested_at?: string; // 재조율 요청 시간
   type?: 'new' | 'reschedule';
 }
 
