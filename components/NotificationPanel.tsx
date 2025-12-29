@@ -54,6 +54,7 @@ interface PendingRequest {
     proposed_time?: string;
     status: string;
     created_at: string;
+    reschedule_requested_at?: string; // 재조율 요청 시간
     type?: 'new' | 'reschedule';
 }
 
@@ -118,10 +119,17 @@ export default function NotificationPanel({
         }
     }, [visible]);
 
-    // 시간순 정렬 (최신순)
-    const sortedRequests = [...pendingRequests].sort((a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
+    // 시간순 정렬 (최신순) - 재조율 요청은 reschedule_requested_at 사용
+    const sortedRequests = [...pendingRequests].sort((a, b) => {
+        // 재조율 요청인 경우 reschedule_requested_at, 아니면 created_at 사용
+        const aTime = a.type === 'reschedule' && a.reschedule_requested_at
+            ? a.reschedule_requested_at
+            : a.created_at;
+        const bTime = b.type === 'reschedule' && b.reschedule_requested_at
+            ? b.reschedule_requested_at
+            : b.created_at;
+        return new Date(bTime).getTime() - new Date(aTime).getTime();
+    });
 
     const formatDateTime = (dateStr: string) => {
         const date = new Date(dateStr);
@@ -163,7 +171,7 @@ export default function NotificationPanel({
                 </View>
                 <View style={styles.requestHeaderRight}>
                     <Text style={styles.requestDate}>
-                        {formatDateTime(item.created_at)}
+                        {formatDateTime(isReschedule && item.reschedule_requested_at ? item.reschedule_requested_at : item.created_at)}
                     </Text>
                     <TouchableOpacity
                         style={styles.dismissButton}
