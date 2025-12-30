@@ -74,6 +74,18 @@ interface Message {
   shouldShowProposalCard?: boolean;
   timestamp?: string;
   id?: string;
+  // 충돌 선택지 관련 필드
+  type?: string;  // "schedule_conflict_choice" | "majority_recommendation" etc
+  conflictChoice?: {
+    sessionId: string;
+    initiatorName: string;
+    otherCount: number;
+    proposedDate: string;
+    proposedTime: string;
+    conflictEventName: string;
+    choices: Array<{ id: string; label: string }>;
+    selectedChoice?: string;  // "skip" | "adjust" | null
+  };
 }
 
 interface ChatSession {
@@ -1012,7 +1024,103 @@ export default function ChatScreen() {
     }
   };
 
-  const renderItem = ({ item }: { item: Message }) => {
+  // 충돌 선택지 처리 함수
+  const handleConflictChoice = async (sessionId: string, choice: "skip" | "adjust", messageIndex: number) => {
+    try {
+      const token = await AsyncStorage.getItem("accessToken");
+      if (!token) return;
+
+      const response = await fetch(`${API_BASE}/a2a/session/${sessionId}/conflict-choice`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ choice }),
+      });
+
+      if (response.ok) {
+        // 메시지 업데이트 - 선택 결과 표시
+        const currentSessionData = sessions.find(s => s.id === currentSessionId);
+        const updatedMessages = [...(currentSessionData?.messages || [])];
+        if (updatedMessages[messageIndex] && updatedMessages[messageIndex].conflictChoice) {
+          updatedMessages[messageIndex].conflictChoice!.selectedChoice = choice;
+        }
+
+        // 세션 업데이트
+        setSessions((prev) =>
+          prev.map((sess) =>
+            sess.id === currentSessionId
+              ? { ...sess, messages: updatedMessages, updatedAt: new Date() }
+              : sess
+          )
+        );
+
+        // 결과 메시지 추가
+        const resultText = choice === "skip"
+          ? "참석 불가로 처리되었습니다. 다른 참여자들끼리 일정이 진행됩니다."
+          : "일정 조정을 선택하셨습니다. 캐린더에서 기존 일정을 수정해주세요.";
+
+        addMessage("ai", resultText);
+      }
+    } catch (error) {
+      console.error("Error handling conflict choice:", error);
+      addMessage("ai", "선택 처리 중 오류가 발생했습니다. 다시 시도해주세요.");
+    }
+  };
+
+  const renderItem = ({ item, index }: { item: Message; index?: number }) => {
+    // 충돌 선택지 메시지 렌더링
+    if (item.type === "schedule_conflict_choice" && item.conflictChoice) {
+      const { sessionId, initiatorName, otherCount, proposedDate, proposedTime, conflictEventName, choices, selectedChoice } = item.conflictChoice;
+
+      return (
+        <View style={styles.conflictChoiceContainer}>
+          <View style={styles.conflictChoiceCard}>
+            <View style={styles.conflictChoiceHeader}>
+              <Text style={styles.conflictChoiceIcon}>🔔</Text>
+              <Text style={styles.conflictChoiceTitle}>일정 조율 알림</Text>
+            </View>
+            <Text style={styles.conflictChoiceText}>
+              {initiatorName}님 외 {otherCount}명이 {proposedDate} {proposedTime}에 일정을 잡으려 합니다.
+            </Text>
+            <View style={styles.conflictEventBadge}>
+              <Text style={styles.conflictEventText}>그 시간에 [{conflictEventName}]이 있으시네요.</Text>
+            </View>
+
+            {selectedChoice ? (
+              <View style={styles.conflictChoiceResult}>
+                <Text style={styles.conflictChoiceResultText}>
+                  {selectedChoice === "skip" ? "❌ 참석 불가 선택됨" : "✅ 일정 조정 선택됨"}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.conflictChoiceButtons}>
+                {choices.map((choice) => (
+                  <TouchableOpacity
+                    key={choice.id}
+                    style={[
+                      styles.conflictChoiceButton,
+                      choice.id === "skip" ? styles.conflictSkipButton : styles.conflictAdjustButton
+                    ]}
+                    onPress={() => handleConflictChoice(sessionId, choice.id as "skip" | "adjust", index || 0)}
+                  >
+                    <Text style={[
+                      styles.conflictChoiceButtonText,
+                      choice.id === "skip" ? styles.conflictSkipButtonText : styles.conflictAdjustButtonText
+                    ]}>
+                      {choice.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        </View>
+      );
+    }
+
+    // 일반 메시지 렌더링
     return (
       <View
         style={[
@@ -2356,6 +2464,90 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  // 충돌 선택지 스타일
+  conflictChoiceContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    width: "100%",
+  },
+  conflictChoiceCard: {
+    backgroundColor: "#FEF3C7",
+    borderRadius: 16,
+    padding: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: "#F59E0B",
+  },
+  conflictChoiceHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  conflictChoiceIcon: {
+    fontSize: 18,
+    marginRight: 8,
+  },
+  conflictChoiceTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#92400E",
+  },
+  conflictChoiceText: {
+    fontSize: 14,
+    color: "#78350F",
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  conflictEventBadge: {
+    backgroundColor: "#FDE68A",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  conflictEventText: {
+    fontSize: 13,
+    color: "#92400E",
+    fontWeight: "500",
+  },
+  conflictChoiceResult: {
+    paddingVertical: 8,
+    alignItems: "center",
+  },
+  conflictChoiceResultText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#78350F",
+  },
+  conflictChoiceButtons: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  conflictChoiceButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  conflictSkipButton: {
+    backgroundColor: "#FEE2E2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+  },
+  conflictAdjustButton: {
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  conflictChoiceButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  conflictSkipButtonText: {
+    color: "#DC2626",
+  },
+  conflictAdjustButtonText: {
+    color: "#059669",
   },
 });
 

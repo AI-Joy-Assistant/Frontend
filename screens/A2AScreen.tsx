@@ -92,6 +92,7 @@ const A2AScreen = () => {
     const [showTimePicker, setShowTimePicker] = useState(false);
     const [confirmationType, setConfirmationType] = useState<'official' | 'reschedule' | 'partial'>('official');
     const [pendingApprovers, setPendingApprovers] = useState<string[]>([]);
+    const [showConflictPopup, setShowConflictPopup] = useState(false);
 
     // Restore deleted states
     const [preferredTime, setPreferredTime] = useState('');
@@ -793,7 +794,14 @@ const A2AScreen = () => {
                             : 'IN_PROGRESS',
                     // [✅ 수정] 요약에는 참여자 이름만 표시 (이모지 옆 텍스트)
                     summary: session.participant_names?.join(', ') || "참여자 없음",
-                    timeRange: (session.details?.proposedDate ? `${session.details.proposedDate} ` : '') + (session.details?.proposedTime || "미정"),
+                    // [✅ 수정] timeRange에 여러 fallback 소스 사용
+                    timeRange: (() => {
+                        const d = session.details || {};
+                        const date = d.proposedDate || d.requestedDate || d.date || '';
+                        const time = d.proposedTime || d.requestedTime || d.time || '';
+                        if (!date && !time) return "미정";
+                        return `${date} ${time}`.trim();
+                    })(),
                     createdAt: session.created_at,
                     details: session.details,
                     initiator_user_id: session.initiator_user_id
@@ -946,10 +954,17 @@ const A2AScreen = () => {
                 }
 
                 // API 응답으로 완전한 데이터를 받은 후에 모달 표시
+                // [FIX] has_conflict, conflicting_sessions, process는 목록 API에서만 제공되므로 기존 값 유지
                 setSelectedLog({
                     ...log,
                     status: newStatus || log.status,
-                    details: { ...(log.details || {}), ...newDetails }
+                    details: {
+                        ...(log.details || {}),
+                        ...newDetails,
+                        has_conflict: (log.details as any)?.has_conflict,
+                        conflicting_sessions: (log.details as any)?.conflicting_sessions,
+                        process: newDetails.process?.length > 0 ? newDetails.process : (log.details as any)?.process || []
+                    }
                 });
 
                 const totalTime = Date.now() - startTime;
@@ -1128,17 +1143,34 @@ const A2AScreen = () => {
                     <Text style={styles.logTitle}>{item.title}</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    {/* [NEW] 충돌 경고 배지 - 진행중인 일정에만 표시 (완료/거절 제외) */}
+                    {(item.details as any)?.has_conflict &&
+                        !['completed', 'rejected'].includes(item.status?.toLowerCase() || '') && (
+                            <View style={[
+                                styles.statusBadge,
+                                { backgroundColor: '#FFF3E0', borderColor: '#FFE0B2' }
+                            ]}>
+                                <View style={{
+                                    width: 6, height: 6, borderRadius: 3,
+                                    backgroundColor: '#FF9800',
+                                    marginRight: 6
+                                }} />
+                                <Text style={[styles.statusText, { color: '#E65100' }]}>중복</Text>
+                            </View>
+                        )}
                     <View style={[
                         styles.statusBadge,
                         item.status?.toLowerCase() === 'completed' ? styles.statusCompleted
                             : item.status?.toLowerCase() === 'rejected' ? styles.statusRejected
-                                : styles.statusInProgress
+                                : item.status?.toLowerCase() === 'needs_reschedule' ? styles.statusRejected
+                                    : styles.statusInProgress
                     ]}>
                         <View style={{
                             width: 6, height: 6, borderRadius: 3,
                             backgroundColor: item.status?.toLowerCase() === 'completed' ? COLORS.green600
                                 : item.status?.toLowerCase() === 'rejected' ? COLORS.red600
-                                    : COLORS.amber600,
+                                    : item.status?.toLowerCase() === 'needs_reschedule' ? COLORS.red600
+                                        : COLORS.amber600,
                             marginRight: 6
                         }} />
                         <Text style={[
@@ -1146,12 +1178,14 @@ const A2AScreen = () => {
                             {
                                 color: item.status?.toLowerCase() === 'completed' ? COLORS.green600
                                     : item.status?.toLowerCase() === 'rejected' ? COLORS.red600
-                                        : COLORS.amber600
+                                        : item.status?.toLowerCase() === 'needs_reschedule' ? COLORS.red600
+                                            : COLORS.amber600
                             }
                         ]}>
                             {item.status?.toLowerCase() === 'completed' ? '완료됨'
                                 : item.status?.toLowerCase() === 'rejected' ? '거절됨'
-                                    : '진행중'}
+                                    : item.status?.toLowerCase() === 'needs_reschedule' ? '재조율 필요'
+                                        : '진행중'}
                         </Text>
                     </View>
                     {(item.status?.toLowerCase() === 'completed' || item.status?.toLowerCase() === 'rejected') && (
@@ -1575,6 +1609,60 @@ const A2AScreen = () => {
                                                 </View>
                                             </View>
 
+                                            {/* [NEW] 충돌 경고 배너 - has_conflict, needs_reschedule, 또는 협상 로그에 충돌 알림이 있을 때 표시 */}
+                                            {(() => {
+                                                const details = selectedLog?.details as any;
+                                                const status = (selectedLog as any)?.status?.toLowerCase?.() || '';
+                                                const hasConflict = details?.has_conflict;
+                                                const needsReschedule = status === 'needs_reschedule';
+                                                const hasConflictMessage = details?.process?.some?.((p: any) =>
+                                                    p.message?.includes('충돌') || p.type === 'conflict_warning'
+                                                );
+
+                                                if (hasConflict || needsReschedule || hasConflictMessage) {
+                                                    return (
+                                                        <TouchableOpacity
+                                                            style={{
+                                                                backgroundColor: needsReschedule ? '#FEE2E2' : '#FFF3E0',
+                                                                borderWidth: 1,
+                                                                borderColor: needsReschedule ? '#EF4444' : '#FF9800',
+                                                                borderRadius: 12,
+                                                                padding: 14,
+                                                                marginBottom: 16,
+                                                                flexDirection: 'row',
+                                                                alignItems: 'center'
+                                                            }}
+                                                            onPress={() => setShowConflictPopup(true)}
+                                                        >
+                                                            <Text style={{ fontSize: 20, marginRight: 12 }}>
+                                                                {needsReschedule ? '🚨' : '⚠️'}
+                                                            </Text>
+                                                            <View style={{ flex: 1 }}>
+                                                                <Text style={{
+                                                                    fontSize: 14,
+                                                                    color: needsReschedule ? '#B91C1C' : '#E65100',
+                                                                    fontWeight: 'bold'
+                                                                }}>
+                                                                    {needsReschedule
+                                                                        ? '다른 일정이 확정되어 재조율이 필요합니다'
+                                                                        : '이 시간대에 진행 중인 다른 협상이 있습니다'}
+                                                                </Text>
+                                                                <Text style={{
+                                                                    fontSize: 12,
+                                                                    color: needsReschedule ? '#DC2626' : '#F57C00',
+                                                                    marginTop: 4
+                                                                }}>
+                                                                    {needsReschedule
+                                                                        ? '아래 재조율 버튼으로 새 시간을 제안하세요'
+                                                                        : '탭하여 겹치는 일정 보기'}
+                                                                </Text>
+                                                            </View>
+                                                        </TouchableOpacity>
+                                                    );
+                                                }
+                                                return null;
+                                            })()}
+
                                             {/* Info Cards */}
                                             <View style={styles.infoStack}>
                                                 <View style={styles.infoCard}>
@@ -1594,10 +1682,16 @@ const A2AScreen = () => {
                                                     <View>
                                                         <Text style={styles.infoLabel}>요청시간</Text>
                                                         <Text style={styles.infoValue}>
-                                                            {/* 요청시간: requestedDate/Time 우선, 없으면 proposedDate/Time fallback */}
-                                                            {(selectedLog.details as any)?.requestedDate || selectedLog.details.proposedDate
-                                                                ? `${(selectedLog.details as any)?.requestedDate || selectedLog.details.proposedDate} ${(selectedLog.details as any)?.requestedTime || selectedLog.details.proposedTime}`
-                                                                : (selectedLog.details as any)?.requestedTime || selectedLog.details.proposedTime || '미정'}
+                                                            {/* 요청시간: requestedDate/Time ~ endTime 표시 */}
+                                                            {(() => {
+                                                                const d = selectedLog.details as any;
+                                                                const date = d?.requestedDate || d?.proposedDate || '';
+                                                                const startTime = d?.requestedTime || d?.proposedTime || '';
+                                                                const endTime = d?.requestedEndTime || d?.proposedEndTime || d?.end_time || '';
+                                                                if (!date && !startTime) return '미정';
+                                                                const timeRange = endTime ? `${startTime}~${endTime}` : startTime;
+                                                                return date ? `${date} ${timeRange}` : timeRange;
+                                                            })()}
                                                         </Text>
                                                     </View>
                                                 </View>
@@ -1611,10 +1705,16 @@ const A2AScreen = () => {
                                                         <View>
                                                             <Text style={styles.infoLabel}>협상 확정 시간</Text>
                                                             <Text style={styles.infoValue}>
-                                                                {/* agreedDate/Time 우선, 없으면 proposedDate/Time fallback */}
-                                                                {(selectedLog.details as any)?.agreedDate || selectedLog.details.proposedDate
-                                                                    ? `${(selectedLog.details as any)?.agreedDate || selectedLog.details.proposedDate} ${(selectedLog.details as any)?.agreedTime || selectedLog.details.proposedTime}`
-                                                                    : (selectedLog.details as any)?.agreedTime || selectedLog.details.proposedTime || '협상 중'}
+                                                                {/* 협상 확정 시간: agreedDate/Time ~ endTime 표시 */}
+                                                                {(() => {
+                                                                    const d = selectedLog.details as any;
+                                                                    const date = d?.agreedDate || d?.proposedDate || '';
+                                                                    const startTime = d?.agreedTime || d?.proposedTime || '';
+                                                                    const endTime = d?.agreedEndTime || d?.proposedEndTime || d?.end_time || '';
+                                                                    if (!date && !startTime) return '협상 중';
+                                                                    const timeRange = endTime ? `${startTime}~${endTime}` : startTime;
+                                                                    return date ? `${date} ${timeRange}` : timeRange;
+                                                                })()}
                                                             </Text>
                                                         </View>
                                                     </View>
@@ -1701,17 +1801,26 @@ const A2AScreen = () => {
                                                         <View style={styles.processLine} />
                                                         {selectedLog.details.process.map((step: any, idx: number) => (
                                                             <View key={idx} style={styles.processItem}>
-                                                                <View style={styles.processDot} />
+                                                                <View style={[
+                                                                    styles.processDot,
+                                                                    step.type === 'conflict_warning' && { backgroundColor: '#EF4444' }
+                                                                ]} />
                                                                 <View style={{ flex: 1 }}>
                                                                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                                        <Text style={styles.processStep}>[{step.step}]</Text>
+                                                                        <Text style={[
+                                                                            styles.processStep,
+                                                                            step.type === 'conflict_warning' && { color: '#EF4444' }
+                                                                        ]}>[{step.step}]</Text>
                                                                         {step.created_at && (
                                                                             <Text style={{ fontSize: 10, color: COLORS.neutral400 }}>
                                                                                 {new Date(step.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
                                                                             </Text>
                                                                         )}
                                                                     </View>
-                                                                    <Text style={styles.processDesc}>{step.description}</Text>
+                                                                    <Text style={[
+                                                                        styles.processDesc,
+                                                                        step.type === 'conflict_warning' && { color: '#EF4444' }
+                                                                    ]}>{step.description}</Text>
                                                                 </View>
                                                             </View>
                                                         ))}
@@ -1780,6 +1889,133 @@ const A2AScreen = () => {
                             </View>
                         )}
                     </View>
+                </View>
+            </Modal>
+
+            {/* 충돌 일정 팝업 모달 */}
+            <Modal
+                visible={showConflictPopup}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowConflictPopup(false)}
+            >
+                <View style={{
+                    flex: 1,
+                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    padding: 24
+                }}>
+                    {(() => {
+                        const status = (selectedLog as any)?.status?.toLowerCase?.() || '';
+                        const needsReschedule = status === 'needs_reschedule';
+                        const conflictingSessions = (selectedLog?.details as any)?.conflicting_sessions || [];
+
+                        return (
+                            <View style={{
+                                backgroundColor: 'white',
+                                borderRadius: 20,
+                                padding: 24,
+                                width: '100%',
+                                maxWidth: 360,
+                                maxHeight: '80%'
+                            }}>
+                                {/* 헤더 - 상태에 따라 다른 아이콘과 제목 */}
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                                    <Text style={{ fontSize: 24, marginRight: 10 }}>
+                                        {needsReschedule ? '🚨' : '⚠️'}
+                                    </Text>
+                                    <Text style={{
+                                        fontSize: 18,
+                                        fontWeight: 'bold',
+                                        color: needsReschedule ? '#B91C1C' : COLORS.primaryMain
+                                    }}>
+                                        {needsReschedule ? '재조율 필요' : '겹치는 일정'}
+                                    </Text>
+                                </View>
+
+                                {/* needs_reschedule 상태일 때 추가 설명 */}
+                                {needsReschedule && (
+                                    <View style={{
+                                        backgroundColor: '#FEE2E2',
+                                        borderRadius: 12,
+                                        padding: 14,
+                                        marginBottom: 16,
+                                        borderLeftWidth: 4,
+                                        borderLeftColor: '#EF4444'
+                                    }}>
+                                        <Text style={{ fontSize: 14, color: '#B91C1C', fontWeight: '600', marginBottom: 6 }}>
+                                            다른 일정이 확정되어 이 약속은 재조율이 필요합니다.
+                                        </Text>
+                                        <Text style={{ fontSize: 13, color: '#DC2626' }}>
+                                            아래 "시간/장소 변경하기" 버튼을 눌러 새로운 시간을 제안해주세요.
+                                        </Text>
+                                    </View>
+                                )}
+
+                                {/* 충돌 일정 목록 */}
+                                {conflictingSessions.length > 0 && (
+                                    <>
+                                        <Text style={{ fontSize: 13, color: COLORS.neutral500, marginBottom: 8 }}>
+                                            {needsReschedule ? '확정된 일정:' : '같은 시간대 일정:'}
+                                        </Text>
+                                        <ScrollView style={{ maxHeight: 200 }}>
+                                            {conflictingSessions.map((conflict: any, index: number) => (
+                                                <View
+                                                    key={conflict.id || index}
+                                                    style={{
+                                                        backgroundColor: needsReschedule ? '#FEF2F2' : COLORS.primaryBg,
+                                                        borderRadius: 12,
+                                                        padding: 14,
+                                                        marginBottom: 10,
+                                                        borderLeftWidth: 4,
+                                                        borderLeftColor: needsReschedule ? '#EF4444' : COLORS.primaryMain
+                                                    }}
+                                                >
+                                                    <Text style={{ fontSize: 15, fontWeight: '600', color: '#333', marginBottom: 4 }}>
+                                                        {conflict.title || '일정'}
+                                                    </Text>
+                                                    <Text style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
+                                                        🗓️ {conflict.date || conflict.time || '시간 정보 없음'}
+                                                    </Text>
+                                                    {conflict.participant_names?.length > 0 && (
+                                                        <Text style={{ fontSize: 12, color: '#888' }}>
+                                                            👥 {conflict.participant_names.join(', ')}
+                                                        </Text>
+                                                    )}
+                                                </View>
+                                            ))}
+                                        </ScrollView>
+                                    </>
+                                )}
+
+                                {/* 충돌 목록이 없을 때 기본 메시지 */}
+                                {conflictingSessions.length === 0 && (
+                                    <Text style={{ fontSize: 14, color: COLORS.neutral500, textAlign: 'center', marginVertical: 20 }}>
+                                        {needsReschedule
+                                            ? '같은 시간대에 다른 일정이 확정되었습니다.\n새로운 시간으로 재조율해주세요.'
+                                            : '같은 시간대에 다른 협상이 진행 중입니다.'}
+                                    </Text>
+                                )}
+
+                                {/* 확인 버튼 */}
+                                <TouchableOpacity
+                                    onPress={() => setShowConflictPopup(false)}
+                                    style={{
+                                        backgroundColor: needsReschedule ? '#DC2626' : COLORS.primaryMain,
+                                        borderRadius: 12,
+                                        paddingVertical: 14,
+                                        alignItems: 'center',
+                                        marginTop: 16
+                                    }}
+                                >
+                                    <Text style={{ color: 'white', fontWeight: '600', fontSize: 15 }}>
+                                        {needsReschedule ? '닫고 재조율하기' : '확인'}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        );
+                    })()}
                 </View>
             </Modal>
         </SafeAreaView >
