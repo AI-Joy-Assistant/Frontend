@@ -47,7 +47,7 @@ import { calendarService } from '../services/calendarService';
 import { CreateEventRequest } from '../types/calendar';
 import DatePickerModal from '../components/DatePickerModal';
 import TimePickerModal from '../components/TimePickerModal';
-import { API_BASE } from '../constants/config';
+import { API_BASE, WS_BASE } from '../constants/config';
 import NotificationPanel from '../components/NotificationPanel';
 import { badgeStore } from '../store/badgeStore';
 
@@ -248,6 +248,61 @@ export default function HomeScreen() {
     }, [])
   );
 
+  // WebSocket for real-time A2A notifications
+  const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const connectWebSocket = () => {
+      try {
+        const ws = new WebSocket(`${WS_BASE}/ws/${currentUserId}`);
+
+        ws.onopen = () => {
+          console.log("[WS:Home] 연결 성공");
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log("[WS:Home] 메시지 수신:", data.type);
+
+            if (data.type === "a2a_request") {
+              // A2A 요청 도착 - 즉시 새로고침
+              console.log("[WS:Home] A2A 요청 도착:", data.from_user);
+              fetchPendingRequests();
+              fetchNotifications();
+            }
+          } catch (e) {
+            console.error("[WS:Home] 메시지 파싱 오류:", e);
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error("[WS:Home] 오류:", error);
+        };
+
+        ws.onclose = () => {
+          console.log("[WS:Home] 연결 종료, 5초 후 재연결 시도");
+          setTimeout(connectWebSocket, 5000);
+        };
+
+        wsRef.current = ws;
+      } catch (e) {
+        console.error("[WS:Home] 연결 실패:", e);
+      }
+    };
+
+    connectWebSocket();
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [currentUserId]);
+
   // 표시할 요청 필터링 (dismissed 제외, 첫 번째만 표시)
   const visibleRequest = pendingRequests.find(req => !dismissedRequestIds.includes(req.id));
   const showRequest = !!visibleRequest;
@@ -270,6 +325,7 @@ export default function HomeScreen() {
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [scheduleToDelete, setScheduleToDelete] = useState<ScheduleItem | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedDetailSchedule, setSelectedDetailSchedule] = useState<ScheduleItem | null>(null);
 
@@ -699,24 +755,14 @@ export default function HomeScreen() {
     }
   };
 
-  const handleDeleteClick = async () => {
+  const handleDeleteClick = () => {
     if (!editingScheduleId) return;
 
-    if (!showDeleteConfirm) {
+    // 삭제할 일정 정보 설정 후 커스텀 모달 표시
+    const schedule = schedules.find(s => s.id === editingScheduleId);
+    if (schedule) {
+      setScheduleToDelete(schedule);
       setShowDeleteConfirm(true);
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      await calendarService.deleteCalendarEvent(editingScheduleId);
-      setShowScheduleModal(false);
-      fetchSchedules();
-    } catch (error) {
-      console.error('Failed to delete schedule:', error);
-      Alert.alert('Error', 'Failed to delete schedule');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -1105,19 +1151,9 @@ export default function HomeScreen() {
                 {editingScheduleId && (
                   <TouchableOpacity
                     onPress={handleDeleteClick}
-                    style={[
-                      styles.deleteButton,
-                      showDeleteConfirm && styles.deleteButtonConfirm
-                    ]}
+                    style={styles.deleteButton}
                   >
-                    {showDeleteConfirm ? (
-                      <>
-                        <AlertCircle size={14} color="white" />
-                        <Text style={styles.deleteButtonText}>삭제할까요?</Text>
-                      </>
-                    ) : (
-                      <Trash2 size={20} color={COLORS.neutral400} />
-                    )}
+                    <Trash2 size={20} color={COLORS.neutral400} />
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity onPress={() => setShowScheduleModal(false)}>
@@ -1364,29 +1400,10 @@ export default function HomeScreen() {
                 <View style={styles.detailButtonRow}>
                   <TouchableOpacity
                     style={styles.deleteIconButton}
-                    onPress={async () => {
+                    onPress={() => {
                       if (!selectedDetailSchedule) return;
-                      const confirmDelete = Platform.OS === 'web'
-                        ? window.confirm('이 일정을 삭제하시겠습니까?')
-                        : await new Promise<boolean>((resolve) => {
-                          Alert.alert(
-                            '일정 삭제',
-                            '이 일정을 삭제하시겠습니까?',
-                            [
-                              { text: '취소', style: 'cancel', onPress: () => resolve(false) },
-                              { text: '삭제', style: 'destructive', onPress: () => resolve(true) }
-                            ]
-                          );
-                        });
-                      if (confirmDelete) {
-                        try {
-                          await calendarService.deleteCalendarEvent(selectedDetailSchedule.id);
-                          setShowDetailModal(false);
-                          fetchSchedules();
-                        } catch (error) {
-                          console.error('일정 삭제 실패:', error);
-                        }
-                      }
+                      setScheduleToDelete(selectedDetailSchedule);
+                      setShowDeleteConfirm(true);
                     }}
                   >
                     <Trash2 size={22} color={COLORS.neutral500} />
@@ -1424,6 +1441,57 @@ export default function HomeScreen() {
         onDismissRequest={onDismissRequest}
         onDismissNotification={onDismissNotification}
       />
+
+      {/* 일정 삭제 확인 모달 */}
+      <Modal
+        visible={showDeleteConfirm}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowDeleteConfirm(false)}
+      >
+        <View style={styles.deleteModalOverlay}>
+          <View style={styles.deleteModalContent}>
+            <View style={styles.deleteModalIconContainer}>
+              <Trash2 size={24} color="#F87171" />
+            </View>
+            <Text style={styles.deleteModalTitle}>일정 삭제</Text>
+            <Text style={styles.deleteModalMessage}>
+              <Text style={{ fontWeight: 'bold' }}>{scheduleToDelete?.title}</Text>
+              {'\n'}이 일정을 삭제하시겠습니까?
+            </Text>
+            <View style={styles.deleteModalButtons}>
+              <TouchableOpacity
+                style={styles.deleteModalCancelButton}
+                onPress={() => {
+                  setShowDeleteConfirm(false);
+                  setScheduleToDelete(null);
+                }}
+              >
+                <Text style={styles.deleteModalCancelText}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteModalConfirmButton}
+                onPress={async () => {
+                  if (scheduleToDelete) {
+                    try {
+                      await calendarService.deleteCalendarEvent(scheduleToDelete.id);
+                      setShowDetailModal(false);
+                      setShowScheduleModal(false);
+                      fetchSchedules();
+                    } catch (error) {
+                      console.error('일정 삭제 실패:', error);
+                    }
+                  }
+                  setShowDeleteConfirm(false);
+                  setScheduleToDelete(null);
+                }}
+              >
+                <Text style={styles.deleteModalConfirmText}>삭제</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <BottomNav activeTab={Tab.HOME} />
     </SafeAreaView>
@@ -2091,5 +2159,77 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  // Delete Modal Styles
+  deleteModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  deleteModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 320,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  deleteModalIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  deleteModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#334155',
+    marginBottom: 16,
+  },
+  deleteModalMessage: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  deleteModalButtons: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  deleteModalCancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+  },
+  deleteModalCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  deleteModalConfirmButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#F87171',
+    alignItems: 'center',
+  },
+  deleteModalConfirmText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'white',
   },
 });

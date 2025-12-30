@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     View,
     Text,
@@ -38,7 +38,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList, A2ALog, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
-import { API_BASE } from '../constants/config';
+import { API_BASE, WS_BASE } from '../constants/config';
 
 // Colors based on the provided React/Tailwind code
 const COLORS = {
@@ -785,6 +785,41 @@ const A2AScreen = () => {
 
             if (response.ok) {
                 const data = await response.json();
+
+                // 시간 형식 변환 함수 (MM월 DD일 오전/오후 HH시 → YYYY-MM-DD HH:MM)
+                const formatTimeRange = (date: string | undefined, time: string | undefined): string => {
+                    if (!date && !time) return "미정";
+
+                    const now = new Date();
+                    const currentYear = now.getFullYear();
+
+                    let formattedDate = date || '';
+                    let formattedTime = time || '';
+
+                    // MM월 DD일 형식 → YYYY-MM-DD
+                    if (date) {
+                        const koreanMatch = date.match(/(\d{1,2})월\s*(\d{1,2})일/);
+                        if (koreanMatch) {
+                            const month = String(koreanMatch[1]).padStart(2, '0');
+                            const day = String(koreanMatch[2]).padStart(2, '0');
+                            formattedDate = `${currentYear}-${month}-${day}`;
+                        }
+                    }
+
+                    // 오전/오후 HH시 → HH:MM
+                    if (time) {
+                        const timeMatch = time.match(/(오전|오후)\s*(\d{1,2})시/);
+                        if (timeMatch) {
+                            let hour = parseInt(timeMatch[2]);
+                            if (timeMatch[1] === '오후' && hour !== 12) hour += 12;
+                            if (timeMatch[1] === '오전' && hour === 12) hour = 0;
+                            formattedTime = `${String(hour).padStart(2, '0')}:00`;
+                        }
+                    }
+
+                    return `${formattedDate} ${formattedTime}`.trim() || "미정";
+                };
+
                 const mappedLogs: A2ALog[] = data.sessions.map((session: any) => ({
                     id: session.id,
                     title: session.details?.purpose || session.title || "일정 조율",
@@ -793,7 +828,7 @@ const A2AScreen = () => {
                             : 'IN_PROGRESS',
                     // [✅ 수정] 요약에는 참여자 이름만 표시 (이모지 옆 텍스트)
                     summary: session.participant_names?.join(', ') || "참여자 없음",
-                    timeRange: (session.details?.proposedDate ? `${session.details.proposedDate} ` : '') + (session.details?.proposedTime || "미정"),
+                    timeRange: formatTimeRange(session.details?.proposedDate, session.details?.proposedTime),
                     createdAt: session.created_at,
                     details: session.details,
                     initiator_user_id: session.initiator_user_id
@@ -814,6 +849,60 @@ const A2AScreen = () => {
         fetchCurrentUser();
         fetchA2ALogs();
     }, [fetchA2ALogs]);
+
+    // WebSocket for real-time A2A updates
+    const wsRef = useRef<WebSocket | null>(null);
+
+    useEffect(() => {
+        if (!currentUserId) return;
+
+        const connectWebSocket = () => {
+            try {
+                const ws = new WebSocket(`${WS_BASE}/ws/${currentUserId}`);
+
+                ws.onopen = () => {
+                    console.log("[WS:A2A] 연결 성공");
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        console.log("[WS:A2A] 메시지 수신:", data.type);
+
+                        if (data.type === "a2a_request") {
+                            // A2A 요청 도착 - 카드 목록 즉시 새로고침
+                            console.log("[WS:A2A] 새 A2A 요청:", data.from_user);
+                            fetchA2ALogs(false);
+                        }
+                    } catch (e) {
+                        console.error("[WS:A2A] 메시지 파싱 오류:", e);
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error("[WS:A2A] 오류:", error);
+                };
+
+                ws.onclose = () => {
+                    console.log("[WS:A2A] 연결 종료, 5초 후 재연결 시도");
+                    setTimeout(connectWebSocket, 5000);
+                };
+
+                wsRef.current = ws;
+            } catch (e) {
+                console.error("[WS:A2A] 연결 실패:", e);
+            }
+        };
+
+        connectWebSocket();
+
+        return () => {
+            if (wsRef.current) {
+                wsRef.current.close();
+                wsRef.current = null;
+            }
+        };
+    }, [currentUserId]);
 
     const [initialCheckDone, setInitialCheckDone] = useState(false);
 
@@ -1217,51 +1306,67 @@ const A2AScreen = () => {
                     backgroundColor: 'rgba(0,0,0,0.5)',
                     justifyContent: 'center',
                     alignItems: 'center',
+                    padding: 20,
                 }}>
                     <View style={{
                         backgroundColor: COLORS.white,
-                        borderRadius: 16,
-                        padding: 20,
-                        width: '70%',
+                        borderRadius: 24,
+                        padding: 24,
+                        width: '100%',
+                        maxWidth: 320,
                         alignItems: 'center',
                         shadowColor: '#000',
                         shadowOffset: { width: 0, height: 4 },
-                        shadowOpacity: 0.2,
+                        shadowOpacity: 0.1,
                         shadowRadius: 12,
-                        elevation: 8,
+                        elevation: 5,
                     }}>
-                        <Trash2 size={32} color={COLORS.red600} style={{ marginBottom: 12 }} />
-                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 6 }}>일정을 삭제하시겠습니까?</Text>
-                        <Text style={{ fontSize: 12, color: COLORS.neutral500, marginBottom: 20, textAlign: 'center' }}>삭제된 일정은 복구할 수 없습니다.</Text>
+                        <View style={{
+                            width: 48,
+                            height: 48,
+                            borderRadius: 24,
+                            backgroundColor: '#FEF2F2',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginBottom: 16,
+                        }}>
+                            <Trash2 size={24} color="#F87171" />
+                        </View>
+                        <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#334155', marginBottom: 16 }}>일정 삭제</Text>
+                        <Text style={{ fontSize: 14, color: '#64748B', textAlign: 'center', lineHeight: 20, marginBottom: 24 }}>
+                            삭제된 일정은 복구할 수 없습니다.{'\n'}정말 삭제하시겠습니까?
+                        </Text>
 
-                        <View style={{ flexDirection: 'row', gap: 12 }}>
+                        <View style={{ flexDirection: 'row', width: '100%', gap: 12 }}>
                             {/* 취소 버튼 */}
                             <TouchableOpacity
                                 style={{
-                                    backgroundColor: COLORS.neutral200,
-                                    paddingVertical: 10,
-                                    paddingHorizontal: 24,
-                                    borderRadius: 10,
+                                    flex: 1,
+                                    paddingVertical: 12,
+                                    borderRadius: 12,
+                                    backgroundColor: '#F1F5F9',
+                                    alignItems: 'center',
                                 }}
                                 onPress={() => {
                                     setShowDeleteConfirm(false);
                                     setDeleteTargetLogId(null);
                                 }}
                             >
-                                <Text style={{ color: COLORS.neutral600, fontSize: 14, fontWeight: '600' }}>취소</Text>
+                                <Text style={{ fontSize: 14, fontWeight: '600', color: '#64748B' }}>취소</Text>
                             </TouchableOpacity>
 
                             {/* 삭제 버튼 */}
                             <TouchableOpacity
                                 style={{
-                                    backgroundColor: COLORS.red600,
-                                    paddingVertical: 10,
-                                    paddingHorizontal: 24,
-                                    borderRadius: 10,
+                                    flex: 1,
+                                    paddingVertical: 12,
+                                    borderRadius: 12,
+                                    backgroundColor: '#F87171',
+                                    alignItems: 'center',
                                 }}
                                 onPress={executeDelete}
                             >
-                                <Text style={{ color: COLORS.white, fontSize: 14, fontWeight: '600' }}>삭제</Text>
+                                <Text style={{ fontSize: 14, fontWeight: '600', color: 'white' }}>삭제</Text>
                             </TouchableOpacity>
                         </View>
                     </View>

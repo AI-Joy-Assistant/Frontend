@@ -11,4 +11,12 @@ const getApiBase = () => {
 
 export const API_BASE = getApiBase();
 
+// WebSocket URL (http:// → ws://, https:// → wss://)
+const getWsBase = () => {
+    const httpBase = getApiBase();
+    return httpBase.replace('http://', 'ws://').replace('https://', 'wss://');
+};
+
+export const WS_BASE = getWsBase();
+
 

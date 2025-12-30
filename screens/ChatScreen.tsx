@@ -25,7 +25,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList, Tab } from "../types";
 import BottomNav from "../components/BottomNav";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { API_BASE } from "../constants/config";
+import { API_BASE, WS_BASE } from "../constants/config";
 import { badgeStore } from "../store/badgeStore";
 
 import { LinearGradient } from "expo-linear-gradient";
@@ -124,6 +124,8 @@ export default function ChatScreen() {
   const isAtBottom = useRef(true);
   const messagesEndRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
   // --- Helpers ---
 
@@ -166,6 +168,7 @@ export default function ChatScreen() {
       if (res.ok) {
         const data = await res.json();
         setUserName(data.name || data.nickname || "User");
+        setUserId(data.id); // WebSocket 연결에 필요
       }
     } catch (e) {
       console.error("Failed to fetch user profile", e);
@@ -255,6 +258,75 @@ export default function ChatScreen() {
       );
     }
   }, [currentSessionId]);
+
+  // 세션 변경 시 저장된 draft 불러오기
+  useEffect(() => {
+    const loadDraft = async () => {
+      if (currentSessionId) {
+        try {
+          const draft = await AsyncStorage.getItem(`chatDraft_${currentSessionId}`);
+          if (draft) {
+            setInput(draft);
+          } else {
+            setInput('');
+          }
+        } catch (err) {
+          console.error('Failed to load draft:', err);
+        }
+      }
+    };
+    loadDraft();
+  }, [currentSessionId]);
+
+  // 입력 변경 시 draft 저장 (debounced)
+  useEffect(() => {
+    if (!currentSessionId) return;
+    const timeoutId = setTimeout(() => {
+      if (input.trim()) {
+        AsyncStorage.setItem(`chatDraft_${currentSessionId}`, input).catch(err =>
+          console.error('Failed to save draft:', err)
+        );
+      } else {
+        AsyncStorage.removeItem(`chatDraft_${currentSessionId}`).catch(err =>
+          console.error('Failed to remove draft:', err)
+        );
+      }
+    }, 500); // 500ms debounce
+    return () => clearTimeout(timeoutId);
+  }, [input, currentSessionId]);
+
+  // 세션 변경 시 선택된 친구 불러오기
+  useEffect(() => {
+    const loadSelectedFriends = async () => {
+      if (currentSessionId) {
+        try {
+          const saved = await AsyncStorage.getItem(`selectedFriends_${currentSessionId}`);
+          if (saved) {
+            setSelectedFriends(JSON.parse(saved));
+          } else {
+            setSelectedFriends([]);
+          }
+        } catch (err) {
+          console.error('Failed to load selected friends:', err);
+        }
+      }
+    };
+    loadSelectedFriends();
+  }, [currentSessionId]);
+
+  // 친구 선택 변경 시 저장
+  useEffect(() => {
+    if (!currentSessionId) return;
+    if (selectedFriends.length > 0) {
+      AsyncStorage.setItem(`selectedFriends_${currentSessionId}`, JSON.stringify(selectedFriends)).catch(err =>
+        console.error('Failed to save selected friends:', err)
+      );
+    } else {
+      AsyncStorage.removeItem(`selectedFriends_${currentSessionId}`).catch(err =>
+        console.error('Failed to remove selected friends:', err)
+      );
+    }
+  }, [selectedFriends, currentSessionId]);
 
   useEffect(() => {
     fetchFriends();
@@ -628,10 +700,10 @@ export default function ChatScreen() {
       // 채팅 화면 들어오면 lastReadAt을 현재 시간으로 강제 리셋 (배지 즉시 제거)
       badgeStore.forceResetLastReadAt();
 
-      // 10초마다 폴링 (성능 최적화: 3초 → 10초)
+      // 30초마다 폴링 (WebSocket 백업용 - 연결 끊김 대비)
       const interval = setInterval(() => {
         loadChatHistory(false);
-      }, 10000);
+      }, 30000);
 
       return () => {
         clearInterval(interval);
@@ -640,6 +712,67 @@ export default function ChatScreen() {
       };
     }, []) // 의존성 배열 비움 - 화면 포커스 시 1회만 실행
   );
+
+  // WebSocket 연결 (userId가 있을 때)
+  useEffect(() => {
+    if (!userId) return;
+
+    const connectWebSocket = () => {
+      try {
+        const ws = new WebSocket(`${WS_BASE}/ws/${userId}`);
+
+        ws.onopen = () => {
+          console.log("[WS] 연결 성공");
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log("[WS] 메시지 수신:", data.type);
+
+            if (data.type === "new_message") {
+              // 새 메시지 도착 시 히스토리 새로고침
+              loadChatHistory(false);
+              // 스크롤 맨 아래로
+              setTimeout(() => {
+                messagesEndRef.current?.scrollToEnd({ animated: true });
+              }, 100);
+            } else if (data.type === "a2a_request") {
+              // A2A 요청 도착 - 화면 새로고침
+              console.log("[WS] A2A 요청 도착:", data.from_user);
+              loadChatHistory(false);
+              fetchSessions();  // 세션 목록도 새로고침
+            }
+          } catch (e) {
+            console.error("[WS] 메시지 파싱 오류:", e);
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error("[WS] 오류:", error);
+        };
+
+        ws.onclose = () => {
+          console.log("[WS] 연결 종료, 5초 후 재연결 시도");
+          // 5초 후 재연결 시도
+          setTimeout(connectWebSocket, 5000);
+        };
+
+        wsRef.current = ws;
+      } catch (e) {
+        console.error("[WS] 연결 실패:", e);
+      }
+    };
+
+    connectWebSocket();
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [userId]);
 
   // 세션 변경 시 히스토리 로드 (깜빡임 없이)
   useEffect(() => {
@@ -723,6 +856,16 @@ export default function ChatScreen() {
     if (!input.trim()) return;
     const userText = input;
     setInput("");
+
+    // Clear draft and selected friends after sending
+    if (currentSessionId) {
+      AsyncStorage.removeItem(`chatDraft_${currentSessionId}`).catch(err =>
+        console.error('Failed to clear draft:', err)
+      );
+      AsyncStorage.removeItem(`selectedFriends_${currentSessionId}`).catch(err =>
+        console.error('Failed to clear selected friends:', err)
+      );
+    }
 
     const friendsToSend = selectedFriends;
     setSelectedFriends([]);
