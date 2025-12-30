@@ -1619,7 +1619,9 @@ const A2AScreen = () => {
                                                     p.message?.includes('충돌') || p.type === 'conflict_warning'
                                                 );
 
-                                                if (hasConflict || needsReschedule || hasConflictMessage) {
+                                                const isCompletedOrRejected = ['completed', 'rejected'].includes(status);
+
+                                                if ((hasConflict || needsReschedule || hasConflictMessage) && !isCompletedOrRejected) {
                                                     return (
                                                         <TouchableOpacity
                                                             style={{
@@ -1732,55 +1734,70 @@ const A2AScreen = () => {
                                                 </View>
                                             </View>
 
-                                            {/* Attendees */}
-                                            <View style={styles.attendeesSection}>
-                                                <Text style={styles.attendeesLabel}>참여자</Text>
-                                                <View style={styles.attendeeStackContainer}>
-                                                    <View style={styles.attendeeStack}>
-                                                        {(selectedLog.details as any)?.attendees?.filter((attendee: any) => {
-                                                            // left_participants에 있는 사용자는 제외
-                                                            const leftParticipants = (selectedLog.details as any)?.left_participants || [];
-                                                            return !leftParticipants.includes(attendee.id);
-                                                        }).map((attendee: any, idx: number) => (
-                                                            <TouchableOpacity
-                                                                key={idx}
-                                                                onPress={() => setTooltipIndex(tooltipIndex === idx ? null : idx)}
-                                                                style={[styles.attendeeWrapper, tooltipIndex === idx && styles.attendeeSelected]}
-                                                            >
-                                                                {attendee.isCurrentUser ? (
-                                                                    <View style={[styles.attendeeAvatar, styles.attendeeYou]}>
-                                                                        <Text style={styles.attendeeYouText}>You</Text>
-                                                                    </View>
+                                            {/* 참여자 현황 (Participant Status) */}
+                                            {(() => {
+                                                const attendees = (selectedLog.details as any)?.attendees || [];
+                                                const leftParticipants = (selectedLog.details as any)?.left_participants || [];
+
+                                                // 나간 사람 제외
+                                                const activeAttendees = attendees.filter((a: any) => !leftParticipants.includes(a.id));
+
+                                                // 승인/미승인 분리
+                                                const approvedAttendees = activeAttendees.filter((a: any) => a.is_approved);
+                                                const pendingAttendees = activeAttendees.filter((a: any) => !a.is_approved);
+
+                                                return (
+                                                    <View style={styles.participantStatusSection}>
+                                                        <Text style={styles.participantStatusTitle}>참여자 현황</Text>
+
+                                                        {/* 일정 확정 그룹 */}
+                                                        <View style={styles.participantGroup}>
+                                                            <View style={styles.participantGroupHeader}>
+                                                                <CheckCircle2 size={18} color={COLORS.primaryMain} />
+                                                                <Text style={styles.participantGroupTitleApproved}>일정 확정</Text>
+                                                                <View style={styles.participantCountBadge}>
+                                                                    <Text style={styles.participantCountText}>{approvedAttendees.length}명</Text>
+                                                                </View>
+                                                            </View>
+                                                            <View style={styles.participantAvatarRow}>
+                                                                {approvedAttendees.length > 0 ? (
+                                                                    approvedAttendees.map((attendee: any, idx: number) => (
+                                                                        <Image
+                                                                            key={idx}
+                                                                            source={{ uri: attendee.avatar || 'https://picsum.photos/150' }}
+                                                                            style={styles.approvedAvatar}
+                                                                        />
+                                                                    ))
                                                                 ) : (
-                                                                    <Image
-                                                                        source={{ uri: attendee.avatar }}
-                                                                        style={styles.attendeeAvatar}
-                                                                    />
+                                                                    <Text style={styles.noParticipantText}>아직 없음</Text>
                                                                 )}
-                                                            </TouchableOpacity>
-                                                        )) || (
-                                                                <>
-                                                                    <Image source={{ uri: selectedLog.details.proposerAvatar }} style={styles.attendeeAvatar} />
-                                                                    <View style={[styles.attendeeAvatar, styles.attendeeYou, { marginLeft: -8 }]}>
-                                                                        <Text style={styles.attendeeYouText}>You</Text>
-                                                                    </View>
-                                                                </>
-                                                            )}
-                                                    </View>
-                                                    {tooltipIndex !== null && (selectedLog.details as any)?.attendees?.[tooltipIndex] && (
-                                                        <View style={styles.tooltipRow}>
-                                                            <View style={[styles.tooltipSpacer, { width: 8 + tooltipIndex * 15 }]} />
-                                                            <View style={styles.tooltipContainer}>
-                                                                <Text style={styles.tooltipText}>
-                                                                    {(selectedLog.details as any).attendees[tooltipIndex].isCurrentUser
-                                                                        ? '나'
-                                                                        : ((selectedLog.details as any).attendees[tooltipIndex].name || '알 수 없음')}
-                                                                </Text>
                                                             </View>
                                                         </View>
-                                                    )}
-                                                </View>
-                                            </View>
+
+                                                        {/* 확정 대기 그룹 */}
+                                                        <View style={[styles.participantGroup, { marginBottom: 0 }]}>
+                                                            <View style={styles.participantGroupHeader}>
+                                                                <Clock size={18} color={COLORS.neutral400} />
+                                                                <Text style={styles.participantGroupTitlePending}>확정 대기</Text>
+                                                                <View style={styles.participantCountBadge}>
+                                                                    <Text style={styles.participantCountText}>{pendingAttendees.length}명</Text>
+                                                                </View>
+                                                            </View>
+                                                            {pendingAttendees.length > 0 && (
+                                                                <View style={styles.participantAvatarRow}>
+                                                                    {pendingAttendees.map((attendee: any, idx: number) => (
+                                                                        <Image
+                                                                            key={idx}
+                                                                            source={{ uri: attendee.avatar || 'https://picsum.photos/150' }}
+                                                                            style={styles.pendingAvatar}
+                                                                        />
+                                                                    ))}
+                                                                </View>
+                                                            )}
+                                                        </View>
+                                                    </View>
+                                                );
+                                            })()}
 
                                             {/* Process */}
                                             <View style={styles.processCard}>
@@ -1864,9 +1881,19 @@ const A2AScreen = () => {
                                                     const rescheduleRequestedBy = (selectedLog?.details as any)?.rescheduleRequestedBy;
                                                     // 재조율 요청이 있으면: 요청한 사람이 아닌 사람에게 버튼 표시
                                                     // 재조율 요청이 없으면: initiator가 아닌 사람에게 버튼 표시
-                                                    const showButtons = rescheduleRequestedBy
-                                                        ? currentUserId !== rescheduleRequestedBy
-                                                        : currentUserId !== selectedLog?.initiator_user_id;
+                                                    // [FIX] 참석자 정보에서 내 승인 여부 확인
+                                                    const attendees = (selectedLog?.details as any)?.attendees || [];
+                                                    const me = attendees.find((a: any) => a.id === currentUserId || a.isCurrentUser);
+                                                    const isApproved = me?.is_approved;
+
+                                                    // 재조율 요청이 있으면: 요청한 사람이 아닌 사람에게 버튼 표시
+                                                    // 재조율 요청이 없으면: initiator가 아닌 사람에게 버튼 표시
+                                                    const isRequester = rescheduleRequestedBy
+                                                        ? currentUserId === rescheduleRequestedBy
+                                                        : currentUserId === selectedLog?.initiator_user_id;
+
+                                                    // 요청자가 아니고 + 아직 승인하지 않았을 때만 버튼 표시
+                                                    const showButtons = !isRequester && !isApproved;
 
                                                     return showButtons ? (
                                                         <>
@@ -1909,46 +1936,55 @@ const A2AScreen = () => {
                     {(() => {
                         const status = (selectedLog as any)?.status?.toLowerCase?.() || '';
                         const needsReschedule = status === 'needs_reschedule';
-                        const conflictingSessions = (selectedLog?.details as any)?.conflicting_sessions || [];
+                        const rawSessions = (selectedLog?.details as any)?.conflicting_sessions || [];
+
+                        // [FIX] 중복된 "확정된 일정" 카드 필터링
+                        // 구체적인 정보(참여자 등)가 있는 카드가 별도로 존재하면, 단순 "확정된 일정" 카드는 숨김
+                        const conflictingSessions = rawSessions.filter((s: any) => {
+                            if (rawSessions.length <= 1) return true;
+                            if (s.title === "확정된 일정" && (!s.participant_names || s.participant_names.length === 0)) {
+                                const hasSpecific = rawSessions.some((other: any) =>
+                                    other !== s && (other.title !== "확정된 일정" || (other.participant_names && other.participant_names.length > 0))
+                                );
+                                return !hasSpecific;
+                            }
+                            return true;
+                        });
 
                         return (
                             <View style={{
                                 backgroundColor: 'white',
                                 borderRadius: 20,
-                                padding: 24,
+                                padding: 20,
                                 width: '100%',
-                                maxWidth: 360,
+                                maxWidth: 340,
                                 maxHeight: '80%'
                             }}>
-                                {/* 헤더 - 상태에 따라 다른 아이콘과 제목 */}
-                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-                                    <Text style={{ fontSize: 24, marginRight: 10 }}>
-                                        {needsReschedule ? '🚨' : '⚠️'}
-                                    </Text>
-                                    <Text style={{
-                                        fontSize: 18,
-                                        fontWeight: 'bold',
-                                        color: needsReschedule ? '#B91C1C' : COLORS.primaryMain
-                                    }}>
-                                        {needsReschedule ? '재조율 필요' : '겹치는 일정'}
-                                    </Text>
+                                {/* 헤더 - 상태에 따라 아이콘은 유지하되 색상은 보라색 테마로 통일 */}
+                                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        <Text style={{ fontSize: 22, marginRight: 8 }}>
+                                            {needsReschedule ? '🚨' : '⚠️'}
+                                        </Text>
+                                        <Text style={{
+                                            fontSize: 18,
+                                            fontWeight: 'bold',
+                                            color: COLORS.primaryMain // 항상 보라색
+                                        }}>
+                                            {needsReschedule ? '재조율 필요' : '겹치는 일정'}
+                                        </Text>
+                                    </View>
+                                    <TouchableOpacity onPress={() => setShowConflictPopup(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                                        <X size={24} color={COLORS.neutral400} />
+                                    </TouchableOpacity>
                                 </View>
 
-                                {/* needs_reschedule 상태일 때 추가 설명 */}
+                                {/* needs_reschedule 상태일 때 추가 설명 - 단순 텍스트로 변경 */}
                                 {needsReschedule && (
-                                    <View style={{
-                                        backgroundColor: '#FEE2E2',
-                                        borderRadius: 12,
-                                        padding: 14,
-                                        marginBottom: 16,
-                                        borderLeftWidth: 4,
-                                        borderLeftColor: '#EF4444'
-                                    }}>
-                                        <Text style={{ fontSize: 14, color: '#B91C1C', fontWeight: '600', marginBottom: 6 }}>
-                                            다른 일정이 확정되어 이 약속은 재조율이 필요합니다.
-                                        </Text>
-                                        <Text style={{ fontSize: 13, color: '#DC2626' }}>
-                                            아래 "시간/장소 변경하기" 버튼을 눌러 새로운 시간을 제안해주세요.
+                                    <View style={{ marginBottom: 16, paddingHorizontal: 4 }}>
+                                        <Text style={{ fontSize: 13, color: '#666', textAlign: 'center', lineHeight: 20, fontWeight: '500' }}>
+                                            다른 일정이 확정되어 재조율이 필요합니다.{'\n'}
+                                            아래 "재조율" 버튼을 눌러 새로운 시간을 제안해주세요.
                                         </Text>
                                     </View>
                                 )}
@@ -1956,34 +1992,56 @@ const A2AScreen = () => {
                                 {/* 충돌 일정 목록 */}
                                 {conflictingSessions.length > 0 && (
                                     <>
-                                        <Text style={{ fontSize: 13, color: COLORS.neutral500, marginBottom: 8 }}>
+                                        <Text style={{ fontSize: 13, color: COLORS.neutral500, marginBottom: 6 }}>
                                             {needsReschedule ? '확정된 일정:' : '같은 시간대 일정:'}
                                         </Text>
                                         <ScrollView style={{ maxHeight: 200 }}>
                                             {conflictingSessions.map((conflict: any, index: number) => (
-                                                <View
+                                                <TouchableOpacity
                                                     key={conflict.id || index}
+                                                    onPress={() => {
+                                                        const targetId = conflict.id || conflict.session_id;
+                                                        // logs 배열에서 해당 세션 찾기
+                                                        const targetSession = logs.find((log: any) => log.id === targetId);
+
+                                                        if (targetSession) {
+                                                            // 현재 팝업 닫기
+                                                            setShowConflictPopup(false);
+                                                            // 현재 상세 모달 닫기
+                                                            handleClose();
+                                                            // 약간의 딜레이 후 새 세션 상세 열기
+                                                            setTimeout(() => {
+                                                                handleLogClick(targetSession);
+                                                            }, 300);
+                                                        } else {
+                                                            // 목록에 없는 경우 (페이지네이션 등)
+                                                            Alert.alert("알림", "현재 목록에서 해당 일정을 찾을 수 없습니다.");
+                                                        }
+                                                    }}
                                                     style={{
-                                                        backgroundColor: needsReschedule ? '#FEF2F2' : COLORS.primaryBg,
+                                                        backgroundColor: COLORS.primaryBg, // 항상 보라색 배경
                                                         borderRadius: 12,
-                                                        padding: 14,
-                                                        marginBottom: 10,
+                                                        padding: 12,
+                                                        marginBottom: 8,
                                                         borderLeftWidth: 4,
-                                                        borderLeftColor: needsReschedule ? '#EF4444' : COLORS.primaryMain
+                                                        borderLeftColor: COLORS.primaryMain
                                                     }}
                                                 >
-                                                    <Text style={{ fontSize: 15, fontWeight: '600', color: '#333', marginBottom: 4 }}>
-                                                        {conflict.title || '일정'}
-                                                    </Text>
-                                                    <Text style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
+                                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 2 }}>
+                                                            {conflict.title || '일정'}
+                                                        </Text>
+                                                        <ChevronRight size={14} color={COLORS.primaryMain} />
+                                                    </View>
+                                                    <Text style={{ fontSize: 12, color: '#666', marginBottom: 2 }}>
                                                         🗓️ {conflict.date || conflict.time || '시간 정보 없음'}
                                                     </Text>
                                                     {conflict.participant_names?.length > 0 && (
-                                                        <Text style={{ fontSize: 12, color: '#888' }}>
+                                                        <Text style={{ fontSize: 11, color: '#888' }}>
                                                             👥 {conflict.participant_names.join(', ')}
                                                         </Text>
                                                     )}
-                                                </View>
+                                                </TouchableOpacity>
                                             ))}
                                         </ScrollView>
                                     </>
@@ -1991,26 +2049,31 @@ const A2AScreen = () => {
 
                                 {/* 충돌 목록이 없을 때 기본 메시지 */}
                                 {conflictingSessions.length === 0 && (
-                                    <Text style={{ fontSize: 14, color: COLORS.neutral500, textAlign: 'center', marginVertical: 20 }}>
+                                    <Text style={{ fontSize: 13, color: COLORS.neutral500, textAlign: 'center', marginVertical: 16 }}>
                                         {needsReschedule
                                             ? '같은 시간대에 다른 일정이 확정되었습니다.\n새로운 시간으로 재조율해주세요.'
                                             : '같은 시간대에 다른 협상이 진행 중입니다.'}
                                     </Text>
                                 )}
 
-                                {/* 확인 버튼 */}
+                                {/* 확인 및 재조율 버튼 */}
                                 <TouchableOpacity
-                                    onPress={() => setShowConflictPopup(false)}
+                                    onPress={() => {
+                                        setShowConflictPopup(false);
+                                        if (needsReschedule) {
+                                            handleRescheduleClick();
+                                        }
+                                    }}
                                     style={{
-                                        backgroundColor: needsReschedule ? '#DC2626' : COLORS.primaryMain,
+                                        backgroundColor: COLORS.primaryMain,
                                         borderRadius: 12,
-                                        paddingVertical: 14,
+                                        paddingVertical: 12,
                                         alignItems: 'center',
-                                        marginTop: 16
+                                        marginTop: 12
                                     }}
                                 >
                                     <Text style={{ color: 'white', fontWeight: '600', fontSize: 15 }}>
-                                        {needsReschedule ? '닫고 재조율하기' : '확인'}
+                                        {needsReschedule ? '재조율하기' : '확인'}
                                     </Text>
                                 </TouchableOpacity>
                             </View>
@@ -2327,6 +2390,19 @@ const styles = StyleSheet.create({
     attendeePlus: { backgroundColor: COLORS.neutral100, justifyContent: 'center', alignItems: 'center' },
     attendeePlusText: { fontSize: 9, fontWeight: 'bold', color: COLORS.neutral400 },
 
+    // 참여자 현황 스타일
+    participantStatusSection: { backgroundColor: '#F8F9FA', borderRadius: 12, padding: 12, marginVertical: 4, marginTop: 8 },
+    participantStatusTitle: { fontSize: 12, fontWeight: 'bold', color: COLORS.neutral600, marginBottom: 8 },
+    participantGroup: { backgroundColor: COLORS.white, borderRadius: 10, padding: 10, marginBottom: 6 },
+    participantGroupHeader: { flexDirection: 'row' as const, alignItems: 'center' as const, marginBottom: 6 },
+    participantGroupTitleApproved: { color: COLORS.primaryMain, fontWeight: '600' as const, marginLeft: 8, flex: 1, fontSize: 14 },
+    participantGroupTitlePending: { color: COLORS.neutral500, fontWeight: '600' as const, marginLeft: 8, flex: 1, fontSize: 14 },
+    participantCountBadge: { backgroundColor: COLORS.neutral100, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+    participantCountText: { fontSize: 12, fontWeight: '600' as const, color: COLORS.neutral600 },
+    participantAvatarRow: { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 6 },
+    approvedAvatar: { width: 32, height: 32, borderRadius: 8 },
+    pendingAvatar: { width: 32, height: 32, borderRadius: 8, opacity: 0.7 },
+    noParticipantText: { fontSize: 13, color: COLORS.neutral400, fontStyle: 'italic' as const },
     processCard: { padding: 12, backgroundColor: COLORS.white, borderRadius: 12, borderWidth: 1, borderColor: COLORS.neutral100, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4 },
     processHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     processTitle: { fontSize: 11, fontWeight: 'bold', color: COLORS.neutral500 },
