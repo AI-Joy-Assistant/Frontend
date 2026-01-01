@@ -12,8 +12,14 @@ import {
     ActivityIndicator,
     ScrollView,
     Platform,
-    Alert
+    Alert,
+    LayoutAnimation,
+    UIManager
 } from 'react-native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+    UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import {
     CheckCircle2,
     Clock,
@@ -619,7 +625,16 @@ const A2AScreen = () => {
 
                 {/* 시작시간 토글 */}
                 <TouchableOpacity
-                    onPress={() => setStartTimeExpanded(!startTimeExpanded)}
+                    onPress={() => {
+                        // [FIX] 더 부드러운 슬라이드 애니메이션 설정
+                        LayoutAnimation.configureNext({
+                            duration: 300,
+                            create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+                            update: { type: LayoutAnimation.Types.easeInEaseOut },
+                            delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity }
+                        });
+                        setStartTimeExpanded(!startTimeExpanded);
+                    }}
                     style={{
                         flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
                         padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginBottom: 4,
@@ -642,13 +657,42 @@ const A2AScreen = () => {
                             newDate.setMonth(newDate.getMonth() + (dir === 'prev' ? -1 : 1));
                             setStartMonth(newDate);
                         })}
-                        {startDate && renderTimeButtons(startTime, setStartTime, startDate, startPeriod, setStartPeriod)}
+                        {startDate && renderTimeButtons(
+                            startTime,
+                            (time) => {
+                                setStartTime(time);
+                                // 시간 선택 시 자동으로 시작시간 닫고 종료시간 열기
+                                setTimeout(() => {
+                                    // [FIX] 커스텀 애니메이션 적용
+                                    LayoutAnimation.configureNext({
+                                        duration: 300,
+                                        create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+                                        update: { type: LayoutAnimation.Types.easeInEaseOut },
+                                        delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity }
+                                    });
+                                    setStartTimeExpanded(false);
+                                    setEndTimeExpanded(true);
+                                }, 150);
+                            },
+                            startDate,
+                            startPeriod,
+                            setStartPeriod
+                        )}
                     </View>
                 )}
 
                 {/* 종료시간 토글 */}
                 <TouchableOpacity
-                    onPress={() => setEndTimeExpanded(!endTimeExpanded)}
+                    onPress={() => {
+                        // [FIX] 커스텀 애니메이션 적용
+                        LayoutAnimation.configureNext({
+                            duration: 300,
+                            create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+                            update: { type: LayoutAnimation.Types.easeInEaseOut },
+                            delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity }
+                        });
+                        setEndTimeExpanded(!endTimeExpanded);
+                    }}
                     style={{
                         flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
                         padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginBottom: 4,

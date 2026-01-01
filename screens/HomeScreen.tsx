@@ -35,6 +35,7 @@ import {
   Check,
   Trash2,
   AlertCircle,
+  AlertTriangle,
   Star
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -459,13 +460,78 @@ export default function HomeScreen() {
         };
       });
 
-      setSchedules(mappedSchedules);
+      // 충돌(중복) 감지 로직
+      const schedulesWithConflicts = detectScheduleConflicts(mappedSchedules);
+      setSchedules(schedulesWithConflicts);
     } catch (error) {
       console.error('Failed to fetch schedules:', error);
-      // Alert.alert('Error', 'Failed to load schedules'); // Optional: Suppress initial load errors
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // 시간 겹침 감지 함수
+  const detectScheduleConflicts = (schedules: ScheduleItem[]): ScheduleItem[] => {
+    // 시간 문자열을 분으로 변환 (예: "18:00" -> 1080)
+    const parseTimeToMinutes = (timeStr: string): number => {
+      if (!timeStr || timeStr === '종일') return -1;
+      const match = timeStr.match(/(\d{1,2}):(\d{2})/);
+      if (!match) return -1;
+      return parseInt(match[1]) * 60 + parseInt(match[2]);
+    };
+
+    return schedules.map(schedule => {
+      // 종일 일정은 충돌 체크 제외
+      if (schedule.time === '종일' || schedule.time.includes('종일')) {
+        return { ...schedule, hasConflict: false, conflictWith: [] };
+      }
+
+      // 시간 범위 파싱 ("18:00 - 20:00")
+      const timeParts = schedule.time.split(' - ');
+      if (timeParts.length !== 2) {
+        return { ...schedule, hasConflict: false, conflictWith: [] };
+      }
+
+      const startMins = parseTimeToMinutes(timeParts[0]);
+      const endMins = parseTimeToMinutes(timeParts[1]);
+      if (startMins === -1 || endMins === -1) {
+        return { ...schedule, hasConflict: false, conflictWith: [] };
+      }
+
+      // A2A 일정끼리 겹치는 경우만 감지 (일반 일정은 무시)
+      const conflicts = schedules.filter(other => {
+        if (other.id === schedule.id) return false;
+        if (schedule.type !== 'A2A') return false;  // 현재 일정이 A2A가 아니면 충돌 체크 안함
+        if (other.type !== 'A2A') return false;     // 상대 일정이 A2A가 아니면 충돌 체크 안함
+        if (other.time === '종일' || other.time.includes('종일')) return false;
+
+        // 같은 날짜인지 확인 (멀티데이 일정 고려)
+        const scheduleStart = schedule.date;
+        const scheduleEnd = schedule.endDate || schedule.date;
+        const otherStart = other.date;
+        const otherEnd = other.endDate || other.date;
+
+        // 날짜 범위가 겹치는지 확인
+        if (scheduleEnd < otherStart || otherEnd < scheduleStart) return false;
+
+        // 시간 범위 파싱
+        const otherTimeParts = other.time.split(' - ');
+        if (otherTimeParts.length !== 2) return false;
+
+        const otherStartMins = parseTimeToMinutes(otherTimeParts[0]);
+        const otherEndMins = parseTimeToMinutes(otherTimeParts[1]);
+        if (otherStartMins === -1 || otherEndMins === -1) return false;
+
+        // 시간 겹침 조건: (start1 < end2) && (start2 < end1)
+        return startMins < otherEndMins && otherStartMins < endMins;
+      });
+
+      return {
+        ...schedule,
+        hasConflict: conflicts.length > 0,
+        conflictWith: conflicts.map(c => c.id)
+      };
+    });
   };
 
   useEffect(() => {
@@ -876,10 +942,17 @@ export default function HomeScreen() {
                             {events.slice(0, 3).map((evt, i) => (
                               <View key={i} style={[
                                 styles.dot,
-                                { backgroundColor: getScheduleColor(evt).bg }
+                                { backgroundColor: getScheduleColor(evt).bg },
+                                evt.hasConflict && evt.type === 'A2A' && { backgroundColor: '#EF4444' }  // A2A 충돌 시 빨간색
                               ]} />
                             ))}
                             {events.length > 3 && <View style={[styles.dot, { backgroundColor: COLORS.neutral300 }]} />}
+                            {/* A2A 일정 중 충돌 있는 날짜에 경고 표시 */}
+                            {events.some(e => e.hasConflict && e.type === 'A2A') && (
+                              <View style={styles.conflictDot}>
+                                <AlertTriangle size={10} color="#EF4444" />
+                              </View>
+                            )}
                           </View>
                         )}
 
@@ -972,12 +1045,20 @@ export default function HomeScreen() {
                       ]}
                     >
                       <View style={styles.scheduleCardHeader}>
-                        <Text style={styles.scheduleTitle}>{schedule.title}</Text>
-                        {schedule.type === 'A2A' && (
-                          <View style={styles.a2aBadge}>
-                            <Text style={styles.a2aBadgeText}>A2A</Text>
-                          </View>
-                        )}
+                        <Text style={[styles.scheduleTitle, { flex: 1 }]}>{schedule.title}</Text>
+                        <View style={styles.badgesContainer}>
+                          {schedule.hasConflict && schedule.type === 'A2A' && (
+                            <View style={styles.conflictBadge}>
+                              <AlertTriangle size={10} color="#EF4444" />
+                              <Text style={styles.conflictBadgeText}>중복</Text>
+                            </View>
+                          )}
+                          {schedule.type === 'A2A' && (
+                            <View style={styles.a2aBadge}>
+                              <Text style={styles.a2aBadgeText}>A2A</Text>
+                            </View>
+                          )}
+                        </View>
                       </View>
 
                       <View style={styles.scheduleInfo}>
@@ -1648,6 +1729,24 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
   },
+  conflictDot: {
+    marginLeft: 2,
+  },
+  conflictBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 8,
+  },
+  conflictBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#EF4444',
+    marginLeft: 2,
+  },
   barsContainer: {
     width: '100%',
     paddingHorizontal: 2,
@@ -1735,6 +1834,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
+  },
+  badgesContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   scheduleTitle: {
     fontSize: 16,
