@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -1224,7 +1224,7 @@ const A2AScreen = () => {
                     <ActivityIndicator size="large" color={COLORS.primaryDark} style={{ marginTop: 20 }} />
                 ) : (
                     <FlatList
-                        data={logs}
+                        data={logs}  // 백엔드에서 이미 과거 일정 필터링됨
                         renderItem={renderLogItem}
                         keyExtractor={item => item.id}
                         contentContainerStyle={styles.listContent}
