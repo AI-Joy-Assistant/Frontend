@@ -1938,12 +1938,22 @@ const A2AScreen = () => {
                         const needsReschedule = status === 'needs_reschedule';
                         const rawSessions = (selectedLog?.details as any)?.conflicting_sessions || [];
 
-                        // [FIX] 중복된 "확정된 일정" 카드 필터링
-                        // 구체적인 정보(참여자 등)가 있는 카드가 별도로 존재하면, 단순 "확정된 일정" 카드는 숨김
-                        const conflictingSessions = rawSessions.filter((s: any) => {
-                            if (rawSessions.length <= 1) return true;
+                        // [FIX] 중복된 카드 필터링 (ID 기반 + 제목 기반)
+                        // 1. 먼저 ID 기반으로 중복 제거
+                        const seenIds = new Set<string>();
+                        const uniqueSessions = rawSessions.filter((s: any) => {
+                            const sessionId = s.id || s.session_id;
+                            if (!sessionId) return true; // ID가 없으면 일단 포함
+                            if (seenIds.has(sessionId)) return false; // 이미 본 ID면 제외
+                            seenIds.add(sessionId);
+                            return true;
+                        });
+
+                        // 2. "확정된 일정" 기본 제목 카드 필터링
+                        const conflictingSessions = uniqueSessions.filter((s: any) => {
+                            if (uniqueSessions.length <= 1) return true;
                             if (s.title === "확정된 일정" && (!s.participant_names || s.participant_names.length === 0)) {
-                                const hasSpecific = rawSessions.some((other: any) =>
+                                const hasSpecific = uniqueSessions.some((other: any) =>
                                     other !== s && (other.title !== "확정된 일정" || (other.participant_names && other.participant_names.length > 0))
                                 );
                                 return !hasSpecific;
