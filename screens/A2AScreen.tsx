@@ -44,7 +44,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList, A2ALog, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
-import { API_BASE, WS_BASE } from '../constants/config';
+import { API_BASE } from '../constants/config';
+import WebSocketService from '../services/WebSocketService';
 
 // Colors based on the provided React/Tailwind code
 const COLORS = {
@@ -918,95 +919,60 @@ const A2AScreen = () => {
         }
     }, [currentUserId, fetchA2ALogs]);
 
-    // WebSocket for real-time A2A updates
-    const wsRef = useRef<WebSocket | null>(null);
-
+    // WebSocket for real-time A2A updates (using singleton service)
     useEffect(() => {
         if (!currentUserId) return;
 
-        const connectWebSocket = () => {
-            try {
-                const ws = new WebSocket(`${WS_BASE}/ws/${currentUserId}`);
+        // 싱글톤 서비스 연결 (이미 연결되어 있으면 스킵)
+        WebSocketService.connect(currentUserId);
 
-                ws.onopen = () => {
-                    console.log("[WS:A2A] 연결 성공");
-                };
+        // A2AScreen에서 필요한 메시지 구독
+        const unsubscribe = WebSocketService.subscribe(
+            'A2AScreen',
+            ['a2a_request', 'a2a_rejected', 'a2a_message', 'a2a_status_changed'],
+            async (data) => {
+                if (data.type === "a2a_request") {
+                    console.log("[WS:A2A] 새 A2A 요청:", data.from_user);
+                    fetchA2ALogs(false);
+                } else if (data.type === "a2a_rejected") {
+                    console.log("[WS:A2A] 거절 알림:", data.rejected_by_name);
+                    fetchA2ALogs(false);
+                } else if (data.type === "a2a_message") {
+                    console.log("[WS:A2A] 새 협상 메시지:", data.sender_name, data.message);
+                    fetchA2ALogs(false);
 
-                ws.onmessage = (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-                        console.log("[WS:A2A] 메시지 수신:", data.type);
-
-                        if (data.type === "a2a_request") {
-                            // A2A 요청 도착 - 카드 목록 즉시 새로고침
-                            console.log("[WS:A2A] 새 A2A 요청:", data.from_user);
-                            fetchA2ALogs(false);
-                        } else if (data.type === "a2a_rejected") {
-                            // 거절 알림 도착 - 카드 목록 즉시 새로고침
-                            console.log("[WS:A2A] 거절 알림:", data.rejected_by_name);
-                            fetchA2ALogs(false);
-                        } else if (data.type === "a2a_message") {
-                            // 새 협상 메시지 도착 - 로그 새로고침 (실시간 협상 과정 보기)
-                            console.log("[WS:A2A] 새 협상 메시지:", data.sender_name, data.message);
-                            fetchA2ALogs(false);
-
-                            // [실시간 업데이트] 열린 모달의 세부 정보도 새로고침 (useRef로 최신 값 참조)
-                            const currentLog = selectedLogRef.current;
-                            if (currentLog && data.session_id === currentLog.id) {
-                                console.log("[WS:A2A] 열린 모달 세부 정보 새로고침:", currentLog.id);
-                                (async () => {
-                                    try {
-                                        const token = await AsyncStorage.getItem('accessToken');
-                                        const res = await fetch(`${API_BASE}/a2a/session/${currentLog.id}`, {
-                                            headers: { 'Authorization': `Bearer ${token}` },
-                                        });
-                                        if (res.ok) {
-                                            const detailData = await res.json();
-                                            const updatedLog = {
-                                                ...currentLog,
-                                                status: detailData.status || currentLog.status,
-                                                details: { ...(currentLog.details || {}), ...detailData.details }
-                                            };
-                                            setSelectedLog(updatedLog);
-                                            selectedLogRef.current = updatedLog;  // ref도 업데이트
-                                        }
-                                    } catch (e) {
-                                        console.error("[WS:A2A] 모달 새로고침 실패:", e);
-                                    }
-                                })();
+                    // [실시간 업데이트] 열린 모달의 세부 정보도 새로고침
+                    const currentLog = selectedLogRef.current;
+                    if (currentLog && data.session_id === currentLog.id) {
+                        console.log("[WS:A2A] 열린 모달 세부 정보 새로고침:", currentLog.id);
+                        try {
+                            const token = await AsyncStorage.getItem('accessToken');
+                            const res = await fetch(`${API_BASE}/a2a/session/${currentLog.id}`, {
+                                headers: { 'Authorization': `Bearer ${token}` },
+                            });
+                            if (res.ok) {
+                                const detailData = await res.json();
+                                const updatedLog = {
+                                    ...currentLog,
+                                    status: detailData.status || currentLog.status,
+                                    details: { ...(currentLog.details || {}), ...detailData.details }
+                                };
+                                setSelectedLog(updatedLog);
+                                selectedLogRef.current = updatedLog;
                             }
-                        } else if (data.type === "a2a_status_changed") {
-                            // 협상 상태 변경 - 로그 새로고침 및 버튼 활성화
-                            console.log("[WS:A2A] 상태 변경:", data.new_status);
-                            fetchA2ALogs(false);
+                        } catch (e) {
+                            console.error("[WS:A2A] 모달 새로고침 실패:", e);
                         }
-                    } catch (e) {
-                        console.error("[WS:A2A] 메시지 파싱 오류:", e);
                     }
-                };
-
-                ws.onerror = (error) => {
-                    console.error("[WS:A2A] 오류:", error);
-                };
-
-                ws.onclose = () => {
-                    console.log("[WS:A2A] 연결 종료, 5초 후 재연결 시도");
-                    setTimeout(connectWebSocket, 5000);
-                };
-
-                wsRef.current = ws;
-            } catch (e) {
-                console.error("[WS:A2A] 연결 실패:", e);
+                } else if (data.type === "a2a_status_changed") {
+                    console.log("[WS:A2A] 상태 변경:", data.new_status);
+                    fetchA2ALogs(false);
+                }
             }
-        };
-
-        connectWebSocket();
+        );
 
         return () => {
-            if (wsRef.current) {
-                wsRef.current.close();
-                wsRef.current = null;
-            }
+            unsubscribe();
         };
     }, [currentUserId]);
 

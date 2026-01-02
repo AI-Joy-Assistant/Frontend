@@ -25,7 +25,8 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList, Tab } from "../types";
 import BottomNav from "../components/BottomNav";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { API_BASE, WS_BASE } from "../constants/config";
+import { API_BASE } from "../constants/config";
+import WebSocketService from "../services/WebSocketService";
 import { badgeStore } from "../store/badgeStore";
 
 import { LinearGradient } from "expo-linear-gradient";
@@ -136,7 +137,6 @@ export default function ChatScreen() {
   const isAtBottom = useRef(true);
   const messagesEndRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
-  const wsRef = useRef<WebSocket | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
 
   // --- Helpers ---
@@ -725,64 +725,33 @@ export default function ChatScreen() {
     }, []) // 의존성 배열 비움 - 화면 포커스 시 1회만 실행
   );
 
-  // WebSocket 연결 (userId가 있을 때)
+  // WebSocket 연결 (using singleton service)
   useEffect(() => {
     if (!userId) return;
 
-    const connectWebSocket = () => {
-      try {
-        const ws = new WebSocket(`${WS_BASE}/ws/${userId}`);
+    // 싱글톤 서비스 연결 (이미 연결되어 있으면 스킵)
+    WebSocketService.connect(userId);
 
-        ws.onopen = () => {
-          console.log("[WS] 연결 성공");
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            console.log("[WS] 메시지 수신:", data.type);
-
-            if (data.type === "new_message") {
-              // 새 메시지 도착 시 히스토리 새로고침
-              loadChatHistory(false);
-              // 스크롤 맨 아래로
-              setTimeout(() => {
-                messagesEndRef.current?.scrollToEnd({ animated: true });
-              }, 100);
-            } else if (data.type === "a2a_request") {
-              // A2A 요청 도착 - 화면 새로고침
-              console.log("[WS] A2A 요청 도착:", data.from_user);
-              loadChatHistory(false);
-              fetchSessions();  // 세션 목록도 새로고침
-            }
-          } catch (e) {
-            console.error("[WS] 메시지 파싱 오류:", e);
-          }
-        };
-
-        ws.onerror = (error) => {
-          console.error("[WS] 오류:", error);
-        };
-
-        ws.onclose = () => {
-          console.log("[WS] 연결 종료, 5초 후 재연결 시도");
-          // 5초 후 재연결 시도
-          setTimeout(connectWebSocket, 5000);
-        };
-
-        wsRef.current = ws;
-      } catch (e) {
-        console.error("[WS] 연결 실패:", e);
+    // ChatScreen에서 필요한 메시지 구독
+    const unsubscribe = WebSocketService.subscribe(
+      'ChatScreen',
+      ['new_message', 'a2a_request'],
+      (data) => {
+        if (data.type === "new_message") {
+          loadChatHistory(false);
+          setTimeout(() => {
+            messagesEndRef.current?.scrollToEnd({ animated: true });
+          }, 100);
+        } else if (data.type === "a2a_request") {
+          console.log("[WS] A2A 요청 도착:", data.from_user);
+          loadChatHistory(false);
+          fetchSessions();
+        }
       }
-    };
-
-    connectWebSocket();
+    );
 
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
+      unsubscribe();
     };
   }, [userId]);
 

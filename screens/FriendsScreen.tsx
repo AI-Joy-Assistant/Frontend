@@ -3,7 +3,7 @@ import { UserPlus, Check, X } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Alert,
   FlatList,
@@ -25,7 +25,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
 import { getBackendUrl } from '../utils/environment';
-import { WS_BASE } from '../constants/config';
+import WebSocketService from '../services/WebSocketService';
 
 // Colors
 const COLORS = {
@@ -174,8 +174,6 @@ const FriendsScreen = () => {
     }, [])
   );
 
-  // WebSocket for real-time friend request notifications
-  const wsRef = useRef<WebSocket | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -197,58 +195,30 @@ const FriendsScreen = () => {
     fetchUserId();
   }, []);
 
+  // WebSocket for real-time friend request notifications (using singleton service)
   useEffect(() => {
     if (!currentUserId) return;
 
-    const connectWebSocket = () => {
-      try {
-        const ws = new WebSocket(`${WS_BASE}/ws/${currentUserId}`);
+    // 싱글톤 서비스 연결 (이미 연결되어 있으면 스킵)
+    WebSocketService.connect(currentUserId);
 
-        ws.onopen = () => {
-          console.log("[WS:Friends] 연결 성공");
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            console.log("[WS:Friends] 메시지 수신:", data.type);
-
-            if (data.type === "friend_request") {
-              // 친구 요청 도착 - 즉시 새로고침
-              console.log("[WS:Friends] 친구 요청 도착:", data.from_user_name);
-              fetchFriendRequests();
-            } else if (data.type === "friend_accepted") {
-              // 친구 수락 알림 - 친구 목록 새로고침
-              console.log("[WS:Friends] 친구 수락 알림");
-              fetchFriends();
-            }
-          } catch (e) {
-            console.error("[WS:Friends] 메시지 파싱 오류:", e);
-          }
-        };
-
-        ws.onerror = (error) => {
-          console.error("[WS:Friends] 오류:", error);
-        };
-
-        ws.onclose = () => {
-          console.log("[WS:Friends] 연결 종료, 5초 후 재연결 시도");
-          setTimeout(connectWebSocket, 5000);
-        };
-
-        wsRef.current = ws;
-      } catch (e) {
-        console.error("[WS:Friends] 연결 실패:", e);
+    // FriendsScreen에서 필요한 메시지 구독
+    const unsubscribe = WebSocketService.subscribe(
+      'FriendsScreen',
+      ['friend_request', 'friend_accepted'],
+      (data) => {
+        if (data.type === "friend_request") {
+          console.log("[WS:Friends] 친구 요청 도착:", data.from_user_name);
+          fetchFriendRequests();
+        } else if (data.type === "friend_accepted") {
+          console.log("[WS:Friends] 친구 수락 알림");
+          fetchFriends();
+        }
       }
-    };
-
-    connectWebSocket();
+    );
 
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
+      unsubscribe();
     };
   }, [currentUserId]);
 

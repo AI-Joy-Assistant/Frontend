@@ -54,7 +54,8 @@ import { calendarService } from '../services/calendarService';
 import { CreateEventRequest } from '../types/calendar';
 import DatePickerModal from '../components/DatePickerModal';
 import TimePickerModal from '../components/TimePickerModal';
-import { API_BASE, WS_BASE } from '../constants/config';
+import { API_BASE } from '../constants/config';
+import WebSocketService from '../services/WebSocketService';
 import NotificationPanel from '../components/NotificationPanel';
 import { badgeStore } from '../store/badgeStore';
 
@@ -267,58 +268,26 @@ export default function HomeScreen() {
     }, [])
   );
 
-  // WebSocket for real-time A2A notifications
-  const wsRef = useRef<WebSocket | null>(null);
-
+  // WebSocket for real-time A2A notifications (using singleton service)
   useEffect(() => {
     if (!currentUserId) return;
 
-    const connectWebSocket = () => {
-      try {
-        const ws = new WebSocket(`${WS_BASE}/ws/${currentUserId}`);
+    // 싱글톤 서비스 연결 (이미 연결되어 있으면 스킵)
+    WebSocketService.connect(currentUserId);
 
-        ws.onopen = () => {
-          console.log("[WS:Home] 연결 성공");
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            console.log("[WS:Home] 메시지 수신:", data.type);
-
-            if (data.type === "a2a_request") {
-              // A2A 요청 도착 - 즉시 새로고침
-              console.log("[WS:Home] A2A 요청 도착:", data.from_user);
-              fetchPendingRequests();
-              fetchNotifications();
-            }
-          } catch (e) {
-            console.error("[WS:Home] 메시지 파싱 오류:", e);
-          }
-        };
-
-        ws.onerror = (error) => {
-          console.error("[WS:Home] 오류:", error);
-        };
-
-        ws.onclose = () => {
-          console.log("[WS:Home] 연결 종료, 5초 후 재연결 시도");
-          setTimeout(connectWebSocket, 5000);
-        };
-
-        wsRef.current = ws;
-      } catch (e) {
-        console.error("[WS:Home] 연결 실패:", e);
+    // HomeScreen에서 필요한 메시지만 구독
+    const unsubscribe = WebSocketService.subscribe(
+      'HomeScreen',
+      ['a2a_request'],
+      (data) => {
+        console.log("[WS:Home] A2A 요청 도착:", data.from_user);
+        fetchPendingRequests();
+        fetchNotifications();
       }
-    };
-
-    connectWebSocket();
+    );
 
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
+      unsubscribe();
     };
   }, [currentUserId]);
 
