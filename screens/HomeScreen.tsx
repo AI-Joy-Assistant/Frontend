@@ -11,7 +11,9 @@ import {
   Platform,
   TouchableWithoutFeedback,
   Alert,
-  Switch
+  Switch,
+  FlatList,
+  Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -36,7 +38,11 @@ import {
   Trash2,
   AlertCircle,
   AlertTriangle,
-  Star
+  Star,
+  MapPin,
+  Users,
+  Search,
+  UserPlus
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { ScheduleItem } from '../types/schedule';
@@ -68,6 +74,18 @@ interface PendingRequest {
   created_at: string;
   reschedule_requested_at?: string; // 재조율 요청 시간
   type?: 'new' | 'reschedule';
+}
+
+// 친구 타입 정의 (ChatScreen과 동일)
+interface Friend {
+  id: string;
+  friend: {
+    id: string;
+    name: string;
+    email: string;
+    picture?: string;
+  };
+  created_at: string;
 }
 
 type CalendarViewMode = 'CONDENSED' | 'STACKED' | 'DETAILED';
@@ -281,6 +299,14 @@ export default function HomeScreen() {
   const [formStartTime, setFormStartTime] = useState('');
   const [formEndTime, setFormEndTime] = useState('');
   const [isAllDay, setIsAllDay] = useState(false);
+
+  // Participant & Location State (A2A Integration)
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
+  const [showFriendPicker, setShowFriendPicker] = useState(false);
+  const [friendSearchQuery, setFriendSearchQuery] = useState('');
+  const [formLocation, setFormLocation] = useState('');
+  const [isSubmittingA2A, setIsSubmittingA2A] = useState(false);
 
   // Date/Time Picker State
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
@@ -627,6 +653,47 @@ export default function HomeScreen() {
     }
   };
 
+  // 친구 목록 불러오기
+  const fetchFriends = async () => {
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) return;
+
+      const response = await fetch(`${API_BASE}/friends/list`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setFriends(data.friends || []);
+      }
+    } catch (error) {
+      console.error('Error fetching friends:', error);
+    }
+  };
+
+  // 친구 선택 토글
+  const toggleFriendSelection = (friendUserId: string) => {
+    setSelectedFriendIds(prev => {
+      if (prev.includes(friendUserId)) {
+        return prev.filter(id => id !== friendUserId);
+      } else {
+        return [...prev, friendUserId];
+      }
+    });
+  };
+
+  // 선택된 친구 정보 가져오기
+  const getSelectedFriends = () => {
+    return friends.filter(f => selectedFriendIds.includes(f.friend.id));
+  };
+
+  // 친구 검색 필터
+  const filteredFriends = friends.filter(f =>
+    f.friend.name.toLowerCase().includes(friendSearchQuery.toLowerCase()) ||
+    f.friend.email.toLowerCase().includes(friendSearchQuery.toLowerCase())
+  );
+
   const handleOpenAddSchedule = () => {
     setEditingScheduleId(null);
     setFormTitle('');
@@ -636,6 +703,12 @@ export default function HomeScreen() {
     setFormEndTime('10:00');
     setIsAllDay(false);
     setShowDeleteConfirm(false);
+    // 참여자 및 장소 초기화
+    setSelectedFriendIds([]);
+    setFormLocation('');
+    setFriendSearchQuery('');
+    // 친구 목록 새로고침
+    fetchFriends();
     setShowScheduleModal(true);
   };
 
@@ -674,6 +747,10 @@ export default function HomeScreen() {
   };
 
   const handleSaveSchedule = async () => {
+    console.log('[HomeScreen Debug] handleSaveSchedule called!');
+    console.log('[HomeScreen Debug] selectedFriendIds:', selectedFriendIds);
+    console.log('[HomeScreen Debug] formTitle:', formTitle);
+
     // 웹/모바일 모두 지원하는 alert 함수
     const showAlert = (title: string, message: string) => {
       if (Platform.OS === 'web') {
@@ -707,6 +784,108 @@ export default function HomeScreen() {
       }
     }
 
+    // 참여자가 있으면 A2A 요청으로 처리
+    if (selectedFriendIds.length > 0) {
+      try {
+        setIsSubmittingA2A(true);
+        const token = await AsyncStorage.getItem('accessToken');
+        if (!token) {
+          showAlert('오류', '로그인이 필요합니다.');
+          return;
+        }
+
+        // 날짜/시간 문자열 생성
+        const dateStr = formStartDate; // YYYY-MM-DD
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const formattedDate = `${month}월 ${day}일`;
+
+        let dateRangeStr = formattedDate;
+        if (formEndDate && formEndDate !== formStartDate) {
+          const [eYear, eMonth, eDay] = formEndDate.split('-').map(Number);
+          dateRangeStr = `${formattedDate}부터 ${eMonth}월 ${eDay}일까지`;
+        }
+
+        const timeStr = isAllDay ? '종일' : `${formStartTime}`;
+        const locationStr = formLocation ? ` ${formLocation}에서` : '';
+
+        // A2A 요청 메시지 생성
+        const scheduleMessage = `${dateRangeStr} ${timeStr}에${locationStr} "${formTitle}" 일정 잡아줘`;
+
+        console.log('[HomeScreen A2A Debug] Sending request:', {
+          message: scheduleMessage,
+          date: formStartDate,
+          selected_friends: selectedFriendIds,
+        });
+
+        const response = await fetch(`${API_BASE}/chat/chat`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: scheduleMessage,
+            date: formStartDate,
+            selected_friends: selectedFriendIds,
+            title: formTitle,  // 제목 별도 전달
+            location: formLocation || undefined,  // 장소 별도 전달
+          }),
+        });
+
+        console.log('[HomeScreen A2A Debug] Response status:', response.status);
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log('[HomeScreen A2A Debug] Full response data:', JSON.stringify(data, null, 2));
+
+          const responseData = data.data || data;
+
+          // 성공 처리
+          setShowScheduleModal(false);
+
+          // A2A 세션이 생성되었으면 A2A 화면으로 이동
+          const scheduleInfo = responseData.schedule_info;
+          console.log('[HomeScreen A2A Debug] Schedule info:', scheduleInfo);
+
+          if (scheduleInfo?.session_ids?.length > 0) {
+            const sessionId = scheduleInfo.session_ids[0];
+            // 성공 피드백 후 A2A 화면으로 이동
+            if (Platform.OS === 'web') {
+              window.alert('일정 요청이 전송되었습니다! A2A 화면에서 확인하세요.');
+            } else {
+              Alert.alert(
+                '일정 요청 완료',
+                '참여자들에게 일정 요청이 전송되었습니다.',
+                [
+                  { text: '확인', onPress: () => navigation.navigate('A2A', { initialLogId: sessionId }) }
+                ]
+              );
+            }
+          } else {
+            // scheduleInfo가 없거나 session_ids가 없어도 요청이 성공했으면 알림
+            console.log('[HomeScreen A2A Debug] No session_ids in response, but request succeeded');
+            showAlert('완료', '일정 요청이 전송되었습니다. A2A 화면에서 확인해주세요.');
+          }
+
+          // 상태 초기화
+          setSelectedFriendIds([]);
+          setFormLocation('');
+          fetchSchedules();
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          console.log('[HomeScreen A2A Debug] Error response:', errorData);
+          showAlert('오류', errorData.detail || '일정 요청 전송에 실패했습니다.');
+        }
+      } catch (error) {
+        console.error('Failed to create A2A request:', error);
+        showAlert('오류', '일정 요청 전송에 실패했습니다.');
+      } finally {
+        setIsSubmittingA2A(false);
+      }
+      return;
+    }
+
+    // 참여자가 없으면 기존 일반 일정 저장 로직
     try {
       setIsLoading(true);
 
@@ -1207,162 +1386,242 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            <View style={styles.formContainer}>
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>제목</Text>
-                <TextInput
-                  style={styles.input}
-                  value={formTitle}
-                  onChangeText={setFormTitle}
-                  placeholder="일정 제목을 입력하세요"
-                  placeholderTextColor={COLORS.neutral400}
-                />
-              </View>
+            <ScrollView style={styles.formScrollView} showsVerticalScrollIndicator={false}>
+              <View style={styles.formContainer}>
+                {/* 참여자 선택 섹션 (새 일정 추가 시에만 표시) */}
+                {!editingScheduleId && (
+                  <View style={styles.formGroup}>
+                    <Text style={styles.label}>참여자 (선택)</Text>
+                    <TouchableOpacity
+                      style={styles.participantSelector}
+                      onPress={() => setShowFriendPicker(true)}
+                    >
+                      {selectedFriendIds.length > 0 ? (
+                        <View style={styles.selectedParticipantsRow}>
+                          {getSelectedFriends().slice(0, 4).map((f, idx) => (
+                            <View key={f.friend.id} style={[styles.participantChip, { marginLeft: idx > 0 ? -8 : 0 }]}>
+                              {f.friend.picture ? (
+                                <Image
+                                  source={{ uri: f.friend.picture }}
+                                  style={styles.participantAvatarImage}
+                                />
+                              ) : (
+                                <View style={[styles.participantAvatar, { backgroundColor: idx % 2 === 0 ? COLORS.primaryLight : COLORS.primaryMain }]}>
+                                  <Text style={styles.participantAvatarText}>{f.friend.name[0]}</Text>
+                                </View>
+                              )}
+                            </View>
+                          ))}
+                          {selectedFriendIds.length > 4 && (
+                            <View style={[styles.participantChip, { marginLeft: -8 }]}>
+                              <View style={[styles.participantAvatar, { backgroundColor: COLORS.neutral400 }]}>
+                                <Text style={styles.participantAvatarText}>+{selectedFriendIds.length - 4}</Text>
+                              </View>
+                            </View>
+                          )}
+                          <Text style={styles.participantCount}>{selectedFriendIds.length}명 선택됨</Text>
+                          <TouchableOpacity
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              setSelectedFriendIds([]);
+                            }}
+                            style={styles.clearParticipantsButton}
+                          >
+                            <X size={18} color={COLORS.neutral500} />
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <View style={styles.addParticipantRow}>
+                          <Users size={18} color={COLORS.neutral400} />
+                          <Text style={styles.placeholderText}>친구를 초대하여 일정을 조율하세요</Text>
+                          <UserPlus size={18} color={COLORS.primaryMain} style={{ marginLeft: 'auto' }} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
 
-              <View style={styles.row}>
-                <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-                  <Text style={styles.label}>시작 날짜</Text>
-                  <TouchableOpacity
-                    style={styles.iconInput}
-                    onPress={() => setShowStartDatePicker(true)}
-                  >
-                    <CalendarIcon size={18} color={COLORS.neutral700} />
-                    <Text style={styles.inputNoBorder}>{formStartDate || 'YYYY-MM-DD'}</Text>
-                  </TouchableOpacity>
-                  {Platform.OS === 'web' ? (
-                    <DatePickerModal
-                      visible={showStartDatePicker}
-                      onClose={() => setShowStartDatePicker(false)}
-                      onSelect={(date) => onStartDateChange(null, date)}
-                      initialDate={parseDate(formStartDate)}
-                    />
-                  ) : (
-                    showStartDatePicker && (
-                      <DateTimePicker
-                        value={parseDate(formStartDate)}
-                        mode="date"
-                        display="default"
-                        onChange={onStartDateChange}
-                      />
-                    )
-                  )}
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>제목</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formTitle}
+                    onChangeText={setFormTitle}
+                    placeholder="약속 제목을 입력하세요"
+                    placeholderTextColor={COLORS.neutral400}
+                  />
                 </View>
-                <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
-                  <Text style={styles.label}>종료 날짜 (선택)</Text>
-                  <TouchableOpacity
-                    style={styles.iconInput}
-                    onPress={() => setShowEndDatePicker(true)}
-                  >
-                    <CalendarIcon size={18} color={COLORS.neutral400} />
-                    <Text style={styles.inputNoBorder}>{formEndDate || 'YYYY-MM-DD'}</Text>
-                  </TouchableOpacity>
-                  {Platform.OS === 'web' ? (
-                    <DatePickerModal
-                      visible={showEndDatePicker}
-                      onClose={() => setShowEndDatePicker(false)}
-                      onSelect={(date) => onEndDateChange(null, date)}
-                      initialDate={parseDate(formEndDate)}
-                    />
-                  ) : (
-                    showEndDatePicker && (
-                      <DateTimePicker
-                        value={parseDate(formEndDate)}
-                        mode="date"
-                        display="default"
-                        onChange={onEndDateChange}
+
+                {/* 장소 입력 (참여자가 있을 때만 표시) */}
+                {selectedFriendIds.length > 0 && (
+                  <View style={styles.formGroup}>
+                    <Text style={styles.label}>장소 (선택)</Text>
+                    <View style={styles.iconInput}>
+                      <MapPin size={18} color={COLORS.neutral400} />
+                      <TextInput
+                        style={styles.locationInput}
+                        value={formLocation}
+                        onChangeText={setFormLocation}
+                        placeholder="만날 장소를 입력하세요"
+                        placeholderTextColor={COLORS.neutral400}
                       />
-                    )
-                  )}
-                </View>
-              </View>
+                    </View>
+                  </View>
+                )}
 
-              {/* All Day Toggle */}
-              <View style={styles.allDayRow}>
-                <Text style={styles.allDayLabel}>종일</Text>
-                <Switch
-                  value={isAllDay}
-                  onValueChange={setIsAllDay}
-                  trackColor={{ false: COLORS.neutral200, true: COLORS.primaryLight }}
-                  thumbColor={isAllDay ? COLORS.primaryMain : COLORS.neutral400}
-                />
-              </View>
-
-              {!isAllDay && (
                 <View style={styles.row}>
                   <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-                    <Text style={styles.label}>시작 시간</Text>
+                    <Text style={styles.label}>시작 날짜</Text>
                     <TouchableOpacity
                       style={styles.iconInput}
-                      onPress={() => setShowStartTimePicker(true)}
+                      onPress={() => setShowStartDatePicker(true)}
                     >
-                      <Clock size={18} color={COLORS.neutral700} />
-                      <Text style={styles.inputNoBorder}>{formStartTime || 'HH:MM'}</Text>
+                      <CalendarIcon size={18} color={COLORS.neutral700} />
+                      <Text style={styles.inputNoBorder}>{formStartDate || 'YYYY-MM-DD'}</Text>
                     </TouchableOpacity>
                     {Platform.OS === 'web' ? (
-                      <TimePickerModal
-                        visible={showStartTimePicker}
-                        onClose={() => setShowStartTimePicker(false)}
-                        onSelect={(date) => onStartTimeChange(null, date)}
-                        initialTime={parseTime(formStartTime)}
+                      <DatePickerModal
+                        visible={showStartDatePicker}
+                        onClose={() => setShowStartDatePicker(false)}
+                        onSelect={(date) => onStartDateChange(null, date)}
+                        initialDate={parseDate(formStartDate)}
                       />
                     ) : (
-                      showStartTimePicker && (
+                      showStartDatePicker && (
                         <DateTimePicker
-                          value={parseTime(formStartTime)}
-                          mode="time"
+                          value={parseDate(formStartDate)}
+                          mode="date"
                           display="default"
-                          onChange={onStartTimeChange}
-                          minuteInterval={1}
+                          onChange={onStartDateChange}
                         />
                       )
                     )}
                   </View>
                   <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
-                    <Text style={styles.label}>종료 시간</Text>
+                    <Text style={styles.label}>종료 날짜 (선택)</Text>
                     <TouchableOpacity
                       style={styles.iconInput}
-                      onPress={() => setShowEndTimePicker(true)}
+                      onPress={() => setShowEndDatePicker(true)}
                     >
-                      <Clock size={18} color={COLORS.neutral700} />
-                      <Text style={styles.inputNoBorder}>{formEndTime || 'HH:MM'}</Text>
+                      <CalendarIcon size={18} color={COLORS.neutral400} />
+                      <Text style={styles.inputNoBorder}>{formEndDate || 'YYYY-MM-DD'}</Text>
                     </TouchableOpacity>
                     {Platform.OS === 'web' ? (
-                      <TimePickerModal
-                        visible={showEndTimePicker}
-                        onClose={() => setShowEndTimePicker(false)}
-                        onSelect={(date) => onEndTimeChange(null, date)}
-                        initialTime={parseTime(formEndTime)}
+                      <DatePickerModal
+                        visible={showEndDatePicker}
+                        onClose={() => setShowEndDatePicker(false)}
+                        onSelect={(date) => onEndDateChange(null, date)}
+                        initialDate={parseDate(formEndDate)}
                       />
                     ) : (
-                      showEndTimePicker && (
+                      showEndDatePicker && (
                         <DateTimePicker
-                          value={parseTime(formEndTime)}
-                          mode="time"
+                          value={parseDate(formEndDate)}
+                          mode="date"
                           display="default"
-                          onChange={onEndTimeChange}
-                          minuteInterval={1}
+                          onChange={onEndDateChange}
                         />
                       )
                     )}
                   </View>
                 </View>
-              )}
 
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  onPress={() => setShowScheduleModal(false)}
-                  style={styles.cancelButton}
-                >
-                  <Text style={styles.cancelButtonText}>취소</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleSaveSchedule}
-                  style={styles.saveButton}
-                >
-                  <Text style={styles.saveButtonText}>{editingScheduleId ? '수정하기' : '추가하기'}</Text>
-                </TouchableOpacity>
+                {/* All Day Toggle */}
+                <View style={styles.allDayRow}>
+                  <Text style={styles.allDayLabel}>종일</Text>
+                  <Switch
+                    value={isAllDay}
+                    onValueChange={setIsAllDay}
+                    trackColor={{ false: COLORS.neutral200, true: COLORS.primaryLight }}
+                    thumbColor={isAllDay ? COLORS.primaryMain : COLORS.neutral400}
+                  />
+                </View>
+
+                {!isAllDay && (
+                  <View style={styles.row}>
+                    <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                      <Text style={styles.label}>시작 시간</Text>
+                      <TouchableOpacity
+                        style={styles.iconInput}
+                        onPress={() => setShowStartTimePicker(true)}
+                      >
+                        <Clock size={18} color={COLORS.neutral700} />
+                        <Text style={styles.inputNoBorder}>{formStartTime || 'HH:MM'}</Text>
+                      </TouchableOpacity>
+                      {Platform.OS === 'web' ? (
+                        <TimePickerModal
+                          visible={showStartTimePicker}
+                          onClose={() => setShowStartTimePicker(false)}
+                          onSelect={(date) => onStartTimeChange(null, date)}
+                          initialTime={parseTime(formStartTime)}
+                        />
+                      ) : (
+                        showStartTimePicker && (
+                          <DateTimePicker
+                            value={parseTime(formStartTime)}
+                            mode="time"
+                            display="default"
+                            onChange={onStartTimeChange}
+                            minuteInterval={1}
+                          />
+                        )
+                      )}
+                    </View>
+                    <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
+                      <Text style={styles.label}>종료 시간</Text>
+                      <TouchableOpacity
+                        style={styles.iconInput}
+                        onPress={() => setShowEndTimePicker(true)}
+                      >
+                        <Clock size={18} color={COLORS.neutral700} />
+                        <Text style={styles.inputNoBorder}>{formEndTime || 'HH:MM'}</Text>
+                      </TouchableOpacity>
+                      {Platform.OS === 'web' ? (
+                        <TimePickerModal
+                          visible={showEndTimePicker}
+                          onClose={() => setShowEndTimePicker(false)}
+                          onSelect={(date) => onEndTimeChange(null, date)}
+                          initialTime={parseTime(formEndTime)}
+                        />
+                      ) : (
+                        showEndTimePicker && (
+                          <DateTimePicker
+                            value={parseTime(formEndTime)}
+                            mode="time"
+                            display="default"
+                            onChange={onEndTimeChange}
+                            minuteInterval={1}
+                          />
+                        )
+                      )}
+                    </View>
+                  </View>
+                )}
+
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    onPress={() => setShowScheduleModal(false)}
+                    style={styles.cancelButton}
+                  >
+                    <Text style={styles.cancelButtonText}>취소</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleSaveSchedule}
+                    style={[
+                      styles.saveButton,
+                      selectedFriendIds.length > 0 && styles.a2aSaveButton
+                    ]}
+                    disabled={isSubmittingA2A}
+                  >
+                    <Text style={styles.saveButtonText}>
+                      {isSubmittingA2A ? '요청 중...' :
+                        editingScheduleId ? '수정하기' :
+                          selectedFriendIds.length > 0 ? '일정 요청하기 ✨' : '추가하기'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1506,8 +1765,93 @@ export default function HomeScreen() {
         onDismissNotification={onDismissNotification}
       />
 
+      {/* Friend Picker Modal */}
+      <Modal
+        visible={showFriendPicker}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowFriendPicker(false)}
+      >
+        <View style={styles.friendPickerOverlay}>
+          <View style={styles.friendPickerContainer}>
+            <View style={styles.friendPickerHeader}>
+              <Text style={styles.friendPickerTitle}>참여자 선택</Text>
+              <TouchableOpacity onPress={() => setShowFriendPicker(false)}>
+                <X size={24} color={COLORS.neutral400} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.friendSearchContainer}>
+              <Search size={18} color={COLORS.neutral400} />
+              <TextInput
+                style={styles.friendSearchInput}
+                value={friendSearchQuery}
+                onChangeText={setFriendSearchQuery}
+                placeholder="친구 검색..."
+                placeholderTextColor={COLORS.neutral400}
+              />
+            </View>
+
+            <FlatList
+              data={filteredFriends}
+              keyExtractor={(item) => item.friend.id}
+              style={styles.friendList}
+              renderItem={({ item, index }) => {
+                const isSelected = selectedFriendIds.includes(item.friend.id);
+                return (
+                  <TouchableOpacity
+                    style={styles.friendItem}
+                    onPress={() => toggleFriendSelection(item.friend.id)}
+                  >
+                    {item.friend.picture ? (
+                      <Image
+                        source={{ uri: item.friend.picture }}
+                        style={styles.friendItemAvatarImage}
+                      />
+                    ) : (
+                      <View style={[styles.friendItemAvatar, { backgroundColor: index % 2 === 0 ? COLORS.primaryLight : COLORS.primaryMain }]}>
+                        <Text style={styles.friendItemAvatarText}>{item.friend.name[0]}</Text>
+                      </View>
+                    )}
+                    <View style={styles.friendItemInfo}>
+                      <Text style={styles.friendItemName}>{item.friend.name}</Text>
+                      <Text style={styles.friendItemEmail}>{item.friend.email}</Text>
+                    </View>
+                    <View style={[
+                      styles.friendItemCheckbox,
+                      {
+                        backgroundColor: isSelected ? COLORS.primaryMain : 'transparent',
+                        borderColor: isSelected ? COLORS.primaryMain : COLORS.neutral300
+                      }
+                    ]}>
+                      {isSelected && <Check size={14} color="white" />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
+              ListEmptyComponent={
+                <Text style={styles.emptyFriendsText}>
+                  {friends.length === 0 ? '친구가 없습니다. 먼저 친구를 추가하세요!' : '검색 결과가 없습니다.'}
+                </Text>
+              }
+            />
+
+            <View style={styles.friendPickerFooter}>
+              <TouchableOpacity
+                style={styles.friendPickerButton}
+                onPress={() => setShowFriendPicker(false)}
+              >
+                <Text style={styles.friendPickerButtonText}>
+                  완료 {selectedFriendIds.length > 0 ? `(${selectedFriendIds.length}명 선택)` : ''}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <BottomNav activeTab={Tab.HOME} />
-    </SafeAreaView>
+    </SafeAreaView >
   );
 }
 
@@ -1977,7 +2321,10 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
-    minHeight: '60%',
+    maxHeight: '85%',
+  },
+  formScrollView: {
+    flexGrow: 0,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -2195,5 +2542,188 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  // Participant & Location Styles
+  participantSelector: {
+    backgroundColor: COLORS.neutral50,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: COLORS.neutral200,
+    borderStyle: 'dashed',
+  },
+  selectedParticipantsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  participantChip: {
+    zIndex: 1,
+  },
+  participantAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'white',
+  },
+  participantAvatarImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: 'white',
+  },
+  participantAvatarText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  participantCount: {
+    fontSize: 13,
+    color: COLORS.neutral600,
+    marginLeft: 12,
+    fontWeight: '500',
+    flex: 1,
+  },
+  clearParticipantsButton: {
+    padding: 6,
+    marginLeft: 8,
+    backgroundColor: COLORS.neutral100,
+    borderRadius: 12,
+  },
+  addParticipantRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  placeholderText: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.neutral400,
+  },
+  locationInput: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.neutral900,
+    marginLeft: 8,
+    paddingVertical: 0,
+  },
+  a2aSaveButton: {
+    backgroundColor: COLORS.primaryDark,
+  },
+  // Friend Picker Modal Styles
+  friendPickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  friendPickerContainer: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '70%',
+    paddingBottom: 24,
+  },
+  friendPickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.neutral100,
+  },
+  friendPickerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.neutral900,
+  },
+  friendSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.neutral50,
+    marginHorizontal: 16,
+    marginVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 8,
+  },
+  friendSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.neutral900,
+  },
+  friendList: {
+    paddingHorizontal: 16,
+  },
+  friendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.neutral100,
+  },
+  friendItemAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  friendItemAvatarImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    marginRight: 12,
+  },
+  friendItemAvatarText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  friendItemInfo: {
+    flex: 1,
+  },
+  friendItemName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.neutral900,
+  },
+  friendItemEmail: {
+    fontSize: 12,
+    color: COLORS.neutral400,
+    marginTop: 2,
+  },
+  friendItemCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  friendPickerFooter: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  friendPickerButton: {
+    backgroundColor: COLORS.primaryMain,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  friendPickerButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  emptyFriendsText: {
+    textAlign: 'center',
+    color: COLORS.neutral400,
+    fontSize: 14,
+    paddingVertical: 40,
   },
 });

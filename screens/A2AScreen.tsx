@@ -832,7 +832,7 @@ const A2AScreen = () => {
                 const data = await response.json();
                 const mappedLogs: A2ALog[] = data.sessions.map((session: any) => ({
                     id: session.id,
-                    title: session.details?.purpose || session.title || "일정 조율",
+                    title: session.summary || session.title || session.details?.purpose || "일정 조율",
                     status: session.status === 'completed' ? 'COMPLETED'
                         : session.status === 'rejected' ? 'REJECTED'
                             : 'IN_PROGRESS',

@@ -13,6 +13,7 @@ import RegisterScreen from './screens/RegisterScreen';
 import MyPageScreen from './screens/MyPageScreen';
 import SplashScreen from './screens/SplashScreen';
 import TestScreen from './screens/TestScreen';
+import RequestMeetingScreen from './screens/RequestMeetingScreen';
 import A2AChatDetailScreen from './screens/A2AChatDetailScreen';
 import { RootStackParamList } from './types';
 
@@ -43,6 +44,7 @@ export default function App() {
         <Stack.Screen name="User" component={MyPageScreen} />
         <Stack.Screen name="MyPage" component={MyPageScreen} />
         <Stack.Screen name="Test" component={TestScreen} />
+        <Stack.Screen name="RequestMeeting" component={RequestMeetingScreen} />
         <Stack.Screen
           name="A2AChatDetail"
           component={A2AChatDetailScreen}
