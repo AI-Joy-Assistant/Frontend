@@ -11,11 +11,13 @@ export type RootStackParamList = {
   User: undefined;
   MyPage: undefined;
   Test: undefined;
+  RequestMeeting: undefined;
   A2AChatDetail: { sessionId: string; title: string };
 };
 
 export enum Tab {
   HOME = 'Home',
+  REQUEST = 'REQUEST',
   CHAT = 'Chat',
   FRIENDS = 'Friends',
   A2A = 'A2A',

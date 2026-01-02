@@ -12,9 +12,7 @@ import {
     ScrollView,
 } from 'react-native';
 import { ArrowLeft, Calendar, Bell, Users, X } from 'lucide-react-native';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const PANEL_WIDTH = SCREEN_WIDTH * 0.9;
+import { useWindowDimensions } from 'react-native';
 
 const COLORS = {
     primaryMain: '#3730A3',
@@ -99,25 +97,28 @@ export default function NotificationPanel({
     onDismissRequest,
     onDismissNotification,
 }: NotificationPanelProps) {
+    const { width: screenWidth } = useWindowDimensions();
+    const panelWidth = Math.min(screenWidth * 1, 600);
+
     const [activeTab, setActiveTab] = useState<'requests' | 'notifications'>('requests');
-    const slideAnim = useRef(new Animated.Value(SCREEN_WIDTH)).current;
+    const slideAnim = useRef(new Animated.Value(screenWidth)).current;
 
     useEffect(() => {
         if (visible) {
             Animated.spring(slideAnim, {
-                toValue: SCREEN_WIDTH - PANEL_WIDTH,
+                toValue: screenWidth - panelWidth,
                 useNativeDriver: true,
                 tension: 65,
                 friction: 11,
             }).start();
         } else {
             Animated.timing(slideAnim, {
-                toValue: SCREEN_WIDTH,
+                toValue: screenWidth,
                 duration: 250,
                 useNativeDriver: true,
             }).start();
         }
-    }, [visible]);
+    }, [visible, screenWidth, panelWidth]);
 
     // 시간순 정렬 (최신순) - 재조율 요청은 reschedule_requested_at 사용
     const sortedRequests = [...pendingRequests].sort((a, b) => {
@@ -274,7 +275,7 @@ export default function NotificationPanel({
                 <Animated.View
                     style={[
                         styles.panel,
-                        { transform: [{ translateX: slideAnim }] }
+                        { width: panelWidth, transform: [{ translateX: slideAnim }] }
                     ]}
                 >
                     <SafeAreaView style={styles.safeArea}>
@@ -371,7 +372,6 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 0,
         bottom: 0,
-        width: PANEL_WIDTH,
         backgroundColor: COLORS.white,
         borderTopLeftRadius: 24,
         borderBottomLeftRadius: 24,

@@ -26,6 +26,7 @@ import { RootStackParamList, Tab } from "../types";
 import BottomNav from "../components/BottomNav";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "../constants/config";
+import WebSocketService from "../services/WebSocketService";
 import { badgeStore } from "../store/badgeStore";
 
 import { LinearGradient } from "expo-linear-gradient";
@@ -74,6 +75,18 @@ interface Message {
   shouldShowProposalCard?: boolean;
   timestamp?: string;
   id?: string;
+  // 충돌 선택지 관련 필드
+  type?: string;  // "schedule_conflict_choice" | "majority_recommendation" etc
+  conflictChoice?: {
+    sessionId: string;
+    initiatorName: string;
+    otherCount: number;
+    proposedDate: string;
+    proposedTime: string;
+    conflictEventName: string;
+    choices: Array<{ id: string; label: string }>;
+    selectedChoice?: string;  // "skip" | "adjust" | null
+  };
 }
 
 interface ChatSession {
@@ -124,6 +137,7 @@ export default function ChatScreen() {
   const isAtBottom = useRef(true);
   const messagesEndRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
   // --- Helpers ---
 
@@ -166,6 +180,7 @@ export default function ChatScreen() {
       if (res.ok) {
         const data = await res.json();
         setUserName(data.name || data.nickname || "User");
+        setUserId(data.id); // WebSocket 연결에 필요
       }
     } catch (e) {
       console.error("Failed to fetch user profile", e);
@@ -255,6 +270,75 @@ export default function ChatScreen() {
       );
     }
   }, [currentSessionId]);
+
+  // 세션 변경 시 저장된 draft 불러오기
+  useEffect(() => {
+    const loadDraft = async () => {
+      if (currentSessionId) {
+        try {
+          const draft = await AsyncStorage.getItem(`chatDraft_${currentSessionId}`);
+          if (draft) {
+            setInput(draft);
+          } else {
+            setInput('');
+          }
+        } catch (err) {
+          console.error('Failed to load draft:', err);
+        }
+      }
+    };
+    loadDraft();
+  }, [currentSessionId]);
+
+  // 입력 변경 시 draft 저장 (debounced)
+  useEffect(() => {
+    if (!currentSessionId) return;
+    const timeoutId = setTimeout(() => {
+      if (input.trim()) {
+        AsyncStorage.setItem(`chatDraft_${currentSessionId}`, input).catch(err =>
+          console.error('Failed to save draft:', err)
+        );
+      } else {
+        AsyncStorage.removeItem(`chatDraft_${currentSessionId}`).catch(err =>
+          console.error('Failed to remove draft:', err)
+        );
+      }
+    }, 500); // 500ms debounce
+    return () => clearTimeout(timeoutId);
+  }, [input, currentSessionId]);
+
+  // 세션 변경 시 선택된 친구 불러오기
+  useEffect(() => {
+    const loadSelectedFriends = async () => {
+      if (currentSessionId) {
+        try {
+          const saved = await AsyncStorage.getItem(`selectedFriends_${currentSessionId}`);
+          if (saved) {
+            setSelectedFriends(JSON.parse(saved));
+          } else {
+            setSelectedFriends([]);
+          }
+        } catch (err) {
+          console.error('Failed to load selected friends:', err);
+        }
+      }
+    };
+    loadSelectedFriends();
+  }, [currentSessionId]);
+
+  // 친구 선택 변경 시 저장
+  useEffect(() => {
+    if (!currentSessionId) return;
+    if (selectedFriends.length > 0) {
+      AsyncStorage.setItem(`selectedFriends_${currentSessionId}`, JSON.stringify(selectedFriends)).catch(err =>
+        console.error('Failed to save selected friends:', err)
+      );
+    } else {
+      AsyncStorage.removeItem(`selectedFriends_${currentSessionId}`).catch(err =>
+        console.error('Failed to remove selected friends:', err)
+      );
+    }
+  }, [selectedFriends, currentSessionId]);
 
   useEffect(() => {
     fetchFriends();
@@ -628,10 +712,10 @@ export default function ChatScreen() {
       // 채팅 화면 들어오면 lastReadAt을 현재 시간으로 강제 리셋 (배지 즉시 제거)
       badgeStore.forceResetLastReadAt();
 
-      // 10초마다 폴링 (성능 최적화: 3초 → 10초)
+      // 30초마다 폴링 (WebSocket 백업용 - 연결 끊김 대비)
       const interval = setInterval(() => {
         loadChatHistory(false);
-      }, 10000);
+      }, 30000);
 
       return () => {
         clearInterval(interval);
@@ -640,6 +724,36 @@ export default function ChatScreen() {
       };
     }, []) // 의존성 배열 비움 - 화면 포커스 시 1회만 실행
   );
+
+  // WebSocket 연결 (using singleton service)
+  useEffect(() => {
+    if (!userId) return;
+
+    // 싱글톤 서비스 연결 (이미 연결되어 있으면 스킵)
+    WebSocketService.connect(userId);
+
+    // ChatScreen에서 필요한 메시지 구독
+    const unsubscribe = WebSocketService.subscribe(
+      'ChatScreen',
+      ['new_message', 'a2a_request'],
+      (data) => {
+        if (data.type === "new_message") {
+          loadChatHistory(false);
+          setTimeout(() => {
+            messagesEndRef.current?.scrollToEnd({ animated: true });
+          }, 100);
+        } else if (data.type === "a2a_request") {
+          console.log("[WS] A2A 요청 도착:", data.from_user);
+          loadChatHistory(false);
+          fetchSessions();
+        }
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [userId]);
 
   // 세션 변경 시 히스토리 로드 (깜빡임 없이)
   useEffect(() => {
@@ -723,6 +837,16 @@ export default function ChatScreen() {
     if (!input.trim()) return;
     const userText = input;
     setInput("");
+
+    // Clear draft and selected friends after sending
+    if (currentSessionId) {
+      AsyncStorage.removeItem(`chatDraft_${currentSessionId}`).catch(err =>
+        console.error('Failed to clear draft:', err)
+      );
+      AsyncStorage.removeItem(`selectedFriends_${currentSessionId}`).catch(err =>
+        console.error('Failed to clear selected friends:', err)
+      );
+    }
 
     const friendsToSend = selectedFriends;
     setSelectedFriends([]);
@@ -1012,7 +1136,103 @@ export default function ChatScreen() {
     }
   };
 
-  const renderItem = ({ item }: { item: Message }) => {
+  // 충돌 선택지 처리 함수
+  const handleConflictChoice = async (sessionId: string, choice: "skip" | "adjust", messageIndex: number) => {
+    try {
+      const token = await AsyncStorage.getItem("accessToken");
+      if (!token) return;
+
+      const response = await fetch(`${API_BASE}/a2a/session/${sessionId}/conflict-choice`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ choice }),
+      });
+
+      if (response.ok) {
+        // 메시지 업데이트 - 선택 결과 표시
+        const currentSessionData = sessions.find(s => s.id === currentSessionId);
+        const updatedMessages = [...(currentSessionData?.messages || [])];
+        if (updatedMessages[messageIndex] && updatedMessages[messageIndex].conflictChoice) {
+          updatedMessages[messageIndex].conflictChoice!.selectedChoice = choice;
+        }
+
+        // 세션 업데이트
+        setSessions((prev) =>
+          prev.map((sess) =>
+            sess.id === currentSessionId
+              ? { ...sess, messages: updatedMessages, updatedAt: new Date() }
+              : sess
+          )
+        );
+
+        // 결과 메시지 추가
+        const resultText = choice === "skip"
+          ? "참석 불가로 처리되었습니다. 다른 참여자들끼리 일정이 진행됩니다."
+          : "일정 조정을 선택하셨습니다. 캐린더에서 기존 일정을 수정해주세요.";
+
+        addMessage("ai", resultText);
+      }
+    } catch (error) {
+      console.error("Error handling conflict choice:", error);
+      addMessage("ai", "선택 처리 중 오류가 발생했습니다. 다시 시도해주세요.");
+    }
+  };
+
+  const renderItem = ({ item, index }: { item: Message; index?: number }) => {
+    // 충돌 선택지 메시지 렌더링
+    if (item.type === "schedule_conflict_choice" && item.conflictChoice) {
+      const { sessionId, initiatorName, otherCount, proposedDate, proposedTime, conflictEventName, choices, selectedChoice } = item.conflictChoice;
+
+      return (
+        <View style={styles.conflictChoiceContainer}>
+          <View style={styles.conflictChoiceCard}>
+            <View style={styles.conflictChoiceHeader}>
+              <Text style={styles.conflictChoiceIcon}>🔔</Text>
+              <Text style={styles.conflictChoiceTitle}>일정 조율 알림</Text>
+            </View>
+            <Text style={styles.conflictChoiceText}>
+              {initiatorName}님 외 {otherCount}명이 {proposedDate} {proposedTime}에 일정을 잡으려 합니다.
+            </Text>
+            <View style={styles.conflictEventBadge}>
+              <Text style={styles.conflictEventText}>그 시간에 [{conflictEventName}]이 있으시네요.</Text>
+            </View>
+
+            {selectedChoice ? (
+              <View style={styles.conflictChoiceResult}>
+                <Text style={styles.conflictChoiceResultText}>
+                  {selectedChoice === "skip" ? "❌ 참석 불가 선택됨" : "✅ 일정 조정 선택됨"}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.conflictChoiceButtons}>
+                {choices.map((choice) => (
+                  <TouchableOpacity
+                    key={choice.id}
+                    style={[
+                      styles.conflictChoiceButton,
+                      choice.id === "skip" ? styles.conflictSkipButton : styles.conflictAdjustButton
+                    ]}
+                    onPress={() => handleConflictChoice(sessionId, choice.id as "skip" | "adjust", index || 0)}
+                  >
+                    <Text style={[
+                      styles.conflictChoiceButtonText,
+                      choice.id === "skip" ? styles.conflictSkipButtonText : styles.conflictAdjustButtonText
+                    ]}>
+                      {choice.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        </View>
+      );
+    }
+
+    // 일반 메시지 렌더링
     return (
       <View
         style={[
@@ -2356,6 +2576,90 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  // 충돌 선택지 스타일
+  conflictChoiceContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    width: "100%",
+  },
+  conflictChoiceCard: {
+    backgroundColor: "#FEF3C7",
+    borderRadius: 16,
+    padding: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: "#F59E0B",
+  },
+  conflictChoiceHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  conflictChoiceIcon: {
+    fontSize: 18,
+    marginRight: 8,
+  },
+  conflictChoiceTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#92400E",
+  },
+  conflictChoiceText: {
+    fontSize: 14,
+    color: "#78350F",
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  conflictEventBadge: {
+    backgroundColor: "#FDE68A",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  conflictEventText: {
+    fontSize: 13,
+    color: "#92400E",
+    fontWeight: "500",
+  },
+  conflictChoiceResult: {
+    paddingVertical: 8,
+    alignItems: "center",
+  },
+  conflictChoiceResultText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#78350F",
+  },
+  conflictChoiceButtons: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  conflictChoiceButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  conflictSkipButton: {
+    backgroundColor: "#FEE2E2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+  },
+  conflictAdjustButton: {
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  conflictChoiceButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  conflictSkipButtonText: {
+    color: "#DC2626",
+  },
+  conflictAdjustButtonText: {
+    color: "#059669",
   },
 });
 

@@ -25,6 +25,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
 import { getBackendUrl } from '../utils/environment';
+import WebSocketService from '../services/WebSocketService';
 
 // Colors
 const COLORS = {
@@ -172,6 +173,54 @@ const FriendsScreen = () => {
       fetchFriends();
     }, [])
   );
+
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUserId = async () => {
+      try {
+        const token = await AsyncStorage.getItem('accessToken');
+        if (!token) return;
+        const response = await fetch(`${getBackendUrl()}/auth/me`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setCurrentUserId(data.id);
+        }
+      } catch (e) {
+        console.error('User ID fetch error:', e);
+      }
+    };
+    fetchUserId();
+  }, []);
+
+  // WebSocket for real-time friend request notifications (using singleton service)
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    // 싱글톤 서비스 연결 (이미 연결되어 있으면 스킵)
+    WebSocketService.connect(currentUserId);
+
+    // FriendsScreen에서 필요한 메시지 구독
+    const unsubscribe = WebSocketService.subscribe(
+      'FriendsScreen',
+      ['friend_request', 'friend_accepted'],
+      (data) => {
+        if (data.type === "friend_request") {
+          console.log("[WS:Friends] 친구 요청 도착:", data.from_user_name);
+          fetchFriendRequests();
+        } else if (data.type === "friend_accepted") {
+          console.log("[WS:Friends] 친구 수락 알림");
+          fetchFriends();
+        }
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [currentUserId]);
 
   const handleAddFriend = async () => {
     if (!searchTerm.trim()) {
