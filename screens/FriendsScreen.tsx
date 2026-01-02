@@ -3,7 +3,7 @@ import { UserPlus, Check, X } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Alert,
   FlatList,
@@ -25,6 +25,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
 import { getBackendUrl } from '../utils/environment';
+import { WS_BASE } from '../constants/config';
 
 // Colors
 const COLORS = {
@@ -172,6 +173,84 @@ const FriendsScreen = () => {
       fetchFriends();
     }, [])
   );
+
+  // WebSocket for real-time friend request notifications
+  const wsRef = useRef<WebSocket | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUserId = async () => {
+      try {
+        const token = await AsyncStorage.getItem('accessToken');
+        if (!token) return;
+        const response = await fetch(`${getBackendUrl()}/auth/me`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setCurrentUserId(data.id);
+        }
+      } catch (e) {
+        console.error('User ID fetch error:', e);
+      }
+    };
+    fetchUserId();
+  }, []);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const connectWebSocket = () => {
+      try {
+        const ws = new WebSocket(`${WS_BASE}/ws/${currentUserId}`);
+
+        ws.onopen = () => {
+          console.log("[WS:Friends] 연결 성공");
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log("[WS:Friends] 메시지 수신:", data.type);
+
+            if (data.type === "friend_request") {
+              // 친구 요청 도착 - 즉시 새로고침
+              console.log("[WS:Friends] 친구 요청 도착:", data.from_user_name);
+              fetchFriendRequests();
+            } else if (data.type === "friend_accepted") {
+              // 친구 수락 알림 - 친구 목록 새로고침
+              console.log("[WS:Friends] 친구 수락 알림");
+              fetchFriends();
+            }
+          } catch (e) {
+            console.error("[WS:Friends] 메시지 파싱 오류:", e);
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error("[WS:Friends] 오류:", error);
+        };
+
+        ws.onclose = () => {
+          console.log("[WS:Friends] 연결 종료, 5초 후 재연결 시도");
+          setTimeout(connectWebSocket, 5000);
+        };
+
+        wsRef.current = ws;
+      } catch (e) {
+        console.error("[WS:Friends] 연결 실패:", e);
+      }
+    };
+
+    connectWebSocket();
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [currentUserId]);
 
   const handleAddFriend = async () => {
     if (!searchTerm.trim()) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
     View,
     Text,
@@ -44,7 +44,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList, A2ALog, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
-import { API_BASE } from '../constants/config';
+import { API_BASE, WS_BASE } from '../constants/config';
 
 // Colors based on the provided React/Tailwind code
 const COLORS = {
@@ -84,6 +84,7 @@ const A2AScreen = () => {
     const [logs, setLogs] = useState<A2ALog[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedLog, setSelectedLog] = useState<A2ALog | null>(null);
+    const selectedLogRef = useRef<A2ALog | null>(null);  // [FIX] WebSocket 클로저 문제 해결용
     const [isRescheduling, setIsRescheduling] = useState(false);
     const [isConfirmed, setIsConfirmed] = useState(false);
     const [selectedReason, setSelectedReason] = useState<string | null>(null);
@@ -113,6 +114,7 @@ const A2AScreen = () => {
     const [showRejectConfirm, setShowRejectConfirm] = useState(false);  // 거절 확인 팝업 상태
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);  // 삭제 확인 팝업 상태
     const [deleteTargetLogId, setDeleteTargetLogId] = useState<string | null>(null);  // 삭제 대상 로그 ID
+    const [showNegotiationIncompleteAlert, setShowNegotiationIncompleteAlert] = useState(false);  // 협상 미완료 알림
 
     // 재조율 시작시간/종료시간 상태
     const [startTimeExpanded, setStartTimeExpanded] = useState(true);
@@ -830,26 +832,69 @@ const A2AScreen = () => {
 
             if (response.ok) {
                 const data = await response.json();
-                const mappedLogs: A2ALog[] = data.sessions.map((session: any) => ({
-                    id: session.id,
-                    title: session.summary || session.title || session.details?.purpose || "일정 조율",
-                    status: session.status === 'completed' ? 'COMPLETED'
-                        : session.status === 'rejected' ? 'REJECTED'
-                            : 'IN_PROGRESS',
-                    // [✅ 수정] 요약에는 참여자 이름만 표시 (이모지 옆 텍스트)
-                    summary: session.participant_names?.join(', ') || "참여자 없음",
-                    // [✅ 수정] timeRange에 여러 fallback 소스 사용
-                    timeRange: (() => {
-                        const d = session.details || {};
-                        const date = d.proposedDate || d.requestedDate || d.date || '';
-                        const time = d.proposedTime || d.requestedTime || d.time || '';
-                        if (!date && !time) return "미정";
-                        return `${date} ${time}`.trim();
-                    })(),
-                    createdAt: session.created_at,
-                    details: session.details,
-                    initiator_user_id: session.initiator_user_id
-                }));
+                // 시간 형식 변환 함수 (MM월 DD일 오전/오후 HH시 → YYYY-MM-DD HH:MM)
+                const formatTimeRange = (date: string | undefined, time: string | undefined): string => {
+                    if (!date && !time) return "미정";
+
+                    const now = new Date();
+                    const currentYear = now.getFullYear();
+
+                    let formattedDate = date || '';
+                    let formattedTime = time || '';
+
+                    // MM월 DD일 형식 → YYYY-MM-DD
+                    if (date) {
+                        const koreanMatch = date.match(/(\d{1,2})월\s*(\d{1,2})일/);
+                        if (koreanMatch) {
+                            const month = String(koreanMatch[1]).padStart(2, '0');
+                            const day = String(koreanMatch[2]).padStart(2, '0');
+                            formattedDate = `${currentYear}-${month}-${day}`;
+                        }
+                    }
+
+                    // 오전/오후 HH시 → HH:MM
+                    if (time) {
+                        const timeMatch = time.match(/(오전|오후)\s*(\d{1,2})시/);
+                        if (timeMatch) {
+                            let hour = parseInt(timeMatch[2]);
+                            if (timeMatch[1] === '오후' && hour !== 12) hour += 12;
+                            if (timeMatch[1] === '오전' && hour === 12) hour = 0;
+                            formattedTime = `${String(hour).padStart(2, '0')}:00`;
+                        }
+                    }
+
+                    return `${formattedDate} ${formattedTime}`.trim() || "미정";
+                };
+
+                const mappedLogs: A2ALog[] = data.sessions
+                    .filter((session: any) => {
+                        // left_participants에 현재 사용자가 포함되어 있으면 목록에서 제외
+                        const leftParticipants = session.details?.left_participants || [];
+                        const isCurrentUserLeft = leftParticipants.includes(currentUserId);
+                        if (isCurrentUserLeft) {
+                            console.log(`[A2A] 사용자가 나간 세션 필터링: ${session.id}`);
+                        }
+                        return !isCurrentUserLeft;
+                    })
+                    .map((session: any) => ({
+                        id: session.id,
+                        title: session.summary || session.title || session.details?.purpose || "일정 조율",
+                        status: session.status === 'completed' ? 'COMPLETED'
+                            : session.status === 'rejected' ? 'REJECTED'
+                                : 'IN_PROGRESS',
+                        // [✅ 수정] 요약에는 참여자 이름만 표시 (이모지 옆 텍스트)
+                        summary: session.participant_names?.join(', ') || "참여자 없음",
+                        // [✅ 수정] timeRange에 여러 fallback 소스 사용 + 시간 형식 변환
+                        timeRange: (() => {
+                            const d = session.details || {};
+                            const date = d.proposedDate || d.requestedDate || d.date || '';
+                            const time = d.proposedTime || d.requestedTime || d.time || '';
+                            return formatTimeRange(date, time);
+                        })(),
+                        createdAt: session.created_at,
+                        details: session.details,
+                        initiator_user_id: session.initiator_user_id
+                    }));
                 setLogs(mappedLogs);
 
             } else {
@@ -860,12 +905,110 @@ const A2AScreen = () => {
         } finally {
             if (showLoading) setLoading(false);
         }
-    }, []);
+    }, [currentUserId]);  // currentUserId 의존성 추가 (필터링에 사용)
 
     useEffect(() => {
         fetchCurrentUser();
-        fetchA2ALogs();
-    }, [fetchA2ALogs]);
+    }, []);
+
+    // currentUserId가 설정된 후에 로그 불러오기 (필터링에 필요)
+    useEffect(() => {
+        if (currentUserId) {
+            fetchA2ALogs();
+        }
+    }, [currentUserId, fetchA2ALogs]);
+
+    // WebSocket for real-time A2A updates
+    const wsRef = useRef<WebSocket | null>(null);
+
+    useEffect(() => {
+        if (!currentUserId) return;
+
+        const connectWebSocket = () => {
+            try {
+                const ws = new WebSocket(`${WS_BASE}/ws/${currentUserId}`);
+
+                ws.onopen = () => {
+                    console.log("[WS:A2A] 연결 성공");
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        console.log("[WS:A2A] 메시지 수신:", data.type);
+
+                        if (data.type === "a2a_request") {
+                            // A2A 요청 도착 - 카드 목록 즉시 새로고침
+                            console.log("[WS:A2A] 새 A2A 요청:", data.from_user);
+                            fetchA2ALogs(false);
+                        } else if (data.type === "a2a_rejected") {
+                            // 거절 알림 도착 - 카드 목록 즉시 새로고침
+                            console.log("[WS:A2A] 거절 알림:", data.rejected_by_name);
+                            fetchA2ALogs(false);
+                        } else if (data.type === "a2a_message") {
+                            // 새 협상 메시지 도착 - 로그 새로고침 (실시간 협상 과정 보기)
+                            console.log("[WS:A2A] 새 협상 메시지:", data.sender_name, data.message);
+                            fetchA2ALogs(false);
+
+                            // [실시간 업데이트] 열린 모달의 세부 정보도 새로고침 (useRef로 최신 값 참조)
+                            const currentLog = selectedLogRef.current;
+                            if (currentLog && data.session_id === currentLog.id) {
+                                console.log("[WS:A2A] 열린 모달 세부 정보 새로고침:", currentLog.id);
+                                (async () => {
+                                    try {
+                                        const token = await AsyncStorage.getItem('accessToken');
+                                        const res = await fetch(`${API_BASE}/a2a/session/${currentLog.id}`, {
+                                            headers: { 'Authorization': `Bearer ${token}` },
+                                        });
+                                        if (res.ok) {
+                                            const detailData = await res.json();
+                                            const updatedLog = {
+                                                ...currentLog,
+                                                status: detailData.status || currentLog.status,
+                                                details: { ...(currentLog.details || {}), ...detailData.details }
+                                            };
+                                            setSelectedLog(updatedLog);
+                                            selectedLogRef.current = updatedLog;  // ref도 업데이트
+                                        }
+                                    } catch (e) {
+                                        console.error("[WS:A2A] 모달 새로고침 실패:", e);
+                                    }
+                                })();
+                            }
+                        } else if (data.type === "a2a_status_changed") {
+                            // 협상 상태 변경 - 로그 새로고침 및 버튼 활성화
+                            console.log("[WS:A2A] 상태 변경:", data.new_status);
+                            fetchA2ALogs(false);
+                        }
+                    } catch (e) {
+                        console.error("[WS:A2A] 메시지 파싱 오류:", e);
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error("[WS:A2A] 오류:", error);
+                };
+
+                ws.onclose = () => {
+                    console.log("[WS:A2A] 연결 종료, 5초 후 재연결 시도");
+                    setTimeout(connectWebSocket, 5000);
+                };
+
+                wsRef.current = ws;
+            } catch (e) {
+                console.error("[WS:A2A] 연결 실패:", e);
+            }
+        };
+
+        connectWebSocket();
+
+        return () => {
+            if (wsRef.current) {
+                wsRef.current.close();
+                wsRef.current = null;
+            }
+        };
+    }, [currentUserId]);
 
     const [initialCheckDone, setInitialCheckDone] = useState(false);
 
@@ -946,6 +1089,7 @@ const A2AScreen = () => {
         setTooltipIndex(null);  // 툴팁 초기화
         setTimeout(() => {
             setSelectedLog(null);
+            selectedLogRef.current = null;  // [FIX] ref도 초기화
             setIsRescheduling(false);
             setIsConfirmed(false);
             setSelectedReason(null);
@@ -972,6 +1116,7 @@ const A2AScreen = () => {
         setIsModalClosing(false);
         // 먼저 기본 정보로 모달을 즉시 열고, 로딩 상태 표시
         setSelectedLog({ ...log, details: { ...log.details, _loading: true } } as any);
+        selectedLogRef.current = { ...log, details: { ...log.details, _loading: true } } as any;  // [FIX] ref 동기화
         setIsProcessExpanded(false);
         setIsConfirmed(false);
         setIsRescheduling(false);
@@ -1010,6 +1155,11 @@ const A2AScreen = () => {
                         process: newDetails.process?.length > 0 ? newDetails.process : (log.details as any)?.process || []
                     }
                 });
+                selectedLogRef.current = {  // [FIX] ref 동기화
+                    ...log,
+                    status: newStatus || log.status,
+                    details: { ...(log.details || {}), ...newDetails }
+                };
 
                 const totalTime = Date.now() - startTime;
                 console.log(`⏱️ [Modal] 전체 처리 시간: ${totalTime}ms`);
@@ -1017,10 +1167,12 @@ const A2AScreen = () => {
             } else {
                 // API 실패 시 기존 데이터로 표시
                 setSelectedLog(log);
+                selectedLogRef.current = log;  // [FIX] ref 동기화
             }
         } catch (e) {
             console.error("Failed to fetch log details:", e);
             setSelectedLog(log);
+            selectedLogRef.current = log;  // [FIX] ref 동기화
         }
     };
 
@@ -1104,10 +1256,11 @@ const A2AScreen = () => {
             console.log('🔴 거절 API 응답:', data);
 
             if (res.ok) {
-                // 처리가 완료되면 모달 닫기 및 목록 갱신
+                // [수정] 즉시 로컬 상태에서 해당 카드 제거
+                setLogs(prevLogs => prevLogs.filter(log => log.id !== selectedLog.id));
+                // 처리가 완료되면 모달 닫기
                 setShowRejectConfirm(false);
                 handleClose();
-                fetchA2ALogs();
                 Alert.alert("알림", "약속에서 나갔습니다.");
             } else {
                 console.error("Reject failed:", data);
@@ -1295,51 +1448,67 @@ const A2AScreen = () => {
                     backgroundColor: 'rgba(0,0,0,0.5)',
                     justifyContent: 'center',
                     alignItems: 'center',
+                    padding: 20,
                 }}>
                     <View style={{
                         backgroundColor: COLORS.white,
-                        borderRadius: 16,
-                        padding: 20,
-                        width: '70%',
+                        borderRadius: 24,
+                        padding: 24,
+                        width: '100%',
+                        maxWidth: 320,
                         alignItems: 'center',
                         shadowColor: '#000',
                         shadowOffset: { width: 0, height: 4 },
-                        shadowOpacity: 0.2,
+                        shadowOpacity: 0.1,
                         shadowRadius: 12,
-                        elevation: 8,
+                        elevation: 5,
                     }}>
-                        <Trash2 size={32} color={COLORS.red600} style={{ marginBottom: 12 }} />
-                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 6 }}>일정을 삭제하시겠습니까?</Text>
-                        <Text style={{ fontSize: 12, color: COLORS.neutral500, marginBottom: 20, textAlign: 'center' }}>삭제된 일정은 복구할 수 없습니다.</Text>
+                        <View style={{
+                            width: 48,
+                            height: 48,
+                            borderRadius: 24,
+                            backgroundColor: '#FEF2F2',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginBottom: 16,
+                        }}>
+                            <Trash2 size={24} color="#F87171" />
+                        </View>
+                        <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#334155', marginBottom: 16 }}>일정 삭제</Text>
+                        <Text style={{ fontSize: 14, color: '#64748B', textAlign: 'center', lineHeight: 20, marginBottom: 24 }}>
+                            삭제된 일정은 복구할 수 없습니다.{'\n'}정말 삭제하시겠습니까?
+                        </Text>
 
-                        <View style={{ flexDirection: 'row', gap: 12 }}>
+                        <View style={{ flexDirection: 'row', width: '100%', gap: 12 }}>
                             {/* 취소 버튼 */}
                             <TouchableOpacity
                                 style={{
-                                    backgroundColor: COLORS.neutral200,
-                                    paddingVertical: 10,
-                                    paddingHorizontal: 24,
-                                    borderRadius: 10,
+                                    flex: 1,
+                                    paddingVertical: 12,
+                                    borderRadius: 12,
+                                    backgroundColor: '#F1F5F9',
+                                    alignItems: 'center',
                                 }}
                                 onPress={() => {
                                     setShowDeleteConfirm(false);
                                     setDeleteTargetLogId(null);
                                 }}
                             >
-                                <Text style={{ color: COLORS.neutral600, fontSize: 14, fontWeight: '600' }}>취소</Text>
+                                <Text style={{ fontSize: 14, fontWeight: '600', color: '#64748B' }}>취소</Text>
                             </TouchableOpacity>
 
                             {/* 삭제 버튼 */}
                             <TouchableOpacity
                                 style={{
-                                    backgroundColor: COLORS.red600,
-                                    paddingVertical: 10,
-                                    paddingHorizontal: 24,
-                                    borderRadius: 10,
+                                    flex: 1,
+                                    paddingVertical: 12,
+                                    borderRadius: 12,
+                                    backgroundColor: '#F87171',
+                                    alignItems: 'center',
                                 }}
                                 onPress={executeDelete}
                             >
-                                <Text style={{ color: COLORS.white, fontSize: 14, fontWeight: '600' }}>삭제</Text>
+                                <Text style={{ fontSize: 14, fontWeight: '600', color: 'white' }}>삭제</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -1939,14 +2108,45 @@ const A2AScreen = () => {
                                                     // 요청자가 아니고 + 아직 승인하지 않았을 때만 버튼 표시
                                                     const showButtons = !isRequester && !isApproved;
 
+                                                    // 협상 완료 상태 여부 (pending_approval일 때만 버튼 활성화)
+                                                    const isNegotiationComplete = selectedLog?.status?.toLowerCase() === 'pending_approval';
+
+                                                    const handleApproveWithCheck = () => {
+                                                        if (!isNegotiationComplete) {
+                                                            setShowNegotiationIncompleteAlert(true);
+                                                            return;
+                                                        }
+                                                        handleApproveClick();
+                                                    };
+
+                                                    const handleRejectWithCheck = () => {
+                                                        if (!isNegotiationComplete) {
+                                                            setShowNegotiationIncompleteAlert(true);
+                                                            return;
+                                                        }
+                                                        handleRejectClick();
+                                                    };
+
                                                     return showButtons ? (
                                                         <>
-                                                            <TouchableOpacity onPress={handleApproveClick} style={styles.approveButton}>
+                                                            <TouchableOpacity
+                                                                onPress={handleApproveWithCheck}
+                                                                style={[
+                                                                    styles.approveButton,
+                                                                    !isNegotiationComplete && { opacity: 0.5 }
+                                                                ]}
+                                                            >
                                                                 <CheckCircle2 size={16} color="white" style={{ marginRight: 6 }} />
                                                                 <Text style={styles.approveButtonText}>승인</Text>
                                                             </TouchableOpacity>
 
-                                                            <TouchableOpacity onPress={handleRejectClick} style={styles.rejectButton}>
+                                                            <TouchableOpacity
+                                                                onPress={handleRejectWithCheck}
+                                                                style={[
+                                                                    styles.rejectButton,
+                                                                    !isNegotiationComplete && { opacity: 0.5 }
+                                                                ]}
+                                                            >
                                                                 <X size={16} color="white" style={{ marginRight: 6 }} />
                                                                 <Text style={styles.rejectButtonText}>거절</Text>
                                                             </TouchableOpacity>
@@ -2133,6 +2333,83 @@ const A2AScreen = () => {
                             </View>
                         );
                     })()}
+                </View>
+            </Modal>
+
+            {/* 협상 미완료 알림 모달 */}
+            <Modal
+                visible={showNegotiationIncompleteAlert}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowNegotiationIncompleteAlert(false)}
+            >
+                <View style={{
+                    flex: 1,
+                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    padding: 20,
+                }}>
+                    <View style={{
+                        backgroundColor: COLORS.white,
+                        borderRadius: 24,
+                        padding: 24,
+                        paddingTop: 40,
+                        width: '100%',
+                        maxWidth: 320,
+                        alignItems: 'center',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 12,
+                        elevation: 5,
+                        position: 'relative',
+                    }}>
+                        <TouchableOpacity
+                            style={{
+                                position: 'absolute',
+                                top: 12,
+                                right: 12,
+                                width: 28,
+                                height: 28,
+                                borderRadius: 14,
+                                backgroundColor: '#F1F5F9',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                            }}
+                            onPress={() => setShowNegotiationIncompleteAlert(false)}
+                        >
+                            <X size={16} color="#64748B" />
+                        </TouchableOpacity>
+
+                        <View style={{
+                            width: 56,
+                            height: 56,
+                            borderRadius: 28,
+                            backgroundColor: '#FEF3C7',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginBottom: 16,
+                        }}>
+                            <Clock size={28} color="#F59E0B" />
+                        </View>
+
+                        <Text style={{
+                            fontSize: 18,
+                            fontWeight: '700',
+                            color: '#1E293B',
+                            marginBottom: 8,
+                        }}>협상 진행 중</Text>
+
+                        <Text style={{
+                            fontSize: 14,
+                            color: '#64748B',
+                            textAlign: 'center',
+                            lineHeight: 20,
+                        }}>
+                            AI 에이전트들이 협상 중입니다.{'\n'}협상이 완료된 후 눌러주세요.
+                        </Text>
+                    </View>
                 </View>
             </Modal>
         </SafeAreaView >
