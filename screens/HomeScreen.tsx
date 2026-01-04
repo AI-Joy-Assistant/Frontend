@@ -42,7 +42,8 @@ import {
   MapPin,
   Users,
   Search,
-  UserPlus
+  UserPlus,
+  Info
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { ScheduleItem } from '../types/schedule';
@@ -333,6 +334,12 @@ export default function HomeScreen() {
   const [formLocation, setFormLocation] = useState('');
   const [isSubmittingA2A, setIsSubmittingA2A] = useState(false);
 
+  // Custom Alert Modal State
+  const [customAlertVisible, setCustomAlertVisible] = useState(false);
+  const [customAlertTitle, setCustomAlertTitle] = useState('');
+  const [customAlertMessage, setCustomAlertMessage] = useState('');
+  const [customAlertType, setCustomAlertType] = useState<'success' | 'error' | 'info'>('info');
+
   // Date/Time Picker State
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
@@ -500,13 +507,29 @@ export default function HomeScreen() {
         const description = event.description || '';
         const isA2A = description.includes('A2A Agent') || description.includes('session_id:') || description.includes('[A2A]');
 
+        // [NEW] A2A 일정의 경우 description에서 참여자 정보 파싱
+        let participants: string[] = event.attendees?.map(a => a.displayName || a.email) || [];
+        if (isA2A && description.includes('[A2A_DATA]')) {
+          try {
+            const match = description.match(/\[A2A_DATA\](.*?)\[\/A2A_DATA\]/s);
+            if (match && match[1]) {
+              const a2aData = JSON.parse(match[1]);
+              if (a2aData.participants && Array.isArray(a2aData.participants)) {
+                participants = a2aData.participants;
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to parse A2A data from description:', e);
+          }
+        }
+
         return {
           id: event.id,
           title: event.summary,
           date: date,
           endDate: date !== endDateStr ? endDateStr : undefined,
           time: isAllDayEvent ? '종일' : `${startTime} - ${endTime}`,
-          participants: event.attendees?.map(a => a.displayName || a.email) || [],
+          participants: participants,
           type: isA2A ? 'A2A' : 'NORMAL'
         };
       });
@@ -776,13 +799,14 @@ export default function HomeScreen() {
     console.log('[HomeScreen Debug] selectedFriendIds:', selectedFriendIds);
     console.log('[HomeScreen Debug] formTitle:', formTitle);
 
-    // 웹/모바일 모두 지원하는 alert 함수
+    // 커스텀 알림 모달을 표시하는 함수
     const showAlert = (title: string, message: string) => {
-      if (Platform.OS === 'web') {
-        window.alert(`${title}: ${message}`);
-      } else {
-        Alert.alert(title, message);
-      }
+      const type = title.includes('완료') || title.includes('성공') ? 'success' :
+        title.includes('오류') ? 'error' : 'info';
+      setCustomAlertTitle(title);
+      setCustomAlertMessage(message);
+      setCustomAlertType(type);
+      setCustomAlertVisible(true);
     };
 
     if (!formTitle.trim()) {
@@ -830,7 +854,10 @@ export default function HomeScreen() {
           dateRangeStr = `${formattedDate}부터 ${eMonth}월 ${eDay}일까지`;
         }
 
-        const timeStr = isAllDay ? '종일' : `${formStartTime}`;
+        // 시간 범위 문자열 생성 (시작~종료)
+        const timeStr = isAllDay ? '종일' : (formEndTime && formEndTime !== formStartTime
+          ? `${formStartTime}~${formEndTime}`
+          : `${formStartTime}`);
         const locationStr = formLocation ? ` ${formLocation}에서` : '';
 
         // A2A 요청 메시지 생성
@@ -839,6 +866,8 @@ export default function HomeScreen() {
         console.log('[HomeScreen A2A Debug] Sending request:', {
           message: scheduleMessage,
           date: formStartDate,
+          start_time: formStartTime,
+          end_time: formEndTime,
           selected_friends: selectedFriendIds,
         });
 
@@ -854,6 +883,8 @@ export default function HomeScreen() {
             selected_friends: selectedFriendIds,
             title: formTitle,  // 제목 별도 전달
             location: formLocation || undefined,  // 장소 별도 전달
+            start_time: isAllDay ? undefined : formStartTime,  // 시작 시간
+            end_time: isAllDay ? undefined : formEndTime,      // 종료 시간
           }),
         });
 
@@ -1287,23 +1318,7 @@ export default function HomeScreen() {
                         )}
                       </View>
 
-                      {schedule.participants.length > 0 && (
-                        <View style={styles.participantsContainer}>
-                          <View style={styles.avatars}>
-                            {schedule.participants.slice(0, 3).map((p, i) => (
-                              <View key={i} style={[
-                                styles.avatar,
-                                { backgroundColor: i % 2 === 0 ? COLORS.primaryLight : COLORS.primaryMain }
-                              ]}>
-                                <Text style={styles.avatarText}>{p[0]}</Text>
-                              </View>
-                            ))}
-                          </View>
-                          <Text style={styles.participantsCount}>
-                            {schedule.participants.length + 1}명 참가
-                          </Text>
-                        </View>
-                      )}
+                      {/* 참여자 아바타/명수 표시 제거됨 - 상세 카드에서만 표시 */}
                     </TouchableOpacity>
                   );
                 })
@@ -1704,6 +1719,21 @@ export default function HomeScreen() {
                       </Text>
                     </View>
                   </View>
+
+                  {/* [NEW] A2A 일정의 경우 참여자 목록 표시 */}
+                  {selectedDetailSchedule?.type === 'A2A' && selectedDetailSchedule?.participants && selectedDetailSchedule.participants.length > 0 && (
+                    <View style={styles.infoRow}>
+                      <View style={styles.infoIconBox}>
+                        <Users size={20} color={COLORS.neutral500} />
+                      </View>
+                      <View>
+                        <Text style={styles.infoLabel}>참여자</Text>
+                        <Text style={styles.infoValue}>
+                          {selectedDetailSchedule.participants.join(', ')}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
                 </View>
 
                 <View style={styles.detailButtonRow}>
@@ -1885,6 +1915,78 @@ export default function HomeScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* 커스텀 알림 모달 */}
+      <Modal
+        visible={customAlertVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setCustomAlertVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setCustomAlertVisible(false)}>
+          <View style={styles.deleteModalOverlay}>
+            <TouchableWithoutFeedback onPress={() => { }}>
+              <View style={{
+                backgroundColor: 'white',
+                borderRadius: 20,
+                padding: 24,
+                width: '90%',
+                maxWidth: 320,
+                alignItems: 'center',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.15,
+                shadowRadius: 12,
+                elevation: 8,
+              }}>
+                <View style={[
+                  styles.deleteModalIconContainer,
+                  {
+                    width: 56,
+                    height: 56,
+                    borderRadius: 28,
+                    marginBottom: 20,
+                    backgroundColor: customAlertType === 'success' ? '#DCFCE7' :
+                      customAlertType === 'error' ? '#FEE2E2' : '#E0E7FF'
+                  }
+                ]}>
+                  {customAlertType === 'success' ? (
+                    <Check size={28} color="#16A34A" />
+                  ) : customAlertType === 'error' ? (
+                    <X size={28} color="#DC2626" />
+                  ) : (
+                    <Info size={28} color={COLORS.primaryMain} />
+                  )}
+                </View>
+                <Text style={[styles.deleteModalTitle, { fontSize: 20, marginBottom: 12 }]}>{customAlertTitle}</Text>
+                <Text style={[styles.deleteModalMessage, { fontSize: 16, lineHeight: 24, marginBottom: 32 }]}>
+                  {customAlertMessage}
+                </Text>
+                <TouchableOpacity
+                  style={{
+                    width: '100%',
+                    height: 50,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderRadius: 16,
+                    backgroundColor: customAlertType === 'success' ? '#22C55E' :
+                      customAlertType === 'error' ? '#EF4444' : COLORS.primaryMain
+                  }}
+                  onPress={() => setCustomAlertVisible(false)}
+                >
+                  <Text style={{
+                    fontSize: 18,
+                    fontWeight: '600',
+                    color: 'white',
+                  }}>
+                    확인
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       <BottomNav activeTab={Tab.HOME} />
