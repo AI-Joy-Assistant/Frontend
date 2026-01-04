@@ -94,8 +94,9 @@ type CalendarViewMode = 'CONDENSED' | 'STACKED' | 'DETAILED';
 export default function HomeScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
-  // 현재 사용자 ID
+  // 현재 사용자 ID와 프로필 사진
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [userPicture, setUserPicture] = useState<string | null>(null);
 
   // Pending 요청 카드 State
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
@@ -245,6 +246,12 @@ export default function HomeScreen() {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) return;
 
+      // AsyncStorage에서 프로필 사진 가져오기
+      const storedPicture = await AsyncStorage.getItem('userPicture');
+      if (storedPicture) {
+        setUserPicture(storedPicture);
+      }
+
       const response = await fetch(`${API_BASE}/auth/me`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -252,6 +259,10 @@ export default function HomeScreen() {
       if (response.ok) {
         const data = await response.json();
         setCurrentUserId(data.id);
+        // 서버에서 받은 사진 정보가 있으면 업데이트
+        if (data.picture) {
+          setUserPicture(data.picture);
+        }
       }
     } catch (error) {
       console.error('사용자 정보 조회 실패:', error);
@@ -1008,6 +1019,30 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.contentContainer}>
+        {/* Top Header with Logo and Profile */}
+        <View style={styles.topHeader}>
+          <View style={styles.logoContainer}>
+            <Image
+              source={require('../assets/images/logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+            <Text style={styles.logoText}>JOYNER</Text>
+          </View>
+          <View style={styles.profileButton}>
+            {currentUserId ? (
+              <Image
+                source={{ uri: `${API_BASE}/auth/profile-image/${currentUserId}?t=${Date.now()}` }}
+                style={styles.profileImage}
+              />
+            ) : (
+              <View style={styles.profilePlaceholder}>
+                <Text style={styles.profilePlaceholderText}>👤</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={{ paddingBottom: 100 }}
@@ -1899,6 +1934,77 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     flex: 1,
+  },
+  // Top Header Styles
+  topHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: 'white',
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    marginHorizontal: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.9)',
+    borderTopWidth: 0,
+  },
+  logoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  logoImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+  },
+  logoText: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: COLORS.primaryMain,
+    letterSpacing: 1.5,
+  },
+  profileButton: {
+    position: 'relative',
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2.5,
+    borderColor: '#D4A574',
+  },
+  profilePlaceholder: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: COLORS.neutral200,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'white',
+  },
+  profilePlaceholderText: {
+    fontSize: 18,
+  },
+  profileRing: {
+    position: 'absolute',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 2,
+    borderColor: COLORS.primaryLight,
   },
   scrollView: {
     flex: 1,

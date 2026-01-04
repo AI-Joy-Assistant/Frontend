@@ -103,6 +103,7 @@ const RequestMeetingScreen = () => {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [hasAnalyzed, setHasAnalyzed] = useState(false);
     const [isSent, setIsSent] = useState(false);
+    const [isSending, setIsSending] = useState(false);
     const [appliedRecIndex, setAppliedRecIndex] = useState<number | null>(null);
     const [recommendations, setRecommendations] = useState<any[]>([]);
 
@@ -398,6 +399,7 @@ const RequestMeetingScreen = () => {
         }
 
         try {
+            setIsSending(true);  // 로딩 시작
             const token = await AsyncStorage.getItem('accessToken');
             if (!token) {
                 console.error('No access token');
@@ -441,6 +443,8 @@ const RequestMeetingScreen = () => {
             }
         } catch (error) {
             console.error('Error sending schedule request:', error);
+        } finally {
+            setIsSending(false);  // 로딩 종료
         }
     };
 
@@ -509,12 +513,6 @@ const RequestMeetingScreen = () => {
     return (
         <SafeAreaView style={styles.container}>
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                {/* Header */}
-                <View style={styles.header}>
-                    <Text style={styles.headerTitle}>일정 조율 요청</Text>
-                    <Text style={styles.headerSubtitle}>참여자들의 캘린더를 분석하여 최적의 시간을 제안합니다.</Text>
-                </View>
-
                 {/* Participants */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
@@ -573,7 +571,7 @@ const RequestMeetingScreen = () => {
 
                     {/* Schedule Total Duration (Nights) */}
                     <View style={styles.settingsSection}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                             <Text style={styles.settingsLabel}>일정 총 기간</Text>
                             <View style={{
                                 backgroundColor: COLORS.indigo50,
@@ -605,7 +603,7 @@ const RequestMeetingScreen = () => {
                             shadowOpacity: 0.05,
                             shadowRadius: 2,
                             elevation: 1,
-                            marginBottom: durationNights > 0 ? 12 : 0
+                            marginBottom: durationNights > 0 ? 8 : 0
                         }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                                 <View style={{
@@ -890,10 +888,17 @@ const RequestMeetingScreen = () => {
                 <View style={styles.sendButtonContainer}>
                     <TouchableOpacity
                         onPress={handleSend}
-                        disabled={selectedFriends.length === 0 || !hasAnalyzed}
-                        style={[styles.sendButton, (selectedFriends.length === 0 || !hasAnalyzed) && styles.sendButtonDisabled]}
+                        disabled={selectedFriends.length === 0 || !hasAnalyzed || isSending}
+                        style={[styles.sendButton, (selectedFriends.length === 0 || !hasAnalyzed || isSending) && styles.sendButtonDisabled]}
                     >
-                        <Text style={styles.sendButtonText}>{hasAnalyzed ? `${selectedFriends.length}명에게 요청 보내기` : '일정을 분석해주세요'}</Text>
+                        {isSending ? (
+                            <>
+                                <ActivityIndicator size="small" color={COLORS.white} style={{ marginRight: 8 }} />
+                                <Text style={styles.sendButtonText}>요청을 보내는 중...</Text>
+                            </>
+                        ) : (
+                            <Text style={styles.sendButtonText}>{hasAnalyzed ? `${selectedFriends.length}명에게 요청 보내기` : '일정을 분석해주세요'}</Text>
+                        )}
                     </TouchableOpacity>
                 </View>
             </ScrollView>
@@ -1133,12 +1138,12 @@ const RequestMeetingScreen = () => {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: COLORS.neutralLight },
     scrollView: { flex: 1 },
-    scrollContent: { paddingBottom: 120 },
-    header: { backgroundColor: COLORS.white, paddingHorizontal: 24, paddingTop: Platform.OS === 'ios' ? 48 : 24, paddingBottom: 32, borderBottomLeftRadius: 48, borderBottomRightRadius: 48, marginBottom: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+    scrollContent: { paddingTop: 24, paddingBottom: 120 },
+    header: { backgroundColor: COLORS.white, paddingHorizontal: 24, paddingTop: Platform.OS === 'ios' ? 40 : 20, paddingBottom: 20, borderBottomLeftRadius: 48, borderBottomRightRadius: 48, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
     headerTitle: { fontSize: 24, fontWeight: 'bold', color: COLORS.neutralSlate },
     headerSubtitle: { fontSize: 12, color: COLORS.neutralGray, marginTop: 8, fontWeight: '500' },
-    section: { paddingHorizontal: 24, marginBottom: 24 },
-    sectionHeader: { marginBottom: 16, paddingHorizontal: 4 },
+    section: { paddingHorizontal: 24, marginBottom: 16 },
+    sectionHeader: { marginBottom: 10, paddingHorizontal: 4 },
     sectionTitle: { fontSize: 12, fontWeight: 'bold', color: COLORS.neutralSlate, textTransform: 'uppercase', letterSpacing: 1.5 },
     sectionCount: { color: COLORS.primaryMain },
     participantsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
@@ -1147,16 +1152,16 @@ const styles = StyleSheet.create({
     participantName: { fontSize: 12, fontWeight: 'bold', color: COLORS.neutralSlate },
     participantRemove: { marginLeft: 8 },
     addParticipantButton: { width: 44, height: 44, borderRadius: 16, borderWidth: 2, borderStyle: 'dashed', borderColor: COLORS.neutralGray, justifyContent: 'center', alignItems: 'center' },
-    settingsCard: { marginHorizontal: 24, backgroundColor: COLORS.white, borderRadius: 40, padding: 24, marginBottom: 24, borderWidth: 1, borderColor: 'rgba(148, 163, 184, 0.1)', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
-    settingsSection: { marginBottom: 24 },
-    settingsLabel: { fontSize: 10, fontWeight: 'bold', color: COLORS.neutralGray, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
-    dateRangeContainer: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    dateButton: { flex: 1, borderRadius: 16, padding: 16, backgroundColor: COLORS.neutralLight, borderWidth: 2, borderColor: 'transparent' },
+    settingsCard: { marginHorizontal: 24, backgroundColor: COLORS.white, borderRadius: 32, padding: 18, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(148, 163, 184, 0.1)', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+    settingsSection: { marginBottom: 16 },
+    settingsLabel: { fontSize: 10, fontWeight: 'bold', color: COLORS.neutralGray, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8 },
+    dateRangeContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    dateButton: { flex: 1, borderRadius: 14, padding: 12, backgroundColor: COLORS.neutralLight, borderWidth: 2, borderColor: 'transparent' },
     dateButtonActive: { borderColor: COLORS.primaryMain, backgroundColor: COLORS.primaryBg },
     dateLabel: { fontSize: 9, fontWeight: 'bold', color: COLORS.primaryLight, textTransform: 'uppercase', marginBottom: 4 },
     dateValue: { fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate },
-    timeContainer: { flexDirection: 'row', gap: 12 },
-    timeButton: { flex: 1, flexDirection: 'row', alignItems: 'center', borderRadius: 16, padding: 16, backgroundColor: COLORS.neutralLight, borderWidth: 2, borderColor: 'transparent' },
+    timeContainer: { flexDirection: 'row', gap: 8 },
+    timeButton: { flex: 1, flexDirection: 'row', alignItems: 'center', borderRadius: 14, padding: 12, backgroundColor: COLORS.neutralLight, borderWidth: 2, borderColor: 'transparent' },
     timeButtonActive: { borderColor: COLORS.primaryMain, backgroundColor: COLORS.primaryBg },
     timeValue: { fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate, marginLeft: 12 },
     durationChipsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -1164,7 +1169,7 @@ const styles = StyleSheet.create({
     durationChipActive: { borderColor: COLORS.primaryMain, backgroundColor: COLORS.primaryMain },
     durationChipText: { fontSize: 11, fontWeight: 'bold', color: COLORS.neutralSlate },
     durationChipTextActive: { color: COLORS.white },
-    durationDropdown: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.neutralLight, borderRadius: 16, padding: 16, borderWidth: 2, borderColor: 'transparent' },
+    durationDropdown: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.neutralLight, borderRadius: 14, padding: 12, borderWidth: 2, borderColor: 'transparent' },
     durationDropdownText: { flex: 1, fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate, marginLeft: 12 },
     analyzeButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.primaryMain, borderRadius: 24, paddingVertical: 20, gap: 12, shadowColor: COLORS.primaryMain, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 8 },
     analyzeButtonDisabled: { backgroundColor: COLORS.neutralGray, opacity: 0.5, shadowOpacity: 0 },
@@ -1205,7 +1210,7 @@ const styles = StyleSheet.create({
     tipBoxAmber: { padding: 12, backgroundColor: COLORS.amber50, borderRadius: 12, borderWidth: 1, borderColor: COLORS.amber100 },
     tipTextAmber: { fontSize: 10, fontWeight: '500', color: COLORS.amber700, lineHeight: 16 },
     sendButtonContainer: { paddingHorizontal: 24, paddingTop: 24 },
-    sendButton: { backgroundColor: COLORS.primaryDark, borderRadius: 24, paddingVertical: 20, alignItems: 'center', shadowColor: COLORS.primaryDark, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 8 },
+    sendButton: { flexDirection: 'row', backgroundColor: COLORS.primaryDark, borderRadius: 24, paddingVertical: 20, alignItems: 'center', justifyContent: 'center', shadowColor: COLORS.primaryDark, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 8 },
     sendButtonDisabled: { backgroundColor: COLORS.neutralGray, opacity: 0.5, shadowOpacity: 0 },
     sendButtonText: { fontSize: 14, fontWeight: 'bold', color: COLORS.white },
     successContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
@@ -1239,7 +1244,7 @@ const styles = StyleSheet.create({
     friendItemLeft: { flexDirection: 'row', alignItems: 'center' },
     friendItemAvatar: { width: 48, height: 48, borderRadius: 16, marginRight: 16, borderWidth: 2, borderColor: COLORS.white },
     friendItemName: { fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate },
-    friendItemEmail: { fontSize: 10, color: COLORS.neutralGray, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.5 },
+    friendItemEmail: { fontSize: 12, color: COLORS.neutralGray },
     checkbox: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: 'rgba(148, 163, 184, 0.4)', justifyContent: 'center', alignItems: 'center' },
     checkboxSelected: { backgroundColor: COLORS.primaryMain, borderColor: COLORS.primaryMain },
     selectCompleteContainer: { padding: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 24, backgroundColor: COLORS.white },
