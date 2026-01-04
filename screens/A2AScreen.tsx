@@ -1863,15 +1863,36 @@ const A2AScreen = () => {
                                                     <View>
                                                         <Text style={styles.infoLabel}>요청시간</Text>
                                                         <Text style={styles.infoValue}>
-                                                            {/* 요청시간: requestedDate/Time ~ endTime 표시 */}
+                                                            {/* 요청시간: duration_nights >= 1이면 날짜 범위만, 아니면 시간 포함 */}
                                                             {(() => {
                                                                 const d = selectedLog.details as any;
-                                                                const date = d?.requestedDate || d?.proposedDate || '';
+                                                                const durationNights = d?.duration_nights || 0;
+                                                                const startDate = d?.requestedDate || d?.proposedDate || '';
+
+                                                                // 1박 이상이면 날짜 범위만 표시 (시간 제외)
+                                                                if (durationNights >= 1 && startDate) {
+                                                                    // 종료 날짜 계산: 시작 날짜 + duration_nights
+                                                                    try {
+                                                                        const startDateObj = new Date(startDate);
+                                                                        const endDateObj = new Date(startDateObj);
+                                                                        endDateObj.setDate(startDateObj.getDate() + durationNights);
+
+                                                                        const formatDate = (date: Date) => {
+                                                                            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                                                                        };
+
+                                                                        return `${formatDate(startDateObj)} ~ ${formatDate(endDateObj)}`;
+                                                                    } catch {
+                                                                        return startDate;
+                                                                    }
+                                                                }
+
+                                                                // 당일 일정: 기존 로직 (시간 포함)
                                                                 const startTime = d?.requestedTime || d?.proposedTime || '';
                                                                 const endTime = d?.requestedEndTime || d?.proposedEndTime || d?.end_time || '';
-                                                                if (!date && !startTime) return '미정';
+                                                                if (!startDate && !startTime) return '미정';
                                                                 const timeRange = endTime ? `${startTime}~${endTime}` : startTime;
-                                                                return date ? `${date} ${timeRange}` : timeRange;
+                                                                return startDate ? `${startDate} ${timeRange}` : timeRange;
                                                             })()}
                                                         </Text>
                                                     </View>
@@ -1886,15 +1907,35 @@ const A2AScreen = () => {
                                                         <View>
                                                             <Text style={styles.infoLabel}>협상 확정 시간</Text>
                                                             <Text style={styles.infoValue}>
-                                                                {/* 협상 확정 시간: agreedDate/Time ~ endTime 표시 */}
+                                                                {/* 협상 확정 시간: duration_nights >= 1이면 날짜 범위만, 아니면 시간 포함 */}
                                                                 {(() => {
                                                                     const d = selectedLog.details as any;
-                                                                    const date = d?.agreedDate || d?.proposedDate || '';
+                                                                    const durationNights = d?.duration_nights || 0;
+                                                                    const startDate = d?.agreedDate || d?.proposedDate || '';
+
+                                                                    // 1박 이상이면 날짜 범위만 표시 (시간 제외)
+                                                                    if (durationNights >= 1 && startDate) {
+                                                                        try {
+                                                                            const startDateObj = new Date(startDate);
+                                                                            const endDateObj = new Date(startDateObj);
+                                                                            endDateObj.setDate(startDateObj.getDate() + durationNights);
+
+                                                                            const formatDate = (date: Date) => {
+                                                                                return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                                                                            };
+
+                                                                            return `${formatDate(startDateObj)} ~ ${formatDate(endDateObj)}`;
+                                                                        } catch {
+                                                                            return startDate;
+                                                                        }
+                                                                    }
+
+                                                                    // 당일 일정: 기존 로직 (시간 포함)
                                                                     const startTime = d?.agreedTime || d?.proposedTime || '';
                                                                     const endTime = d?.agreedEndTime || d?.proposedEndTime || d?.end_time || '';
-                                                                    if (!date && !startTime) return '협상 중';
+                                                                    if (!startDate && !startTime) return '협상 중';
                                                                     const timeRange = endTime ? `${startTime}~${endTime}` : startTime;
-                                                                    return date ? `${date} ${timeRange}` : timeRange;
+                                                                    return startDate ? `${startDate} ${timeRange}` : timeRange;
                                                                 })()}
                                                             </Text>
                                                         </View>
