@@ -429,6 +429,12 @@ const RequestMeetingScreen = () => {
                     title: title,
                     location: location || null,
                     duration_nights: durationNights,  // 박 수 추가 (0이면 당일)
+                    // 명시적 시간 정보 추가
+                    start_date: startDate,
+                    end_date: endDate,
+                    start_time: startTime,
+                    end_time: endTime,
+                    duration_minutes: (durationHour * 60) + durationMinute,
                 }),
             });
 
