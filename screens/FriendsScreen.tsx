@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { UserPlus, Check, X } from 'lucide-react-native';
+import { UserPlus, Check, X, Info } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -94,13 +94,18 @@ const FriendsScreen = () => {
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<{ id: string; name: string } | null>(null);
 
-  // Web-compatible alert function
-  const showAlert = (title: string, message: string) => {
-    if (Platform.OS === 'web') {
-      window.alert(`${title}\n\n${message}`);
-    } else {
-      Alert.alert(title, message);
-    }
+  // Custom Alert Modal State
+  const [customAlertVisible, setCustomAlertVisible] = useState(false);
+  const [customAlertTitle, setCustomAlertTitle] = useState('');
+  const [customAlertMessage, setCustomAlertMessage] = useState('');
+  const [customAlertType, setCustomAlertType] = useState<'success' | 'error' | 'info'>('info');
+
+  // Custom alert function (replaces window.alert)
+  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setCustomAlertTitle(title);
+    setCustomAlertMessage(message);
+    setCustomAlertType(type);
+    setCustomAlertVisible(true);
   };
 
   // Fetch User Info for "My ID" card
@@ -127,7 +132,11 @@ const FriendsScreen = () => {
 
       console.log('친구 요청 목록 조회 시작...');
       const response = await fetch(`${getBackendUrl()}/friends/requests`, {
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        },
       });
 
       console.log('친구 요청 응답 상태:', response.status);
@@ -205,13 +214,18 @@ const FriendsScreen = () => {
     // FriendsScreen에서 필요한 메시지 구독
     const unsubscribe = WebSocketService.subscribe(
       'FriendsScreen',
-      ['friend_request', 'friend_accepted'],
+      ['friend_request', 'friend_accepted', 'friend_rejected'],
       (data) => {
+        console.log(`[WS:Friends] Event: ${data.type}`);
+
         if (data.type === "friend_request") {
-          console.log("[WS:Friends] 친구 요청 도착:", data.from_user_name);
           fetchFriendRequests();
+          // DB 반영 지연 가능성 고려하여 재시도
+          setTimeout(() => fetchFriendRequests(), 500);
         } else if (data.type === "friend_accepted") {
-          console.log("[WS:Friends] 친구 수락 알림");
+          fetchFriends();
+          fetchFriendRequests();
+        } else if (data.type === "friend_rejected") {
           fetchFriends();
         }
       }
@@ -224,7 +238,7 @@ const FriendsScreen = () => {
 
   const handleAddFriend = async () => {
     if (!searchTerm.trim()) {
-      showAlert('오류', '이메일을 입력해주세요.');
+      showAlert('오류', '이메일을 입력해주세요.', 'error');
       return;
     }
 
@@ -244,17 +258,16 @@ const FriendsScreen = () => {
       console.log('친구 추가 응답 상태:', response.status);
 
       if (response.ok) {
-        showAlert('성공', '친구 요청을 보냈습니다.');
+        showAlert('성공', '친구 요청을 보냈습니다.', 'success');
         setSearchTerm('');
-        setIsAdding(false);
       } else {
         const errorData = await response.json();
         console.log('친구 추가 에러 응답:', errorData);
-        showAlert('오류', errorData.detail || errorData.error || '친구 추가에 실패했습니다.');
+        showAlert('오류', errorData.detail || errorData.error || '친구 추가에 실패했습니다.', 'error');
       }
     } catch (error) {
       console.error('친구 추가 예외:', error);
-      showAlert('오류', '친구 추가 중 오류가 발생했습니다.');
+      showAlert('오류', '친구 추가 중 오류가 발생했습니다.', 'error');
     }
   };
 
@@ -280,10 +293,10 @@ const FriendsScreen = () => {
         setDeleteModalVisible(false);
         setSelectedFriend(null);
       } else {
-        showAlert('오류', '삭제 실패');
+        showAlert('오류', '삭제 실패', 'error');
       }
     } catch (e) {
-      showAlert('오류', '삭제 중 오류 발생');
+      showAlert('오류', '삭제 중 오류 발생', 'error');
     }
   };
 
@@ -298,14 +311,14 @@ const FriendsScreen = () => {
       });
 
       if (response.ok) {
-        showAlert('성공', '친구 요청을 수락했습니다.');
+        showAlert('성공', '친구 요청을 수락했습니다.', 'success');
         fetchFriendRequests();
         fetchFriends();
       } else {
-        showAlert('오류', '요청 수락에 실패했습니다.');
+        showAlert('오류', '요청 수락에 실패했습니다.', 'error');
       }
     } catch (e) {
-      showAlert('오류', '요청 처리 중 오류가 발생했습니다.');
+      showAlert('오류', '요청 처리 중 오류가 발생했습니다.', 'error');
     }
   };
 
@@ -320,20 +333,20 @@ const FriendsScreen = () => {
       });
 
       if (response.ok) {
-        showAlert('성공', '친구 요청을 거절했습니다.');
+        showAlert('성공', '친구 요청을 거절했습니다.', 'success');
         fetchFriendRequests();
       } else {
-        showAlert('오류', '요청 거절에 실패했습니다.');
+        showAlert('오류', '요청 거절에 실패했습니다.', 'error');
       }
     } catch (e) {
-      showAlert('오류', '요청 처리 중 오류가 발생했습니다.');
+      showAlert('오류', '요청 처리 중 오류가 발생했습니다.', 'error');
     }
   };
 
   const copyToClipboard = async () => {
     if (userInfo?.handle) {
       await Clipboard.setStringAsync(userInfo.handle);
-      showAlert('복사 완료!', `${userInfo.handle}가 클립보드에 복사되었습니다.`);
+      showAlert('복사 완료!', `${userInfo.handle}가 클립보드에 복사되었습니다.`, 'success');
     }
   };
 
@@ -410,6 +423,73 @@ const FriendsScreen = () => {
           </LinearGradient>
         </View>
         <BottomNav activeTab={Tab.FRIENDS} />
+
+        {/* Custom Alert Modal for isAdding view */}
+        <Modal
+          visible={customAlertVisible}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setCustomAlertVisible(false)}
+        >
+          <TouchableWithoutFeedback onPress={() => setCustomAlertVisible(false)}>
+            <View style={styles.modalOverlay}>
+              <TouchableWithoutFeedback onPress={() => { }}>
+                <View style={{
+                  backgroundColor: 'white',
+                  borderRadius: 20,
+                  padding: 24,
+                  width: '90%',
+                  maxWidth: 320,
+                  alignItems: 'center',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.15,
+                  shadowRadius: 12,
+                  elevation: 8,
+                }}>
+                  <View style={{
+                    width: 56,
+                    height: 56,
+                    borderRadius: 28,
+                    marginBottom: 20,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    backgroundColor: customAlertType === 'success' ? '#E0E7FF' :
+                      customAlertType === 'error' ? '#FEE2E2' : '#E0E7FF'
+                  }}>
+                    {customAlertType === 'success' ? (
+                      <Check size={28} color={COLORS.primaryMain} />
+                    ) : customAlertType === 'error' ? (
+                      <X size={28} color="#DC2626" />
+                    ) : (
+                      <Info size={28} color={COLORS.primaryMain} />
+                    )}
+                  </View>
+                  <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 12, textAlign: 'center' }}>
+                    {customAlertTitle}
+                  </Text>
+                  <Text style={{ fontSize: 16, color: COLORS.neutral500, lineHeight: 24, marginBottom: 32, textAlign: 'center' }}>
+                    {customAlertMessage}
+                  </Text>
+                  <TouchableOpacity
+                    style={{
+                      width: '100%',
+                      height: 50,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      borderRadius: 16,
+                      backgroundColor: customAlertType === 'success' ? COLORS.primaryMain :
+                        customAlertType === 'error' ? '#EF4444' : COLORS.primaryMain
+                    }}
+                    onPress={() => setCustomAlertVisible(false)}
+                  >
+                    <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>확인</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
       </SafeAreaView>
     );
   }
@@ -585,13 +665,80 @@ const FriendsScreen = () => {
                   <Pressable
                     style={({ pressed }) => [
                       styles.modalDeleteButton,
-                      { backgroundColor: pressed ? '#3730A3' : '#0E004E' }
+                      { backgroundColor: pressed ? '#DC2626' : '#EF4444' }
                     ]}
                     onPress={confirmDelete}
                   >
                     <Text style={styles.modalDeleteText}>삭제</Text>
                   </Pressable>
                 </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Custom Alert Modal */}
+      <Modal
+        visible={customAlertVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setCustomAlertVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setCustomAlertVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={() => { }}>
+              <View style={{
+                backgroundColor: 'white',
+                borderRadius: 20,
+                padding: 24,
+                width: '90%',
+                maxWidth: 320,
+                alignItems: 'center',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.15,
+                shadowRadius: 12,
+                elevation: 8,
+              }}>
+                <View style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 28,
+                  marginBottom: 20,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  backgroundColor: customAlertType === 'success' ? '#E0E7FF' :
+                    customAlertType === 'error' ? '#FEE2E2' : '#E0E7FF'
+                }}>
+                  {customAlertType === 'success' ? (
+                    <Check size={28} color={COLORS.primaryMain} />
+                  ) : customAlertType === 'error' ? (
+                    <X size={28} color="#DC2626" />
+                  ) : (
+                    <Info size={28} color={COLORS.primaryMain} />
+                  )}
+                </View>
+                <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 12, textAlign: 'center' }}>
+                  {customAlertTitle}
+                </Text>
+                <Text style={{ fontSize: 16, color: COLORS.neutral500, lineHeight: 24, marginBottom: 32, textAlign: 'center' }}>
+                  {customAlertMessage}
+                </Text>
+                <TouchableOpacity
+                  style={{
+                    width: '100%',
+                    height: 50,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderRadius: 16,
+                    backgroundColor: customAlertType === 'success' ? COLORS.primaryMain :
+                      customAlertType === 'error' ? '#EF4444' : COLORS.primaryMain
+                  }}
+                  onPress={() => setCustomAlertVisible(false)}
+                >
+                  <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>확인</Text>
+                </TouchableOpacity>
               </View>
             </TouchableWithoutFeedback>
           </View>
@@ -913,7 +1060,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: COLORS.green500,
+    backgroundColor: COLORS.primaryMain,
     alignItems: 'center',
     justifyContent: 'center',
   },

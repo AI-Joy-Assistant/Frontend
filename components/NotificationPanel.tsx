@@ -11,7 +11,7 @@ import {
     SafeAreaView,
     ScrollView,
 } from 'react-native';
-import { ArrowLeft, Calendar, Bell, Users, X } from 'lucide-react-native';
+import { ArrowLeft, Calendar, Bell, Users, X, Check } from 'lucide-react-native';
 import { useWindowDimensions } from 'react-native';
 
 const COLORS = {
@@ -58,7 +58,7 @@ interface PendingRequest {
 
 interface Notification {
     id: string;
-    type: 'schedule_rejected' | 'friend_request' | 'friend_accepted' | 'general';
+    type: 'schedule_rejected' | 'schedule_rejection' | 'friend_request' | 'friend_accepted' | 'friend_rejected' | 'general' | 'schedule_confirmed';
     title: string;
     message: string;
     created_at: string;
@@ -198,6 +198,7 @@ export default function NotificationPanel({
 
         switch (item.type) {
             case 'schedule_rejected':
+            case 'schedule_rejection':
                 icon = <X size={16} color={COLORS.red400} />;
                 bgColor = styles.notificationRejected;
                 break;
@@ -207,6 +208,14 @@ export default function NotificationPanel({
                 break;
             case 'friend_accepted':
                 icon = <Users size={16} color={COLORS.green400} />;
+                bgColor = styles.notificationAccepted;
+                break;
+            case 'friend_rejected':
+                icon = <X size={16} color={COLORS.red400} />;
+                bgColor = styles.notificationRejected;
+                break;
+            case 'schedule_confirmed':
+                icon = <Check size={16} color={COLORS.green400} />;
                 bgColor = styles.notificationAccepted;
                 break;
         }
@@ -224,6 +233,11 @@ export default function NotificationPanel({
                     // 관련 A2A 세션으로 이동
                     if (item.metadata?.session_ids?.[0]) {
                         onNavigateToA2A(item.metadata.session_ids[0]);
+                    }
+                    break;
+                case 'schedule_confirmed':
+                    if (item.metadata?.session_id) {
+                        onNavigateToA2A(item.metadata.session_id);
                     }
                     break;
                 default:

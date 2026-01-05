@@ -135,6 +135,9 @@ const RegisterScreen = () => {
 
             {/* Footer Action */}
             <View style={styles.footer}>
+                <Text style={styles.termsText}>
+                    가입을 진행하면 이용약관 및 개인정보 처리방침에 동의하게 됩니다.
+                </Text>
                 <TouchableOpacity
                     onPress={handleSubmit}
                     disabled={!name || !handle || isLoading}
@@ -226,6 +229,7 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: 'bold',
         color: COLORS.neutralSlate,
+        outlineStyle: 'none' as any,  // 웹에서 포커스 시 파란 박스 제거
     },
     helperText: {
         fontSize: 10,
@@ -244,6 +248,13 @@ const styles = StyleSheet.create({
     footer: {
         padding: 32,
         paddingBottom: 48,
+    },
+    termsText: {
+        fontSize: 11,
+        color: COLORS.neutral400,
+        textAlign: 'center',
+        marginBottom: 16,
+        lineHeight: 16,
     },
     button: {
         width: '100%',

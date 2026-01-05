@@ -24,6 +24,8 @@ import {
     CheckCircle2,
     Clock,
     ChevronRight,
+    ChevronDown,
+    ChevronUp,
     X,
     MapPin,
     Calendar,
@@ -32,8 +34,6 @@ import {
     Trash2,
     AlertCircle,
     ChevronLeft,
-    ChevronUp,
-    ChevronDown
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import TimePickerModal from '../components/TimePickerModal';
@@ -2026,11 +2026,11 @@ const A2AScreen = () => {
                                                     onPress={() => setIsProcessExpanded(!isProcessExpanded)}
                                                 >
                                                     <Text style={styles.processTitle}>A2A 협상 과정 보기</Text>
-                                                    <ChevronRight
-                                                        size={16}
-                                                        color={COLORS.neutral300}
-                                                        style={{ transform: [{ rotate: isProcessExpanded ? '90deg' : '0deg' }] }}
-                                                    />
+                                                    {isProcessExpanded ? (
+                                                        <ChevronUp size={20} color={COLORS.neutral400} />
+                                                    ) : (
+                                                        <ChevronDown size={20} color={COLORS.neutral400} />
+                                                    )}
                                                 </TouchableOpacity>
 
                                                 {isProcessExpanded && (

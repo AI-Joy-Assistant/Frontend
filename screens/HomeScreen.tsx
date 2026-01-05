@@ -195,12 +195,15 @@ export default function HomeScreen() {
     try {
       const token = await AsyncStorage.getItem('accessToken');
       console.log('📋 Pending 요청 조회 시작, token:', token ? '있음' : '없음');
+      console.log('pending request 조회 시작...');
       if (!token) return;
 
       const response = await fetch(`${API_BASE}/a2a/pending-requests`, {
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
         }
       });
 
@@ -223,12 +226,15 @@ export default function HomeScreen() {
   const fetchNotifications = async () => {
     try {
       const token = await AsyncStorage.getItem('accessToken');
+      console.log('알림 조회 시작...');
       if (!token) return;
 
       const response = await fetch(`${API_BASE}/chat/notifications`, {
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
         }
       });
 
@@ -290,11 +296,19 @@ export default function HomeScreen() {
     // HomeScreen에서 필요한 메시지만 구독
     const unsubscribe = WebSocketService.subscribe(
       'HomeScreen',
-      ['a2a_request'],
+      ['a2a_request', 'friend_request', 'friend_accepted', 'notification', 'a2a_status_changed'],
       (data) => {
-        console.log("[WS:Home] A2A 요청 도착:", data.from_user);
+        console.log("[WS:Home] WS Event:", data.type);
         fetchPendingRequests();
         fetchNotifications();
+        fetchFriends();
+
+        // 데이터 일관성을 위한 지연 갱신
+        setTimeout(() => {
+          fetchPendingRequests();
+          fetchNotifications();
+          fetchFriends();
+        }, 500);
       }
     );
 
@@ -350,6 +364,12 @@ export default function HomeScreen() {
   const [customAlertTitle, setCustomAlertTitle] = useState('');
   const [customAlertMessage, setCustomAlertMessage] = useState('');
   const [customAlertType, setCustomAlertType] = useState<'success' | 'error' | 'info'>('info');
+
+  // Date Picker Modal State
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
+  const [pickerYear, setPickerYear] = useState(new Date().getFullYear());
+  const [pickerMonth, setPickerMonth] = useState(new Date().getMonth());
+  const [pickerMode, setPickerMode] = useState<'YEAR' | 'MONTH'>('YEAR');
 
   // Date/Time Picker State
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
@@ -550,7 +570,8 @@ export default function HomeScreen() {
           endDate: date !== endDateStr ? endDateStr : undefined,
           time: isAllDayEvent ? '종일' : `${startTime} - ${endTime}`,
           participants: participants,
-          type: isA2A ? 'A2A' : 'NORMAL'
+          type: isA2A ? 'A2A' : 'NORMAL',
+          location: event.location
         };
       });
 
@@ -800,6 +821,7 @@ export default function HomeScreen() {
     setFormTitle(schedule.title);
     setFormStartDate(schedule.date);
     setFormEndDate(schedule.endDate || '');
+    setFormLocation(schedule.location || '');
     setShowDeleteConfirm(false);
 
     if (schedule.time.includes('-')) {
@@ -940,7 +962,7 @@ export default function HomeScreen() {
           } else {
             // scheduleInfo가 없거나 session_ids가 없어도 요청이 성공했으면 알림
             console.log('[HomeScreen A2A Debug] No session_ids in response, but request succeeded');
-            showAlert('완료', '일정 요청이 전송되었습니다. A2A 화면에서 확인해주세요.');
+            showAlert('완료', '일정 요청이 전송되었습니다!\nA2A 화면에서 확인해주세요.');
           }
 
           // 상태 초기화
@@ -1001,6 +1023,7 @@ export default function HomeScreen() {
         summary: formTitle,
         start_time: formatKSTISO(startDateTimeStr),
         end_time: formatKSTISO(endDateTimeStr),
+        location: formLocation,
         is_all_day: isAllDay,
       };
 
@@ -1072,7 +1095,7 @@ export default function HomeScreen() {
           <View style={styles.profileButton}>
             {currentUserId ? (
               <Image
-                source={{ uri: `${API_BASE}/auth/profile-image/${currentUserId}?t=${Date.now()}` }}
+                source={{ uri: `${API_BASE}/auth/profile-image/${currentUserId}` }}
                 style={styles.profileImage}
               />
             ) : (
@@ -1101,7 +1124,18 @@ export default function HomeScreen() {
                 <TouchableOpacity onPress={handlePrevClick} style={styles.iconButton}>
                   <ChevronLeft size={24} color={COLORS.neutral400} />
                 </TouchableOpacity>
-                <Text style={styles.calendarTitle}>{getDisplayDateHeader()}</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setPickerYear(viewYear);
+                    setPickerMonth(viewMonth);
+                    setPickerMode('YEAR');
+                    setDatePickerVisible(true);
+                  }}
+                  style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 8 }}
+                >
+                  <Text style={styles.calendarTitle}>{getDisplayDateHeader()}</Text>
+                  <ChevronDown size={20} color={COLORS.neutralSlate} style={{ marginLeft: 4 }} />
+                </TouchableOpacity>
                 <TouchableOpacity onPress={handleNextClick} style={styles.iconButton}>
                   <ChevronRight size={24} color={COLORS.neutral400} />
                 </TouchableOpacity>
@@ -1424,6 +1458,177 @@ export default function HomeScreen() {
         </TouchableWithoutFeedback>
       </Modal>
 
+      {/* Date Picker Modal */}
+      <Modal
+        visible={datePickerVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setDatePickerVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setDatePickerVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={() => { }}>
+              <View style={{
+                backgroundColor: 'white',
+                borderRadius: 24,
+                width: '85%',
+                maxWidth: 320,
+                padding: 24,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.15,
+                shadowRadius: 12,
+                elevation: 8,
+              }}>
+                <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 20, textAlign: 'center' }}>
+                  날짜 이동
+                </Text>
+
+                {pickerMode === 'YEAR' ? (
+                  <>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 24 }}>
+                      <TouchableOpacity
+                        style={{ padding: 8 }}
+                        onPress={() => setPickerYear(prev => prev - 12)}
+                      >
+                        <ChevronLeft size={24} color={COLORS.neutral500} />
+                      </TouchableOpacity>
+                      <Text style={{ fontSize: 24, fontWeight: 'bold', color: COLORS.primaryMain, marginHorizontal: 20 }}>
+                        {Math.floor(pickerYear / 12) * 12} - {Math.floor(pickerYear / 12) * 12 + 11}
+                      </Text>
+                      <TouchableOpacity
+                        style={{ padding: 8 }}
+                        onPress={() => setPickerYear(prev => prev + 12)}
+                      >
+                        <ChevronRight size={24} color={COLORS.neutral500} />
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 24 }}>
+                      {Array.from({ length: 12 }, (_, i) => Math.floor(pickerYear / 12) * 12 + i).map((year) => (
+                        <TouchableOpacity
+                          key={year}
+                          style={{
+                            width: '30%',
+                            paddingVertical: 12,
+                            marginBottom: 10,
+                            borderRadius: 12,
+                            backgroundColor: pickerYear === year ? COLORS.primaryMain : COLORS.neutralLight,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                          onPress={() => {
+                            setPickerYear(year);
+                            setPickerMode('MONTH');
+                          }}
+                        >
+                          <Text style={{
+                            fontSize: 16,
+                            fontWeight: '600',
+                            color: pickerYear === year ? 'white' : COLORS.neutralSlate
+                          }}>
+                            {year}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    {/* Header with Year Selector (Click to go back to YEAR mode) */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 24 }}>
+                      <TouchableOpacity
+                        style={{ padding: 8 }}
+                        onPress={() => setPickerYear(prev => prev - 1)}
+                      >
+                        <ChevronLeft size={24} color={COLORS.neutral500} />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => setPickerMode('YEAR')}>
+                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: COLORS.primaryMain, marginHorizontal: 20 }}>
+                          {pickerYear}년
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={{ padding: 8 }}
+                        onPress={() => setPickerYear(prev => prev + 1)}
+                      >
+                        <ChevronRight size={24} color={COLORS.neutral500} />
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Month Grid */}
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 24 }}>
+                      {Array.from({ length: 12 }, (_, i) => i).map((month) => (
+                        <TouchableOpacity
+                          key={month}
+                          style={{
+                            width: '30%',
+                            paddingVertical: 12,
+                            marginBottom: 10,
+                            borderRadius: 12,
+                            backgroundColor: pickerMonth === month ? COLORS.primaryMain : COLORS.neutralLight,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                          onPress={() => setPickerMonth(month)}
+                        >
+                          <Text style={{
+                            fontSize: 16,
+                            fontWeight: '600',
+                            color: pickerMonth === month ? 'white' : COLORS.neutralSlate
+                          }}>
+                            {month + 1}월
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                )}
+
+                {/* Actions - Only show in Month mode or always? Usually "Move" is needed in Month mode. In Year mode, Cancel is enough? Or allow Move. */}
+                {/* User flow: Year -> Month -> Move/Cancel. */}
+                {/* Let's show buttons always, but in Year mode 'Move' might be confusing if they haven't picked month. */}
+                {/* But they might want to just change year and keep current month. So allow buttons in both. */}
+
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      paddingVertical: 14,
+                      borderRadius: 16,
+                      backgroundColor: COLORS.neutralLight,
+                      alignItems: 'center',
+                    }}
+                    onPress={() => setDatePickerVisible(false)}
+                  >
+                    <Text style={{ color: COLORS.neutral500, fontWeight: '600', fontSize: 16 }}>취소</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      paddingVertical: 14,
+                      borderRadius: 16,
+                      backgroundColor: COLORS.primaryMain,
+                      alignItems: 'center',
+                    }}
+                    onPress={() => {
+                      setViewYear(pickerYear);
+                      setViewMonth(pickerMonth);
+                      // 선택한 달의 1일로 설정
+                      const newDate = new Date(pickerYear, pickerMonth, 1);
+                      setSelectedDate(formatDate(pickerYear, pickerMonth, 1));
+                      setDatePickerVisible(false);
+                    }}
+                  >
+                    <Text style={{ color: 'white', fontWeight: '600', fontSize: 16 }}>이동</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
       {/* Schedule Modal  */}
       <Modal
         visible={showScheduleModal}
@@ -1516,22 +1721,20 @@ export default function HomeScreen() {
                   />
                 </View>
 
-                {/* 장소 입력 (참여자가 있을 때만 표시) */}
-                {selectedFriendIds.length > 0 && (
-                  <View style={styles.formGroup}>
-                    <Text style={styles.label}>장소 (선택)</Text>
-                    <View style={styles.iconInput}>
-                      <MapPin size={18} color={COLORS.neutral400} />
-                      <TextInput
-                        style={styles.locationInput}
-                        value={formLocation}
-                        onChangeText={setFormLocation}
-                        placeholder="만날 장소를 입력하세요"
-                        placeholderTextColor={COLORS.neutral400}
-                      />
-                    </View>
+                {/* 장소 입력 (모든 일정) */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>장소 (선택)</Text>
+                  <View style={styles.iconInput}>
+                    <MapPin size={18} color={COLORS.neutral400} />
+                    <TextInput
+                      style={styles.locationInput}
+                      value={formLocation}
+                      onChangeText={setFormLocation}
+                      placeholder="장소를 입력하세요 (선택)"
+                      placeholderTextColor={COLORS.neutral400}
+                    />
                   </View>
-                )}
+                </View>
 
                 <View style={styles.row}>
                   <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
@@ -1680,7 +1883,7 @@ export default function HomeScreen() {
                     <Text style={styles.saveButtonText}>
                       {isSubmittingA2A ? '요청 중...' :
                         editingScheduleId ? '수정하기' :
-                          selectedFriendIds.length > 0 ? '일정 요청하기 ✨' : '추가하기'}
+                          selectedFriendIds.length > 0 ? '일정 요청하기' : '추가하기'}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -1763,6 +1966,20 @@ export default function HomeScreen() {
                       </Text>
                     </View>
                   </View>
+
+                  {selectedDetailSchedule?.location && (
+                    <View style={styles.infoRow}>
+                      <View style={styles.infoIconBox}>
+                        <MapPin size={20} color={COLORS.neutral500} />
+                      </View>
+                      <View>
+                        <Text style={styles.infoLabel}>장소</Text>
+                        <Text style={styles.infoValue}>
+                          {selectedDetailSchedule.location}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
 
                   {/* [NEW] A2A 일정의 경우 참여자 목록 표시 */}
                   {selectedDetailSchedule?.type === 'A2A' && selectedDetailSchedule?.participants && selectedDetailSchedule.participants.length > 0 && (
@@ -1991,19 +2208,20 @@ export default function HomeScreen() {
                     height: 56,
                     borderRadius: 28,
                     marginBottom: 20,
-                    backgroundColor: customAlertType === 'success' ? '#DCFCE7' :
+                    backgroundColor: customAlertType === 'success' ? '#E0E7FF' :
                       customAlertType === 'error' ? '#FEE2E2' : '#E0E7FF'
                   }
                 ]}>
+
                   {customAlertType === 'success' ? (
-                    <Check size={28} color="#16A34A" />
+                    <Check size={28} color={COLORS.primaryDark} />
                   ) : customAlertType === 'error' ? (
                     <X size={28} color="#DC2626" />
                   ) : (
                     <Info size={28} color={COLORS.primaryMain} />
                   )}
                 </View>
-                <Text style={[styles.deleteModalTitle, { fontSize: 20, marginBottom: 12 }]}>{customAlertTitle}</Text>
+                <Text style={[styles.deleteModalTitle, { fontSize: 20, marginBottom: 12, textAlign: 'center' }]}>{customAlertTitle}</Text>
                 <Text style={[styles.deleteModalMessage, { fontSize: 16, lineHeight: 24, marginBottom: 32 }]}>
                   {customAlertMessage}
                 </Text>
@@ -2014,7 +2232,7 @@ export default function HomeScreen() {
                     justifyContent: 'center',
                     alignItems: 'center',
                     borderRadius: 16,
-                    backgroundColor: customAlertType === 'success' ? '#22C55E' :
+                    backgroundColor: customAlertType === 'success' ? COLORS.primaryDark :
                       customAlertType === 'error' ? '#EF4444' : COLORS.primaryMain
                   }}
                   onPress={() => setCustomAlertVisible(false)}
@@ -2075,6 +2293,8 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.08)',  // 보일듯 안보일듯한 연한 stroke
   },
   logoText: {
     fontSize: 20,
@@ -2093,8 +2313,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    borderWidth: 2.5,
-    borderColor: '#D4A574',
   },
   profilePlaceholder: {
     width: 38,

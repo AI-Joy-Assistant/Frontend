@@ -148,7 +148,7 @@ const LoginScreen = () => {
                         </View>
 
                         <Text style={styles.title}>JOYNER</Text>
-                        <Text style={styles.subtitle}>Your AI Scheduling Assistant</Text>
+                        <Text style={styles.subtitle}>AI Scheduling Assistant</Text>
                     </Animated.View>
                 </LinearGradient>
             </View>
@@ -156,9 +156,9 @@ const LoginScreen = () => {
             {/* MAIN / ACTION 영역 */}
             <Animated.View entering={FadeInDown.duration(1000).delay(200)} style={styles.actionContainer}>
                 <View style={styles.welcomeTextContainer}>
-                    <Text style={styles.welcomeTitle}>환영합니다! 👋</Text>
+                    <Text style={styles.welcomeTitle}>환영합니다!</Text>
                     <Text style={styles.welcomeDescription}>
-                        JOYNER와 함께 복잡한 일정 조율을{'\n'}AI로 스마트하게 해결하세요.
+                        내 손안의 AI 스케줄링 비서, JOYNER를 지금 만나보세요.
                     </Text>
                 </View>
 
@@ -188,11 +188,10 @@ const LoginScreen = () => {
                             />
                         </Svg>
                     </View>
-                    <Text style={styles.googleButtonText}>Google로 시작하기</Text>
+                    <Text style={styles.googleButtonText}>Google로 로그인하기</Text>
                 </TouchableOpacity>
 
                 <Text style={styles.footerText}>
-                    계속 진행하면 이용약관 및 개인정보 처리방침에 동의하게 됩니다.
                 </Text>
             </Animated.View>
         </View>

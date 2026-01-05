@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useFonts } from 'expo-font';
 import Animated, {
     FadeInUp,
     ZoomIn,
@@ -13,9 +14,15 @@ import Animated, {
 import Svg, { Circle, Rect, Path, Defs, LinearGradient as SvgLinear, Stop } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../constants/Colors';
+import { fontAssets } from '../constants/Fonts';
 import { getBackendUrl } from '../utils/environment';
 
 const SplashScreen = ({ navigation }: { navigation: any }) => {
+
+    // 🔥 Font Loading (iOS/Android only, 웹은 시스템 폰트)
+    const [fontsLoaded] = Platform.OS === 'web'
+        ? [true]  // 웹에서는 폰트 로딩 스킵
+        : useFonts(fontAssets);
 
     // 🔥 Pulse Animation (Tailwind animate-ping 대체)
     const pulse = useSharedValue(1);
@@ -39,8 +46,16 @@ const SplashScreen = ({ navigation }: { navigation: any }) => {
         );
     }, []);
 
-    // 🔥 자동 로그인 로직
+    // 🔥 자동 로그인 로직 (폰트 로드 후)
     useEffect(() => {
+        if (!fontsLoaded) return;
+
+        // iOS/Android에서만 전역 폰트 적용
+        if (Platform.OS !== 'web') {
+            const { applyGlobalFonts } = require('../utils/globalFonts');
+            applyGlobalFonts();
+        }
+
         const checkLogin = async () => {
             try {
                 await new Promise(resolve => setTimeout(resolve, 2000));
@@ -75,7 +90,7 @@ const SplashScreen = ({ navigation }: { navigation: any }) => {
         };
 
         checkLogin();
-    }, []);
+    }, [fontsLoaded]);
 
     return (
         <View style={styles.container}>

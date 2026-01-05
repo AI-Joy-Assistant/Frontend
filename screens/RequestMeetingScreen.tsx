@@ -761,7 +761,6 @@ const RequestMeetingScreen = () => {
                                 </>
                             ) : (
                                 <>
-                                    <Sparkles size={18} color={COLORS.white} fill={COLORS.white} />
                                     <Text style={styles.analyzeButtonText}>최적의 일정 분석하기</Text>
                                 </>
                             )}
@@ -874,11 +873,11 @@ const RequestMeetingScreen = () => {
 
                                                 {rec.status === '최적' ? (
                                                     <View style={styles.tipBoxIndigo}>
-                                                        <Text style={styles.tipTextIndigo}>✨ 모든 인원이 참여할 수 있는 최적의 윈도우입니다. 캘린더 등록 시 자동으로 확정될 가능성이 높습니다.</Text>
+                                                        <Text style={styles.tipTextIndigo}>모든 인원이 참여할 수 있는 최적의 윈도우입니다. 캘린더 등록 시 자동으로 확정될 가능성이 높습니다.</Text>
                                                     </View>
                                                 ) : (
                                                     <View style={styles.tipBoxAmber}>
-                                                        <Text style={styles.tipTextAmber}>💡 {rec.unavailableIds.length}명의 에이전트가 다른 일정을 감지했습니다. JOY 비서가 대신 협상을 제안하여 시간 조정을 시도할 수 있습니다.</Text>
+                                                        <Text style={styles.tipTextAmber}>{rec.unavailableIds.length}명의 에이전트가 다른 일정을 감지했습니다. JOY 비서가 대신 협상을 제안하여 시간 조정을 시도할 수 있습니다.</Text>
                                                     </View>
                                                 )}
                                             </View>
