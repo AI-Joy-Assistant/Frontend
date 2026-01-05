@@ -361,6 +361,7 @@ export default function HomeScreen() {
 
   // Custom Alert Modal State
   const [customAlertVisible, setCustomAlertVisible] = useState(false);
+  const [onCustomAlertConfirm, setOnCustomAlertConfirm] = useState<(() => void) | null>(null);
   const [customAlertTitle, setCustomAlertTitle] = useState('');
   const [customAlertMessage, setCustomAlertMessage] = useState('');
   const [customAlertType, setCustomAlertType] = useState<'success' | 'error' | 'info'>('info');
@@ -842,12 +843,13 @@ export default function HomeScreen() {
     console.log('[HomeScreen Debug] formTitle:', formTitle);
 
     // 커스텀 알림 모달을 표시하는 함수
-    const showAlert = (title: string, message: string) => {
+    const showAlert = (title: string, message: string, onConfirm?: () => void) => {
       const type = title.includes('완료') || title.includes('성공') ? 'success' :
         title.includes('오류') ? 'error' : 'info';
       setCustomAlertTitle(title);
       setCustomAlertMessage(message);
       setCustomAlertType(type);
+      setOnCustomAlertConfirm(() => onConfirm || null);
       setCustomAlertVisible(true);
     };
 
@@ -905,12 +907,33 @@ export default function HomeScreen() {
         // A2A 요청 메시지 생성
         const scheduleMessage = `${dateRangeStr} ${timeStr}에${locationStr} "${formTitle}" 일정 잡아줘`;
 
+        // 날짜 차이(duration_nights) 계산
+        let durationParams = {};
+        if (formEndDate && formEndDate !== formStartDate) {
+          const start = new Date(formStartDate);
+          const end = new Date(formEndDate);
+          const diffTime = Math.abs(end.getTime() - start.getTime());
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          durationParams = {
+            duration_nights: diffDays,
+            start_date: formStartDate,
+            end_date: formEndDate
+          };
+        } else {
+          durationParams = {
+            start_date: formStartDate,
+            end_date: formStartDate
+          };
+        }
+
         console.log('[HomeScreen A2A Debug] Sending request:', {
           message: scheduleMessage,
           date: formStartDate,
           start_time: formStartTime,
           end_time: formEndTime,
           selected_friends: selectedFriendIds,
+          is_all_day: isAllDay,  // ✅ 디버그용 추가
+          ...durationParams
         });
 
         const response = await fetch(`${API_BASE}/chat/chat`, {
@@ -927,6 +950,8 @@ export default function HomeScreen() {
             location: formLocation || undefined,  // 장소 별도 전달
             start_time: isAllDay ? undefined : formStartTime,  // 시작 시간
             end_time: isAllDay ? undefined : formEndTime,      // 종료 시간
+            is_all_day: isAllDay,  // ✅ 종일 여부 추가
+            ...durationParams  // ✅ 다박 정보 추가
           }),
         });
 
@@ -948,21 +973,18 @@ export default function HomeScreen() {
           if (scheduleInfo?.session_ids?.length > 0) {
             const sessionId = scheduleInfo.session_ids[0];
             // 성공 피드백 후 A2A 화면으로 이동
-            if (Platform.OS === 'web') {
-              window.alert('일정 요청이 전송되었습니다! A2A 화면에서 확인하세요.');
-            } else {
-              Alert.alert(
-                '일정 요청 완료',
-                '참여자들에게 일정 요청이 전송되었습니다.',
-                [
-                  { text: '확인', onPress: () => navigation.navigate('A2A', { initialLogId: sessionId }) }
-                ]
-              );
-            }
+            // 성공 피드백 후 A2A 화면으로 이동
+            showAlert(
+              '일정 요청 완료',
+              '참여자들에게 일정 요청이 전송되었습니다.',
+              () => navigation.navigate('A2A', { initialLogId: sessionId })
+            );
           } else {
             // scheduleInfo가 없거나 session_ids가 없어도 요청이 성공했으면 알림
             console.log('[HomeScreen A2A Debug] No session_ids in response, but request succeeded');
-            showAlert('완료', '일정 요청이 전송되었습니다!\nA2A 화면에서 확인해주세요.');
+            console.log('[HomeScreen A2A Debug] scheduleInfo:', JSON.stringify(scheduleInfo, null, 2));
+            console.log('[HomeScreen A2A Debug] responseData:', JSON.stringify(responseData, null, 2));
+            showAlert('오류', 'A2A 세션이 생성되지 않았습니다. 콘솔을 확인해주세요.');
           }
 
           // 상태 초기화
@@ -2235,7 +2257,13 @@ export default function HomeScreen() {
                     backgroundColor: customAlertType === 'success' ? COLORS.primaryDark :
                       customAlertType === 'error' ? '#EF4444' : COLORS.primaryMain
                   }}
-                  onPress={() => setCustomAlertVisible(false)}
+                  onPress={() => {
+                    setCustomAlertVisible(false);
+                    if (onCustomAlertConfirm) {
+                      onCustomAlertConfirm();
+                      setOnCustomAlertConfirm(null);
+                    }
+                  }}
                 >
                   <Text style={{
                     fontSize: 18,

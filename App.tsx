@@ -18,9 +18,22 @@ import RequestMeetingScreen from './screens/RequestMeetingScreen';
 import A2AChatDetailScreen from './screens/A2AChatDetailScreen';
 import { RootStackParamList } from './types';
 
+import { Platform } from 'react-native';
+
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
+  React.useEffect(() => {
+    if (Platform.OS === 'web') {
+      const style = document.createElement('style');
+      style.textContent = `
+        :focus { outline: none !important; }
+        input, textarea, select, div, button { outline: none !important; }
+      `;
+      document.head.appendChild(style);
+    }
+  }, []);
+
   return (
     <NavigationContainer
       linking={{

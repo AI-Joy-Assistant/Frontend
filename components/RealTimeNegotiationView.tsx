@@ -23,6 +23,7 @@ interface NegotiationMessage {
         time: string;
         location?: string;
         activity?: string;
+        duration_nights?: number;
     };
     message: string;
     timestamp?: string;
@@ -296,7 +297,31 @@ const RealTimeNegotiationView: React.FC<Props> = ({
                                 {msg.proposal && (
                                     <View style={styles.proposalBox}>
                                         <Text style={styles.proposalText}>
-                                            📅 {msg.proposal.date} {msg.proposal.time}
+                                            {(() => {
+                                                const d = msg.proposal;
+                                                if (!d) return '';
+
+                                                const durationNights = d.duration_nights || 0;
+                                                // 1박 이상이면 날짜 범위만 표시 (시간 제외)
+                                                if (durationNights >= 1 && d.date) {
+                                                    try {
+                                                        // YYYY-MM-DD 파싱 (TimeZone 이슈 방지를 위해 직접 파싱)
+                                                        const [y, m, day] = d.date.split('-').map(Number);
+                                                        const startDate = new Date(y, m - 1, day);
+                                                        const endDate = new Date(startDate);
+                                                        endDate.setDate(startDate.getDate() + durationNights);
+
+                                                        const formatDate = (date: Date) => {
+                                                            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                                                        };
+                                                        return `📅 ${formatDate(startDate)} ~ ${formatDate(endDate)}`;
+                                                    } catch (e) {
+                                                        return `📅 ${d.date}`;
+                                                    }
+                                                }
+
+                                                return `📅 ${d.date} ${d.time}`;
+                                            })()}
                                             {msg.proposal.location && ` | 📍 ${msg.proposal.location}`}
                                         </Text>
                                     </View>

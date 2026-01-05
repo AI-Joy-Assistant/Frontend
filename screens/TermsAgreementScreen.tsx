@@ -75,6 +75,9 @@ const TERMS_OF_SERVICE_CONTENT = `제 1조 (목적)
 제 6조 (문의)
 서비스 관련 문의: sungshinjoy@gmail.com`;
 
+// 구글 캘린더 접근 권한 내용
+const GOOGLE_CALENDAR_TERM_CONTENT = `JOYNER가 귀하의 일정을 확인하고 최적의 약속 시간을 제안하기 위해 구글 캘린더 접근 권한이 필요합니다.`;
+
 const TermsAgreementScreen = () => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
     const route = useRoute<TermsAgreementRouteProp>();
@@ -82,14 +85,18 @@ const TermsAgreementScreen = () => {
 
     const [agreedToTerms, setAgreedToTerms] = useState(false);
     const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
+    const [agreedToGoogleCalendar, setAgreedToGoogleCalendar] = useState(false);
     const [expandedTerms, setExpandedTerms] = useState(false);
     const [expandedPrivacy, setExpandedPrivacy] = useState(false);
+    const [expandedGoogleCalendar, setExpandedGoogleCalendar] = useState(false);
 
-    const allAgreed = agreedToTerms && agreedToPrivacy;
+    const allAgreed = agreedToTerms && agreedToPrivacy && agreedToGoogleCalendar;
 
     const handleAgreeAll = () => {
-        setAgreedToTerms(true);
-        setAgreedToPrivacy(true);
+        const newState = !allAgreed;
+        setAgreedToTerms(newState);
+        setAgreedToPrivacy(newState);
+        setAgreedToGoogleCalendar(newState);
     };
 
     const handleContinue = () => {
@@ -201,6 +208,41 @@ const TermsAgreementScreen = () => {
                             <View style={styles.expandedContent}>
                                 <ScrollView style={styles.contentScroll} nestedScrollEnabled>
                                     <Text style={styles.contentText}>{PRIVACY_POLICY_CONTENT}</Text>
+                                </ScrollView>
+                            </View>
+                        )}
+                    </View>
+
+                    {/* 구글 캘린더 접근 권한 */}
+                    <View style={styles.termSection}>
+                        <View style={styles.termItem}>
+                            <TouchableOpacity
+                                style={styles.termCheckArea}
+                                onPress={() => setAgreedToGoogleCalendar(!agreedToGoogleCalendar)}
+                                activeOpacity={0.7}
+                            >
+                                <View style={[styles.checkbox, agreedToGoogleCalendar && styles.checkboxActive]}>
+                                    {agreedToGoogleCalendar && <Check size={16} color={COLORS.white} />}
+                                </View>
+                                <Text style={styles.termLabel}>
+                                    <Text style={styles.required}>[필수]</Text> 구글 캘린더 접근 권한
+                                </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => setExpandedGoogleCalendar(!expandedGoogleCalendar)}
+                                style={styles.expandButton}
+                            >
+                                {expandedGoogleCalendar ? (
+                                    <ChevronUp size={20} color={COLORS.neutral400} />
+                                ) : (
+                                    <ChevronDown size={20} color={COLORS.neutral400} />
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                        {expandedGoogleCalendar && (
+                            <View style={styles.expandedContent}>
+                                <ScrollView style={styles.contentScroll} nestedScrollEnabled>
+                                    <Text style={styles.contentText}>{GOOGLE_CALENDAR_TERM_CONTENT}</Text>
                                 </ScrollView>
                             </View>
                         )}

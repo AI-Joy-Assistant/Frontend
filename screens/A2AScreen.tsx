@@ -38,7 +38,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import TimePickerModal from '../components/TimePickerModal';
 import RealTimeNegotiationView from '../components/RealTimeNegotiationView';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -888,7 +888,42 @@ const A2AScreen = () => {
                         // [✅ 수정] timeRange에 여러 fallback 소스 사용 + 시간 형식 변환
                         timeRange: (() => {
                             const d = session.details || {};
+                            const durationNights = d.duration_nights || 0;
                             const date = d.proposedDate || d.requestedDate || d.date || '';
+
+                            // 1박 이상이면 날짜 범위만 표시 (시간 제외)
+                            if (durationNights >= 1 && date) {
+                                try {
+                                    // 한글 날짜 형식 (MM월 DD일) 등의 처리를 위해 formatTimeRange의 날짜 파싱 로직 재사용
+                                    // 또는 간단히 YYYY-MM-DD로 변환 시도
+                                    let startDateStr = date;
+                                    const now = new Date();
+                                    const currentYear = now.getFullYear();
+
+                                    const koreanMatch = date.match(/(\d{1,2})월\s*(\d{1,2})일/);
+                                    if (koreanMatch) {
+                                        const month = String(koreanMatch[1]).padStart(2, '0');
+                                        const day = String(koreanMatch[2]).padStart(2, '0');
+                                        startDateStr = `${currentYear}-${month}-${day}`;
+                                    }
+
+                                    const startDateObj = new Date(startDateStr);
+                                    if (!isNaN(startDateObj.getTime())) {
+                                        const endDateObj = new Date(startDateObj);
+                                        endDateObj.setDate(startDateObj.getDate() + durationNights);
+
+                                        const formatDate = (dt: Date) => {
+                                            return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+                                        };
+
+                                        return `${formatDate(startDateObj)} ~ ${formatDate(endDateObj)}`;
+                                    }
+                                } catch (e) {
+                                    console.error("Date parsing error for range:", e);
+                                    return date; // fallback
+                                }
+                            }
+
                             const time = d.proposedTime || d.requestedTime || d.time || '';
                             return formatTimeRange(date, time);
                         })(),
@@ -913,11 +948,14 @@ const A2AScreen = () => {
     }, []);
 
     // currentUserId가 설정된 후에 로그 불러오기 (필터링에 필요)
-    useEffect(() => {
-        if (currentUserId) {
-            fetchA2ALogs();
-        }
-    }, [currentUserId, fetchA2ALogs]);
+    // currentUserId가 설정된 후에 로그 불러오기 (필터링에 필요)
+    useFocusEffect(
+        useCallback(() => {
+            if (currentUserId) {
+                fetchA2ALogs();
+            }
+        }, [currentUserId, fetchA2ALogs])
+    );
 
     // WebSocket for real-time A2A updates (using singleton service)
     useEffect(() => {
@@ -1128,8 +1166,8 @@ const A2AScreen = () => {
                 };
 
                 const totalTime = Date.now() - startTime;
-                console.log(`⏱️ [Modal] 전체 처리 시간: ${totalTime}ms`);
-                console.log('📋 [DEBUG] Updated status:', newStatus, 'rescheduleRequestedBy:', newDetails.rescheduleRequestedBy);
+                console.log(`[Modal] 전체 처리 시간: ${totalTime}ms`);
+                console.log('[DEBUG] Updated status:', newStatus, 'rescheduleRequestedBy:', newDetails.rescheduleRequestedBy);
             } else {
                 // API 실패 시 기존 데이터로 표시
                 setSelectedLog(log);
@@ -1152,7 +1190,7 @@ const A2AScreen = () => {
 
     const handleApproveClick = async () => {
         if (!selectedLog) return;
-        console.log('� 승인 버튼 클릭 - session_id:', selectedLog.id);
+        console.log('승인 버튼 클릭 - session_id:', selectedLog.id);
         try {
             const token = await AsyncStorage.getItem('accessToken');
             const res = await fetch(`${API_BASE}/a2a/session/${selectedLog.id}/approve`, {
@@ -1161,9 +1199,9 @@ const A2AScreen = () => {
                     'Authorization': `Bearer ${token}`,
                 }
             });
-            console.log('� 승인 API 응답 상태:', res.status);
+            console.log('승인 API 응답 상태:', res.status);
             const data = await res.json();
-            console.log('� 승인 API 응답 데이터:', data);
+            console.log('승인 API 응답 데이터:', data);
 
             if (res.ok) {
                 // 전원 승인 완료 시 일정 확정 화면 표시
@@ -1580,46 +1618,51 @@ const A2AScreen = () => {
                             }}>
                                 <View style={{
                                     backgroundColor: COLORS.white,
-                                    borderRadius: 16,
-                                    padding: 20,
-                                    width: '60%',
+                                    borderRadius: 20,
+                                    padding: 24,
+                                    width: '90%',
+                                    maxWidth: 320,
                                     alignItems: 'center',
                                     shadowColor: '#000',
                                     shadowOffset: { width: 0, height: 4 },
-                                    shadowOpacity: 0.2,
+                                    shadowOpacity: 0.15,
                                     shadowRadius: 12,
                                     elevation: 8,
                                 }}>
-                                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 6 }}>약속에서 나가시겠습니까?</Text>
-                                    <Text style={{ fontSize: 12, color: COLORS.neutral500, marginBottom: 20, textAlign: 'center' }}>해당 약속에서 나가게 됩니다.{'\n'}재조율을 원한다면 재조율 버튼을 눌러주세요.</Text>
+                                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 12, textAlign: 'center' }}>약속에서 나가시겠습니까?</Text>
+                                    <Text style={{ fontSize: 16, color: COLORS.neutral500, lineHeight: 24, marginBottom: 32, textAlign: 'center' }}>해당 약속에서 나가게 됩니다.{'\n'}재조율을 원한다면 재조율 버튼을 눌러주세요.</Text>
 
-                                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                                    <View style={{ flexDirection: 'row', width: '100%', gap: 12 }}>
                                         {/* 취소 버튼 */}
                                         <TouchableOpacity
                                             style={{
-                                                backgroundColor: COLORS.neutral200,
-                                                paddingVertical: 8,
-                                                paddingHorizontal: 20,
-                                                borderRadius: 10,
+                                                flex: 1,
+                                                height: 50,
+                                                borderRadius: 16,
+                                                backgroundColor: COLORS.neutral100,
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
                                             }}
                                             onPress={() => {
                                                 setShowRejectConfirm(false);
                                             }}
                                         >
-                                            <Text style={{ color: COLORS.neutral600, fontSize: 14, fontWeight: '600' }}>취소</Text>
+                                            <Text style={{ color: COLORS.neutral500, fontSize: 16, fontWeight: '600' }}>취소</Text>
                                         </TouchableOpacity>
 
                                         {/* 확인 버튼 */}
                                         <TouchableOpacity
                                             style={{
+                                                flex: 1,
+                                                height: 50,
+                                                borderRadius: 16,
                                                 backgroundColor: '#0E004E',
-                                                paddingVertical: 8,
-                                                paddingHorizontal: 20,
-                                                borderRadius: 10,
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
                                             }}
                                             onPress={submitReject}
                                         >
-                                            <Text style={{ color: COLORS.white, fontSize: 14, fontWeight: '600' }}>확인</Text>
+                                            <Text style={{ color: COLORS.white, fontSize: 16, fontWeight: 'bold' }}>확인</Text>
                                         </TouchableOpacity>
                                     </View>
                                 </View>
@@ -1659,17 +1702,42 @@ const A2AScreen = () => {
                                         <View>
                                             <Text style={styles.ticketLabel}>날짜</Text>
                                             <Text style={styles.ticketValue}>
-                                                {confirmationType === 'reschedule' && selectedDate
-                                                    ? selectedDate
-                                                    : (selectedLog?.details?.proposedDate || selectedLog?.details?.proposedTime?.split(' ')[0] || '날짜 미정')}
+                                                {(() => {
+                                                    const d = (selectedLog?.details || {}) as any;
+                                                    const durationNights = d.duration_nights || 0;
+                                                    const dateStr = confirmationType === 'reschedule' && selectedDate
+                                                        ? selectedDate
+                                                        : (d.proposedDate || d.proposedTime?.split(' ')[0] || '날짜 미정');
+
+                                                    if (durationNights >= 1 && dateStr) {
+                                                        try {
+                                                            const [y, m, day] = dateStr.match(/^\d{4}-\d{2}-\d{2}$/) ? dateStr.split('-').map(Number) : [];
+                                                            if (y) {
+                                                                const startDate = new Date(y, m - 1, day);
+                                                                const endDate = new Date(startDate);
+                                                                endDate.setDate(startDate.getDate() + durationNights);
+                                                                const formatDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                                                                return `${formatDate(startDate)} ~ ${formatDate(endDate)}`;
+                                                            }
+                                                        } catch (e) {
+                                                            return dateStr;
+                                                        }
+                                                    }
+                                                    return dateStr;
+                                                })()}
                                             </Text>
                                         </View>
                                         <View style={{ alignItems: 'flex-end' }}>
                                             <Text style={styles.ticketLabel}>시간</Text>
                                             <Text style={[styles.ticketValue, { color: COLORS.primaryMain }]}>
-                                                {confirmationType === 'reschedule' && startTime
-                                                    ? `${startTime}${endTime ? `~${endTime}` : ''}`
-                                                    : (selectedLog?.details?.proposedTime?.match(/\d{1,2}:\d{2}/)?.[0] || selectedLog?.details?.proposedTime || '시간 미정')}
+                                                {(() => {
+                                                    const d = (selectedLog?.details || {}) as any;
+                                                    if ((d.duration_nights || 0) >= 1) return '-';
+
+                                                    return confirmationType === 'reschedule' && startTime
+                                                        ? `${startTime}${endTime ? `~${endTime}` : ''}`
+                                                        : (d.proposedTime?.match(/\d{1,2}:\d{2}/)?.[0] || d.proposedTime || '시간 미정');
+                                                })()}
                                             </Text>
                                         </View>
                                     </View>

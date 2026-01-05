@@ -32,6 +32,7 @@ import {
     Moon,
     Plane,
     Minus,
+    RotateCw,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -55,6 +56,12 @@ const COLORS = {
     amber50: '#FFFBEB',
     amber100: '#FEF3C7',
     amber700: '#B45309',
+    red400: '#F87171',
+    red50: '#FEF2F2',
+    neutral500: '#64748B',
+    neutral100: '#F1F5F9',
+    green50: '#F0FDF4',
+    green600: '#16A34A',
 };
 
 interface Friend {
@@ -106,6 +113,7 @@ const RequestMeetingScreen = () => {
     const [isSending, setIsSending] = useState(false);
     const [appliedRecIndex, setAppliedRecIndex] = useState<number | null>(null);
     const [recommendations, setRecommendations] = useState<any[]>([]);
+    const [showResetModal, setShowResetModal] = useState(false);
 
     // Calendar state
     const [calendarYear, setCalendarYear] = useState(today.getFullYear());
@@ -144,22 +152,32 @@ const RequestMeetingScreen = () => {
         const daysInMonth = new Date(calendarYear, calendarMonth, 0).getDate();
         const daysInPrevMonth = new Date(calendarYear, calendarMonth - 1, 0).getDate();
 
-        const days: { day: number; isCurrentMonth: boolean }[] = [];
+        const days: { day: number; month: number; year: number; isCurrentMonth: boolean }[] = [];
+
+        // Previous month logic
+        let prevMonth = calendarMonth - 1;
+        let prevYear = calendarYear;
+        if (prevMonth === 0) { prevMonth = 12; prevYear--; }
+
+        // Next month logic
+        let nextMonth = calendarMonth + 1;
+        let nextYear = calendarYear;
+        if (nextMonth === 13) { nextMonth = 1; nextYear++; }
 
         // Previous month days
         for (let i = firstDay - 1; i >= 0; i--) {
-            days.push({ day: daysInPrevMonth - i, isCurrentMonth: false });
+            days.push({ day: daysInPrevMonth - i, month: prevMonth, year: prevYear, isCurrentMonth: false });
         }
 
         // Current month days
         for (let i = 1; i <= daysInMonth; i++) {
-            days.push({ day: i, isCurrentMonth: true });
+            days.push({ day: i, month: calendarMonth, year: calendarYear, isCurrentMonth: true });
         }
 
         // Next month days
         const remaining = 42 - days.length;
         for (let i = 1; i <= remaining; i++) {
-            days.push({ day: i, isCurrentMonth: false });
+            days.push({ day: i, month: nextMonth, year: nextYear, isCurrentMonth: false });
         }
 
         return days;
@@ -260,6 +278,55 @@ const RequestMeetingScreen = () => {
         };
         loadUserId();
     }, []);
+
+    // ✅ [NEW] 폼 상태 복원 (화면 진입 시)
+    useEffect(() => {
+        const restoreFormState = async () => {
+            try {
+                const savedState = await AsyncStorage.getItem('requestMeetingFormState');
+                if (savedState) {
+                    const state = JSON.parse(savedState);
+                    if (state.title) setTitle(state.title);
+                    if (state.location) setLocation(state.location);
+                    if (state.selectedFriends) setSelectedFriends(state.selectedFriends);
+                    if (state.startDate) setStartDate(state.startDate);
+                    if (state.endDate) setEndDate(state.endDate);
+                    if (state.startTime) setStartTime(state.startTime);
+                    if (state.endTime) setEndTime(state.endTime);
+                    if (state.durationHour !== undefined) setDurationHour(state.durationHour);
+                    if (state.durationMinute !== undefined) setDurationMinute(state.durationMinute);
+                    if (state.durationNights !== undefined) setDurationNights(state.durationNights);
+                }
+            } catch (error) {
+                console.error('폼 상태 복원 실패:', error);
+            }
+        };
+        restoreFormState();
+    }, []);
+
+    // ✅ [NEW] 폼 상태 저장 (값 변경 시)
+    useEffect(() => {
+        const saveFormState = async () => {
+            try {
+                const state = {
+                    title,
+                    location,
+                    selectedFriends,
+                    startDate,
+                    endDate,
+                    startTime,
+                    endTime,
+                    durationHour,
+                    durationMinute,
+                    durationNights,
+                };
+                await AsyncStorage.setItem('requestMeetingFormState', JSON.stringify(state));
+            } catch (error) {
+                console.error('폼 상태 저장 실패:', error);
+            }
+        };
+        saveFormState();
+    }, [title, location, selectedFriends, startDate, endDate, startTime, endTime, durationHour, durationMinute, durationNights]);
 
     // Fetch friends from API
     const fetchFriends = async () => {
@@ -441,8 +508,9 @@ const RequestMeetingScreen = () => {
             });
 
             if (response.ok) {
+                // ✅ 전송 성공 시 저장된 폼 상태 초기화
+                await AsyncStorage.removeItem('requestMeetingFormState');
                 setIsSent(true);
-                setTimeout(() => navigation.navigate('A2A'), 1800);
             } else {
                 const error = await response.text();
                 console.error('Failed to send request:', error);
@@ -451,6 +519,33 @@ const RequestMeetingScreen = () => {
             console.error('Error sending schedule request:', error);
         } finally {
             setIsSending(false);  // 로딩 종료
+        }
+    };
+
+    const handleResetForm = () => {
+        setShowResetModal(true);
+    };
+
+    const confirmReset = async () => {
+        setShowResetModal(false);
+        setTitle('');
+        setLocation('');
+        setSelectedFriends([]);
+        setDurationNights(0);
+        setStartDate(todayStr);
+        setEndDate(todayStr);
+        setStartTime('09:00');
+        setEndTime('18:00');
+        setDurationHour(1);
+        setDurationMinute(0);
+        setAppliedRecIndex(null);
+        setRecommendations([]);
+        setIsAnalyzing(false);
+        setHasAnalyzed(false);
+        try {
+            await AsyncStorage.removeItem('requestMeetingFormState');
+        } catch (e) {
+            console.error(e);
         }
     };
 
@@ -501,20 +596,7 @@ const RequestMeetingScreen = () => {
         }
     };
 
-    if (isSent) {
-        return (
-            <SafeAreaView style={styles.container}>
-                <View style={styles.successContainer}>
-                    <View style={styles.successIcon}>
-                        <Sparkles size={48} color={COLORS.white} fill={COLORS.white} />
-                    </View>
-                    <Text style={styles.successTitle}>요청을 보냈습니다!</Text>
-                    <Text style={styles.successSubtitle}>내 AI 비서가 친구들의 비서와{'\n'}협상을 시작했습니다.</Text>
-                </View>
-                <BottomNav activeTab={Tab.REQUEST} />
-            </SafeAreaView>
-        );
-    }
+
 
     return (
         <SafeAreaView style={styles.container}>
@@ -522,7 +604,10 @@ const RequestMeetingScreen = () => {
                 {/* Participants */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>참여자 선택 <Text style={styles.sectionCount}>({selectedFriends.length})</Text></Text>
+                        <Text style={styles.sectionTitle}>참여자 선택 <Text style={styles.sectionCount}>(총 {selectedFriends.length + 1}명)</Text></Text>
+                        <TouchableOpacity onPress={handleResetForm} style={{ padding: 4 }}>
+                            <RotateCw size={16} color={COLORS.neutralGray} />
+                        </TouchableOpacity>
                     </View>
                     <View style={styles.participantsContainer}>
                         {selectedFriends.map(id => {
@@ -769,7 +854,6 @@ const RequestMeetingScreen = () => {
                         <View style={styles.resultsContainer}>
                             <View style={styles.resultsHeader}>
                                 <Text style={styles.resultsTitle}>AI 추천 일정</Text>
-                                <Sparkles size={14} color={COLORS.primaryMain} />
                             </View>
 
                             {recommendations.map((rec, i) => {
@@ -1051,7 +1135,7 @@ const RequestMeetingScreen = () => {
 
                         <View style={styles.calendarGrid}>
                             {getCalendarDays().map((dateObj, idx) => {
-                                const dateString = `${calendarYear}-${calendarMonth.toString().padStart(2, '0')}-${dateObj.day.toString().padStart(2, '0')}`;
+                                const dateString = `${dateObj.year}-${dateObj.month.toString().padStart(2, '0')}-${dateObj.day.toString().padStart(2, '0')}`;
                                 const isSelected = (activePicker === 'startDate' && startDate === dateString) || (activePicker === 'endDate' && endDate === dateString);
                                 const isSunday = idx % 7 === 0;
                                 return (
@@ -1059,6 +1143,7 @@ const RequestMeetingScreen = () => {
                                         key={idx}
                                         onPress={() => handleDateSelect(dateObj.day, dateObj.isCurrentMonth)}
                                         style={[styles.calendarDay, isSelected && styles.calendarDaySelected]}
+                                        disabled={!dateObj.isCurrentMonth}
                                     >
                                         <Text style={[
                                             styles.calendarDayText,
@@ -1135,6 +1220,49 @@ const RequestMeetingScreen = () => {
                 </View>
             </Modal>
 
+            {/* Reset Confirmation Modal */}
+            <Modal visible={showResetModal} transparent animationType="fade" onRequestClose={() => setShowResetModal(false)}>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalIconContainer}>
+                            <RotateCw size={24} color={COLORS.red400} />
+                        </View>
+                        <Text style={styles.modalTitle}>입력 초기화</Text>
+                        <Text style={styles.modalMessage}>
+                            모든 입력 내용과 선택된 친구 목록을{'\n'}초기화하시겠습니까?
+                        </Text>
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity onPress={() => setShowResetModal(false)} style={styles.cancelButton}>
+                                <Text style={styles.cancelButtonText}>취소</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={confirmReset} style={styles.deleteButton}>
+                                <Text style={styles.deleteButtonText}>초기화</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Success Modal */}
+            <Modal visible={isSent} transparent animationType="fade" onRequestClose={() => { setIsSent(false); navigation.navigate('A2A'); }}>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={[styles.modalIconContainer, { backgroundColor: COLORS.indigo100 }]}>
+                            <Check size={28} color={COLORS.primaryMain} strokeWidth={3} />
+                        </View>
+                        <Text style={styles.modalTitle}>요청 성공</Text>
+                        <Text style={styles.modalMessage}>
+                            친구들에게 일정 조율 요청을 보냈습니다.{'\n'}A2A 화면에서 진행 상황을 확인하세요.
+                        </Text>
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity onPress={() => { setIsSent(false); navigation.navigate('A2A'); }} style={[styles.deleteButton, { backgroundColor: COLORS.primaryMain }]}>
+                                <Text style={styles.confirmButtonText}>확인</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
             <BottomNav activeTab={Tab.REQUEST} />
         </SafeAreaView>
     );
@@ -1144,11 +1272,12 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: COLORS.neutralLight },
     scrollView: { flex: 1 },
     scrollContent: { paddingTop: 24, paddingBottom: 120 },
-    header: { backgroundColor: COLORS.white, paddingHorizontal: 24, paddingTop: Platform.OS === 'ios' ? 40 : 20, paddingBottom: 20, borderBottomLeftRadius: 48, borderBottomRightRadius: 48, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: COLORS.neutralLight, paddingHorizontal: 24, paddingTop: Platform.OS === 'ios' ? 40 : 20, paddingBottom: 20 },
     headerTitle: { fontSize: 24, fontWeight: 'bold', color: COLORS.neutralSlate },
     headerSubtitle: { fontSize: 12, color: COLORS.neutralGray, marginTop: 8, fontWeight: '500' },
+    resetButton: { padding: 8 },
     section: { paddingHorizontal: 24, marginBottom: 16 },
-    sectionHeader: { marginBottom: 10, paddingHorizontal: 4 },
+    sectionHeader: { marginBottom: 10, paddingHorizontal: 4, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     sectionTitle: { fontSize: 12, fontWeight: 'bold', color: COLORS.neutralSlate, textTransform: 'uppercase', letterSpacing: 1.5 },
     sectionCount: { color: COLORS.primaryMain },
     participantsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
@@ -1225,7 +1354,7 @@ const styles = StyleSheet.create({
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.4)', justifyContent: 'center', alignItems: 'center', padding: 24 },
     timeModalContent: { backgroundColor: COLORS.white, width: '100%', maxWidth: 320, borderRadius: 32, padding: 24, maxHeight: 400 },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-    modalTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.neutralSlate },
+    modalTitle: { fontSize: 20, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 12 },
     modalSubtitle: { fontSize: 12, color: COLORS.neutralGray, marginTop: 4, fontWeight: '500' },
     timeSlotsContainer: { maxHeight: 280 },
     timeSlot: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, marginBottom: 8, backgroundColor: COLORS.neutralLight },
@@ -1321,6 +1450,21 @@ const styles = StyleSheet.create({
     timePickerItemTextSelected: { color: COLORS.primaryMain, fontWeight: 'bold' },
     timePickerConfirmButton: { backgroundColor: COLORS.primaryMain, borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginTop: 16 },
     timePickerConfirmText: { fontSize: 16, fontWeight: 'bold', color: COLORS.white },
+
+    // Modal Styles
+    modalContent: { backgroundColor: COLORS.white, width: '90%', maxWidth: 320, borderRadius: 20, padding: 24, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 8 },
+    modalIconContainer: { width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.red50, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+    modalMessage: { fontSize: 16, color: COLORS.neutral500, textAlign: 'center', lineHeight: 24, marginBottom: 32 },
+    modalButtons: { flexDirection: 'row', width: '100%', gap: 12 },
+    cancelButton: { flex: 1, height: 50, borderRadius: 16, backgroundColor: COLORS.neutral100, alignItems: 'center', justifyContent: 'center' },
+    cancelButtonText: { fontSize: 16, fontWeight: '600', color: COLORS.neutral500 },
+    deleteButton: { flex: 1, height: 50, borderRadius: 16, backgroundColor: COLORS.red400, alignItems: 'center', justifyContent: 'center' },
+    deleteButtonText: { fontSize: 16, fontWeight: '600', color: 'white' },
+    confirmButtonText: { fontSize: 16, fontWeight: 'bold', color: 'white' },
+
+
+    // Header Styles
+
 });
 
 export default RequestMeetingScreen;
