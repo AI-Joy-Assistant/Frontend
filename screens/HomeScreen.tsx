@@ -489,8 +489,17 @@ export default function HomeScreen() {
           const start = new Date(event.start.dateTime || event.start.date || '');
           const end = new Date(event.end.dateTime || event.end.date || '');
 
-          date = start.toISOString().split('T')[0];
-          endDateStr = end.toISOString().split('T')[0];
+          // [FIX] toISOString() 대신 로컬 시간대 기반 날짜 추출
+          // toISOString()은 UTC로 변환하여 KST 오전 시간이 전날로 표시되는 문제 발생
+          const formatLocalDate = (d: Date) => {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          };
+
+          date = formatLocalDate(start);
+          endDateStr = formatLocalDate(end);
 
           startTime = start.toTimeString().slice(0, 5);
           endTime = end.toTimeString().slice(0, 5);
