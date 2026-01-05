@@ -27,7 +27,7 @@ const LoginScreen = () => {
                         navigation.navigate('Home');
                     } else if (event.data.type === 'GOOGLE_REGISTER_REQUIRED') {
                         window.removeEventListener('message', messageHandler);
-                        navigation.navigate('Register', {
+                        navigation.navigate('TermsAgreement', {
                             register_token: event.data.register_token,
                             email: event.data.email,
                             name: event.data.name,
@@ -60,7 +60,7 @@ const LoginScreen = () => {
             // 회원가입 딥링크
             if (finalUrl.includes('auth-register')) {
                 const params = new URLSearchParams(finalUrl.split('?')[1]);
-                navigation.navigate('Register', {
+                navigation.navigate('TermsAgreement', {
                     register_token: params.get('register_token') || '',
                     email: params.get('email') || '',
                     name: params.get('name') || '',
