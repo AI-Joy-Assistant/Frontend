@@ -14,7 +14,7 @@ const RegisterScreen = () => {
     const route = useRoute<RegisterScreenRouteProp>();
 
     // route.params가 undefined일 수 있으므로 안전하게 접근
-    const { register_token, email, name: initialName, picture } = route.params || {};
+    const { register_token, email, name: initialName, picture, terms_agreed } = route.params || {};
 
     const [name, setName] = useState(initialName || '');
     const [handle, setHandle] = useState('');
@@ -46,6 +46,7 @@ const RegisterScreen = () => {
                     register_token,
                     name,
                     handle,
+                    terms_agreed: terms_agreed ?? true,
                 }),
             });
 

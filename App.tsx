@@ -10,6 +10,7 @@ import HomeScreen from './screens/HomeScreen';
 import LoginDetailScreen from './screens/LoginDetailScreen';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
+import TermsAgreementScreen from './screens/TermsAgreementScreen';
 import MyPageScreen from './screens/MyPageScreen';
 import SplashScreen from './screens/SplashScreen';
 import TestScreen from './screens/TestScreen';
@@ -35,6 +36,7 @@ export default function App() {
       <Stack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="TermsAgreement" component={TermsAgreementScreen} />
         <Stack.Screen name="Register" component={RegisterScreen} />
         <Stack.Screen name="LoginDetailScreen" component={LoginDetailScreen} />
         <Stack.Screen name="Home" component={HomeScreen} />
