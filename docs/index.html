@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JOYNER</title>
+    <meta name="application-name" content="JOYNER">
+    <meta property="og:site_name" content="JOYNER">
+    <meta property="og:title" content="JOYNER">
+    <style>
+        :root {
+            --primary-color: #6c5ce7;
+            --text-color: #2d3436;
+            --bg-color: #ffffff;
+            --gray-color: #b2bec3;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            color: var(--text-color);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            text-align: center;
+        }
+
+        header {
+            margin-bottom: 60px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            color: var(--primary-color);
+            margin-bottom: 10px;
+        }
+
+        p.subtitle {
+            font-size: 1.2rem;
+            color: #636e72;
+        }
+
+        .features {
+            margin: 60px 0;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .feature-item {
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 12px;
+        }
+
+        .links {
+            margin-top: 60px;
+            padding-top: 40px;
+            border-top: 1px solid #eee;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 0 10px;
+            text-decoration: none;
+            color: var(--text-color);
+            border: 1px solid #dfe6e9;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        .footer {
+            margin-top: 80px;
+            font-size: 0.9rem;
+            color: var(--gray-color);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>JOYNER</h1>
+            <p class="subtitle">당신의 일상을 더 스마트하게 관리하세요.</p>
+        </header>
+
+        <section class="features">
+            <div class="feature-item">
+                <h3>스마트 스케줄링</h3>
+                <p>AI가 당신의 캘린더를 분석하여 최적의 약속 시간을 제안합니다.</p>
+            </div>
+            <div class="feature-item">
+                <h3>개인화 에이전트</h3>
+                <p>사용자의 선호도와 패턴을 학습하여 맞춤형 정보를 제공합니다.</p>
+            </div>
+        </section>
+
+        <section class="links">
+            <h2>약관 및 정책</h2>
+            <p>서비스 이용을 위한 약관 및 개인정보처리방침입니다.</p>
+            <div style="margin-top: 20px;">
+                <a href="./terms.html" class="btn">서비스 약관</a>
+                <a href="./privacy.html" class="btn">개인정보처리방침</a>
+            </div>
+        </section>
+
+        <div class="footer">
+            <p>&copy; 2024 JOYNER. All rights reserved.</p>
+            <p>Contact: support@example.com (이메일을 수정하세요)</p>
+        </div>
+    </div>
+</body>
+
+</html>
