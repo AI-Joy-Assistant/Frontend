@@ -40,6 +40,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
 import { getBackendUrl } from '../utils/environment';
+import { useTutorial } from '../store/TutorialContext';
 
 const COLORS = {
     primaryMain: '#3730A3',
@@ -84,6 +85,14 @@ interface FriendFromAPI {
 
 const RequestMeetingScreen = () => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    const { checkAndShowTutorial } = useTutorial();
+
+    // 튜토리얼 체크 (화면 포커스 시)
+    useFocusEffect(
+        useCallback(() => {
+            checkAndShowTutorial('request');
+        }, [])
+    );
 
     const [friends, setFriends] = useState<Friend[]>([]);
     const [loadingFriends, setLoadingFriends] = useState(true);

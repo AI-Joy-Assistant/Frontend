@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect, useMemo } from "react";
+﻿import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -28,6 +28,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "../constants/config";
 import WebSocketService from "../services/WebSocketService";
 import { badgeStore } from "../store/badgeStore";
+import { useTutorial } from "../store/TutorialContext";
 
 import { LinearGradient } from "expo-linear-gradient";
 import {
@@ -100,6 +101,14 @@ interface ChatSession {
 export default function ChatScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { checkAndShowTutorial } = useTutorial();
+
+  // 튜토리얼 체크
+  useFocusEffect(
+    useCallback(() => {
+      checkAndShowTutorial('chat');
+    }, [])
+  );
 
   // --- Chat Session State ---
   const [sessions, setSessions] = useState<ChatSession[]>([]);
