@@ -1630,7 +1630,7 @@ const A2AScreen = () => {
                                     borderRadius: 20,
                                     padding: 24,
                                     width: '90%',
-                                    maxWidth: 320,
+                                    maxWidth: 360,
                                     alignItems: 'center',
                                     shadowColor: '#000',
                                     shadowOffset: { width: 0, height: 4 },
@@ -1665,7 +1665,7 @@ const A2AScreen = () => {
                                                 flex: 1,
                                                 height: 50,
                                                 borderRadius: 16,
-                                                backgroundColor: '#0E004E',
+                                                backgroundColor: '#F87171', // Red color for destructive action
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
                                             }}
