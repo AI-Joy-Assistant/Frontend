@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Dimensions, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -11,6 +11,14 @@ import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
 import * as Linking from 'expo-linking';
 import { COLORS } from '../constants/Colors';
 import { getBackendUrl, isWeb } from '../utils/environment';
+
+// Apple Authentication은 네이티브 빌드에서만 사용 가능
+let AppleAuthentication: any = null;
+try {
+    AppleAuthentication = require('expo-apple-authentication');
+} catch (e) {
+    console.log('expo-apple-authentication not available (Expo Go)');
+}
 
 const { height } = Dimensions.get('window');
 
@@ -95,6 +103,62 @@ const LoginScreen = () => {
         } catch (error) {
             console.error('Google 로그인 오류:', error);
             Alert.alert('로그인 실패', '로그인 중 오류가 발생했습니다.');
+        }
+    };
+
+    const handleAppleLogin = async () => {
+        try {
+            const credential = await AppleAuthentication.signInAsync({
+                requestedScopes: [
+                    AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+                    AppleAuthentication.AppleAuthenticationScope.EMAIL,
+                ],
+            });
+
+            console.log('Apple 인증 성공:', credential);
+
+            const BACKEND_URL = getBackendUrl();
+
+            // 백엔드로 Apple 인증 정보 전송
+            const response = await fetch(`${BACKEND_URL}/auth/apple`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    identity_token: credential.identityToken,
+                    authorization_code: credential.authorizationCode,
+                    user_id: credential.user,
+                    email: credential.email,
+                    full_name: credential.fullName
+                        ? `${credential.fullName.givenName || ''} ${credential.fullName.familyName || ''}`.trim()
+                        : null,
+                }),
+            });
+
+            const data = await response.json();
+
+            if (data.status === 'register_required') {
+                // 신규 사용자 - 약관 동의 화면으로 이동
+                navigation.navigate('TermsAgreement', {
+                    register_token: data.register_token,
+                    email: data.email || '',
+                    name: data.name || '',
+                    picture: '',
+                    provider: 'apple'
+                });
+            } else if (data.access_token) {
+                // 기존 사용자 - 바로 로그인
+                await AsyncStorage.setItem('accessToken', data.access_token);
+                navigation.navigate('Home');
+            } else {
+                throw new Error(data.detail || 'Apple 로그인 실패');
+            }
+        } catch (error: any) {
+            if (error.code === 'ERR_REQUEST_CANCELED') {
+                console.log('사용자가 Apple 로그인을 취소했습니다.');
+            } else {
+                console.error('Apple 로그인 오류:', error);
+                Alert.alert('로그인 실패', 'Apple 로그인 중 오류가 발생했습니다.');
+            }
         }
     };
 
@@ -190,6 +254,25 @@ const LoginScreen = () => {
                     </View>
                     <Text style={styles.googleButtonText}>Google로 로그인하기</Text>
                 </TouchableOpacity>
+
+                {/* Apple 로그인 버튼 (iOS + 네이티브 빌드에서만 표시) */}
+                {Platform.OS === 'ios' && AppleAuthentication && (
+                    <TouchableOpacity
+                        style={styles.appleButton}
+                        onPress={handleAppleLogin}
+                        activeOpacity={0.9}
+                    >
+                        <View style={styles.appleIconWrapper}>
+                            <Svg width={20} height={24} viewBox="0 0 170 170">
+                                <Path
+                                    d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.2-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.93.21-9.84-1.96-14.75-6.52-3.13-2.73-7.04-7.4-11.74-14.03-5.02-7.08-9.15-15.29-12.38-24.65-3.47-10.11-5.21-19.9-5.21-29.38 0-10.85 2.35-20.22 7.03-28.08 3.68-6.32 8.58-11.3 14.7-14.96 6.13-3.66 12.76-5.53 19.87-5.64 3.91 0 9.05 1.21 15.43 3.59 6.36 2.39 10.45 3.6 12.26 3.6 1.35 0 5.94-1.42 13.72-4.24 7.35-2.62 13.56-3.71 18.66-3.28 13.79 1.11 24.15 6.55 31.04 16.35-12.33 7.48-18.43 17.96-18.32 31.4.1 10.46 3.91 19.17 11.4 26.1 3.39 3.22 7.18 5.71 11.4 7.47-.91 2.65-1.88 5.19-2.91 7.63zM119.11 7.24c0 8.2-2.99 15.85-8.93 22.95-7.18 8.4-15.86 13.25-25.28 12.49-.12-.98-.19-2.01-.19-3.09 0-7.87 3.43-16.3 9.52-23.19 3.04-3.49 6.9-6.39 11.58-8.69 4.66-2.27 9.08-3.53 13.25-3.75.12 1.1.05 2.2.05 3.28z"
+                                    fill="#FFFFFF"
+                                />
+                            </Svg>
+                        </View>
+                        <Text style={styles.appleButtonText}>Apple로 로그인하기</Text>
+                    </TouchableOpacity>
+                )}
 
                 <Text style={styles.footerText}>
                 </Text>
@@ -303,6 +386,24 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: 'bold',
         color: COLORS.neutralSlate,
+    },
+    appleButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#000000',
+        paddingVertical: 16,
+        borderRadius: 16,
+        elevation: 2,
+        marginBottom: 32,
+    },
+    appleIconWrapper: {
+        marginRight: 12,
+    },
+    appleButtonText: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: '#FFFFFF',
     },
     footerText: {
         fontSize: 10,

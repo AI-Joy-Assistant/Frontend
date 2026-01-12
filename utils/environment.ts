@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { DEV_API_URL } from '../constants/private';
 
 /**
  * 현재 실행 환경에 맞는 백엔드 URL 반환
@@ -11,7 +12,7 @@ export const getBackendUrl = (): string => {
     }
     // 모바일 환경 (iOS, Android)
     // 개발 시에는 컴퓨터의 IP 주소 사용
-    return 'http://192.168.45.131:8000';
+    return DEV_API_URL;
 };
 
 /**

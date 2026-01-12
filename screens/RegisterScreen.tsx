@@ -6,6 +6,7 @@ import { RootStackParamList } from '../types';
 import { User, AtSign, Sparkles, ArrowRight } from 'lucide-react-native';
 import { COLORS } from '../constants/Colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getBackendUrl } from '../utils/environment';
 
 type RegisterScreenRouteProp = RouteProp<RootStackParamList, 'Register'>;
 
@@ -14,7 +15,7 @@ const RegisterScreen = () => {
     const route = useRoute<RegisterScreenRouteProp>();
 
     // route.params가 undefined일 수 있으므로 안전하게 접근
-    const { register_token, email, name: initialName, picture, terms_agreed } = route.params || {};
+    const { register_token, email, name: initialName, picture, terms_agreed, provider = 'google' } = route.params || {};
 
     const [name, setName] = useState(initialName || '');
     const [handle, setHandle] = useState('');
@@ -36,8 +37,13 @@ const RegisterScreen = () => {
 
         setIsLoading(true);
         try {
-            // NOTE: 실제 배포 시에는 환경 변수나 설정 파일에서 URL을 가져와야 합니다.
-            const response = await fetch('http://localhost:8000/auth/register/google', {
+            // provider에 따라 다른 API 호출
+            const BACKEND_URL = getBackendUrl();
+            const endpoint = provider === 'apple'
+                ? `${BACKEND_URL}/auth/register/apple`
+                : `${BACKEND_URL}/auth/register/google`;
+
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

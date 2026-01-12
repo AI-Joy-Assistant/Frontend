@@ -46,7 +46,13 @@ export default function App() {
         },
       }}
     >
-      <Stack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false }}>
+      <Stack.Navigator
+        initialRouteName="Splash"
+        screenOptions={{
+          headerShown: false,
+          animation: 'none', // 슬라이드 대신 페이드 전환
+        }}
+      >
         <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="TermsAgreement" component={TermsAgreementScreen} />

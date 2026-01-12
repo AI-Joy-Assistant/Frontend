@@ -51,13 +51,14 @@ import { COLORS } from '../constants/Colors';
 import { RootStackParamList } from '../types';
 import BottomNav from '../components/BottomNav';
 import { Tab } from '../types';
-import { calendarService } from '../services/calendarService';
-import { CreateEventRequest } from '../types/calendar';
+import { calendarService, getDeviceCalendarEvents, requestCalendarPermission } from '../services/calendarService';
+import { CreateEventRequest, CalendarEvent } from '../types/calendar';
 import DatePickerModal from '../components/DatePickerModal';
 import TimePickerModal from '../components/TimePickerModal';
 import { API_BASE } from '../constants/config';
 import WebSocketService from '../services/WebSocketService';
 import NotificationPanel from '../components/NotificationPanel';
+import { DEV_EXPO_HOST } from '../constants/private';
 import { badgeStore } from '../store/badgeStore';
 
 // Pending 요청 타입 정의
@@ -98,6 +99,8 @@ export default function HomeScreen() {
   // 현재 사용자 ID와 프로필 사진
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [userPicture, setUserPicture] = useState<string | null>(null);
+  const [isGoogleLinked, setIsGoogleLinked] = useState<boolean>(false); // 기본값 false (디바이스 캘린더 우선)
+  const [isUserLoaded, setIsUserLoaded] = useState<boolean>(false); // 사용자 정보 로딩 완료 여부
 
   // Pending 요청 카드 State
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
@@ -270,9 +273,61 @@ export default function HomeScreen() {
         if (data.picture) {
           setUserPicture(data.picture);
         }
+        // Google 연동 여부 확인 (access_token 존재 여부로 판단)
+        setIsGoogleLinked(!!data.access_token);
       }
     } catch (error) {
       console.error('사용자 정보 조회 실패:', error);
+    } finally {
+      setIsUserLoaded(true);
+    }
+  };
+
+  // Google 캘린더 연동 시작
+  const handleLinkGoogle = async () => {
+    try {
+      const redirectScheme = Platform.OS === 'web'
+        ? `${window.location.origin}/link-success`
+        : `${DEV_EXPO_HOST}/--/link-success`;
+
+      const linkUrl = `${API_BASE}/auth/link/google?redirect_scheme=${encodeURIComponent(redirectScheme)}`;
+
+      if (Platform.OS === 'web') {
+        window.location.href = linkUrl;
+      } else {
+        const WebBrowser = require('expo-web-browser');
+        const result = await WebBrowser.openAuthSessionAsync(linkUrl, redirectScheme);
+
+        if (result.type === 'success' && result.url) {
+          const url = new URL(result.url);
+          const linkToken = url.searchParams.get('link_token');
+
+          if (linkToken) {
+            // 연동 완료 API 호출
+            const token = await AsyncStorage.getItem('accessToken');
+            const response = await fetch(`${API_BASE}/auth/link/google/complete`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ link_token: linkToken }),
+            });
+
+            if (response.ok) {
+              Alert.alert('성공', 'Google 캘린더가 연동되었습니다!');
+              setIsGoogleLinked(true);
+              fetchSchedules(); // 캘린더 새로고침
+            } else {
+              const error = await response.json();
+              Alert.alert('오류', error.detail || 'Google 연동에 실패했습니다.');
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Google 연동 오류:', error);
+      Alert.alert('오류', 'Google 캘린더 연동 중 오류가 발생했습니다.');
     }
   };
 
@@ -280,11 +335,14 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchCurrentUser();
+      fetchSchedules(); // 일정 조회 (isUserLoaded가 true일 때만 실행됨)
       fetchPendingRequests();
       fetchNotifications();
       // 배지 폴링은 BottomNav에서 처리하므로 여기서는 제거
     }, [])
   );
+
+
 
   // WebSocket for real-time A2A notifications (using singleton service)
   useEffect(() => {
@@ -493,14 +551,32 @@ export default function HomeScreen() {
     return days;
   }, [viewYear, viewMonth]);
 
-  const fetchSchedules = async () => {
+  const fetchSchedules = async (useGoogleParam?: boolean) => {
+    if (useGoogleParam === undefined && !isUserLoaded) return;
+
+    const shouldUseGoogle = useGoogleParam ?? isGoogleLinked;
+
     try {
       setIsLoading(true);
       // Fetch for a wide range, e.g., current month +/- 1 month
       const startOfMonth = new Date(viewYear, viewMonth - 1, 1);
       const endOfMonth = new Date(viewYear, viewMonth + 2, 0);
 
-      const events = await calendarService.getCalendarEvents(startOfMonth, endOfMonth);
+      let events: CalendarEvent[] = [];
+
+      // Google 연동 여부에 따라 다른 소스 사용
+      if (shouldUseGoogle) {
+        // Google Calendar API 사용
+        events = await calendarService.getCalendarEvents(startOfMonth, endOfMonth);
+      } else {
+        // 디바이스 캘린더 사용 (Apple, Google 등 로컬 캘린더)
+        try {
+          events = await getDeviceCalendarEvents(startOfMonth, endOfMonth);
+        } catch (permissionError) {
+          console.log('디바이스 캘린더 접근 불가:', permissionError);
+          events = [];
+        }
+      }
 
       const mappedSchedules: ScheduleItem[] = events.map(event => {
         // Check if it's an all-day event (has date but no dateTime)
@@ -585,6 +661,13 @@ export default function HomeScreen() {
       setIsLoading(false);
     }
   };
+
+  // 사용자 정보 로딩 완료 또는 구글 연동 상태 변경 시 일정 재조회
+  useEffect(() => {
+    if (isUserLoaded) {
+      fetchSchedules();
+    }
+  }, [isUserLoaded, isGoogleLinked, viewYear, viewMonth]);
 
   // 시간 겹침 감지 함수
   const detectScheduleConflicts = (schedules: ScheduleItem[]): ScheduleItem[] => {
@@ -3297,5 +3380,37 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: 'white',
+  },
+  // Google 캘린더 연동 배너 스타일
+  googleLinkBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.primaryBg,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.primaryLight,
+  },
+  googleLinkContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  googleLinkTextContainer: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  googleLinkTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.primaryMain,
+  },
+  googleLinkSubtitle: {
+    fontSize: 12,
+    color: COLORS.neutral400,
+    marginTop: 2,
   },
 });

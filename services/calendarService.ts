@@ -1,8 +1,70 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CalendarEvent, CreateEventRequest } from '../types/calendar';
 import { API_BASE } from '../constants/config';
+import * as Calendar from 'expo-calendar';
+import { Platform } from 'react-native';
 
 const API_BASE_URL = API_BASE;
+
+// 디바이스 캘린더 권한 요청
+export async function requestCalendarPermission(): Promise<boolean> {
+  const { status } = await Calendar.requestCalendarPermissionsAsync();
+  return status === 'granted';
+}
+
+// 디바이스 캘린더 목록 조회
+export async function getDeviceCalendars(): Promise<Calendar.Calendar[]> {
+  const hasPermission = await requestCalendarPermission();
+  if (!hasPermission) {
+    throw new Error('캘린더 접근 권한이 없습니다.');
+  }
+  return await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+}
+
+// 디바이스 캘린더 이벤트 조회 (모든 캘린더)
+export async function getDeviceCalendarEvents(
+  timeMin?: Date,
+  timeMax?: Date
+): Promise<CalendarEvent[]> {
+  const hasPermission = await requestCalendarPermission();
+  if (!hasPermission) {
+    throw new Error('캘린더 접근 권한이 없습니다.');
+  }
+
+  const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+  const calendarIds = calendars.map(c => c.id);
+
+  const startDate = timeMin || new Date();
+  const endDate = timeMax || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 기본 30일
+
+  const events = await Calendar.getEventsAsync(calendarIds, startDate, endDate);
+
+  // expo-calendar Event를 CalendarEvent 형식으로 변환
+  return events.map(event => {
+    const startDateStr = typeof event.startDate === 'string'
+      ? event.startDate
+      : new Date(event.startDate).toISOString();
+    const endDateStr = typeof event.endDate === 'string'
+      ? event.endDate
+      : new Date(event.endDate).toISOString();
+
+    return {
+      id: event.id,
+      summary: event.title,
+      description: event.notes || '',
+      location: event.location || '',
+      start: {
+        dateTime: startDateStr,
+        date: event.allDay ? startDateStr.split('T')[0] : undefined,
+      },
+      end: {
+        dateTime: endDateStr,
+        date: event.allDay ? endDateStr.split('T')[0] : undefined,
+      },
+      attendees: [],
+    };
+  });
+}
 
 class CalendarService {
   private async getStoredAccessToken(): Promise<string | null> {
