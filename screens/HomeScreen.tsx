@@ -17,6 +17,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import * as WebBrowser from 'expo-web-browser';
+import { getBackendUrl } from '../utils/environment';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -451,6 +453,62 @@ export default function HomeScreen() {
     if (visibleRequest) {
       onDismissRequest(visibleRequest.id);
       onNavigateToA2A(visibleRequest.thread_id);
+    }
+  };
+
+  // Google 캘린더 연동 핸들러
+  const handleConnectGoogleCalendar = async () => {
+    try {
+      setIsLoading(true);
+      const BACKEND_URL = getBackendUrl();
+
+      // 1. Google 인증 URL 가져오기
+      const authUrlRes = await fetch(`${BACKEND_URL}/calendar/auth-url`);
+      if (!authUrlRes.ok) throw new Error('인증 URL 요청 실패');
+      const { auth_url } = await authUrlRes.json();
+
+      // 2. WebBrowser로 인증 진행
+      const result = await WebBrowser.openAuthSessionAsync(
+        auth_url,
+        'exp://192.168.0.100:8081' // 개발 환경용 Redirect URI
+      );
+
+      if (result.type === 'success') {
+        // 3. 인증 코드로 토큰 교환 (백엔드가 Redirect URI에서 처리하도록 구성됨)
+        // 백엔드 /calendar/auth-callback 또는 /calendar/auth 호출 필요
+        // 하지만 useGoogleCalendar 훅 로직을 보면 code를 받아서 /calendar/auth로 POST함.
+        // openAuthSessionAsync가 리다이렉트된 URL을 반환하므로 여기서 code 파싱 필요.
+
+        const url = new URL(result.url);
+        const code = url.searchParams.get('code');
+
+        if (code) {
+          const token = await AsyncStorage.getItem('accessToken');
+          const linkRes = await fetch(`${BACKEND_URL}/calendar/auth`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              code,
+              redirect_uri: `${BACKEND_URL}/auth/google/callback` // 백엔드 설정과 일치시켜야 함
+            }),
+          });
+
+          if (linkRes.ok) {
+            Alert.alert('성공', 'Google 캘린더가 연동되었습니다.');
+            fetchSchedules(); // 일정 새로고침
+          } else {
+            Alert.alert('실패', '캘린더 연동에 실패했습니다.');
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Calendar link error:', error);
+      Alert.alert('오류', '캘린더 연동 중 오류가 발생했습니다.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1134,6 +1192,32 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
         >
 
+          {/* Google Calendar Link Button */}
+          <View style={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 5 }}>
+            <TouchableOpacity
+              onPress={handleConnectGoogleCalendar}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#ffffff',
+                paddingVertical: 12,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: '#E2E8F0',
+                marginBottom: 10,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.05,
+                shadowRadius: 2,
+                elevation: 2,
+              }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#4B5563' }}>
+                📅  Google 캘린더 연동하기
+              </Text>
+            </TouchableOpacity>
+          </View>
           {/* Calendar Section  */}
           <View style={[
             styles.calendarContainer,

@@ -1,12 +1,13 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Dimensions } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Dimensions, Platform, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import * as WebBrowser from 'expo-web-browser';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Svg, { Path, Circle, Rect, Defs, LinearGradient as SvgLinear, Stop } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
 import * as Linking from 'expo-linking';
 import { COLORS } from '../constants/Colors';
@@ -98,6 +99,67 @@ const LoginScreen = () => {
         }
     };
 
+    // Apple 로그인 핸들러
+    const handleAppleLogin = async () => {
+        try {
+            const credential = await AppleAuthentication.signInAsync({
+                requestedScopes: [
+                    AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+                    AppleAuthentication.AppleAuthenticationScope.EMAIL,
+                ],
+            });
+
+            // 이름 조합 (Apple은 처음 로그인 시에만 이름 제공)
+            const fullName = credential.fullName
+                ? `${credential.fullName.givenName || ''} ${credential.fullName.familyName || ''}`.trim()
+                : '';
+
+            // 백엔드로 Apple 토큰 전송
+            const BACKEND_URL = getBackendUrl();
+            const response = await fetch(`${BACKEND_URL}/auth/apple`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    identity_token: credential.identityToken,
+                    user_id: credential.user,
+                    email: credential.email,
+                    full_name: fullName,
+                }),
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                if (data.access_token) {
+                    // 기존 사용자 - 바로 로그인
+                    await AsyncStorage.setItem('accessToken', data.access_token);
+                    navigation.navigate('Home');
+                } else if (data.register_token) {
+                    // 신규 사용자 - 회원가입 화면으로
+                    navigation.navigate('TermsAgreement', {
+                        register_token: data.register_token,
+                        email: data.email || credential.email || '',
+                        name: fullName || data.name || '',
+                        picture: '',
+                        auth_provider: 'apple'
+                    });
+                }
+            } else {
+                throw new Error(data.detail || 'Apple 로그인 실패');
+            }
+        } catch (error: any) {
+            if (error.code === 'ERR_REQUEST_CANCELED') {
+                // 사용자가 취소한 경우
+                console.log('Apple 로그인 취소됨');
+            } else {
+                console.error('Apple 로그인 오류:', error);
+                Alert.alert('로그인 실패', error.message || 'Apple 로그인 중 오류가 발생했습니다.');
+            }
+        }
+    };
+
     return (
         <View style={styles.container}>
             {/* HEADER 영역 */}
@@ -115,36 +177,11 @@ const LoginScreen = () => {
                     {/* 로고 + 타이틀 */}
                     <Animated.View entering={FadeInUp.duration(1000)} style={styles.logoContainer}>
                         <View style={styles.logoWrapper}>
-                            <Svg width={64} height={64} viewBox="0 0 64 64">
-                                <Defs>
-                                    <SvgLinear id="grad1" x1="12" y1="16" x2="28" y2="32">
-                                        <Stop offset="0%" stopColor="#3730A3" />
-                                        <Stop offset="100%" stopColor="#818CF8" />
-                                    </SvgLinear>
-                                    <SvgLinear id="grad2" x1="36" y1="16" x2="52" y2="32">
-                                        <Stop offset="0%" stopColor="#818CF8" />
-                                        <Stop offset="100%" stopColor="#3730A3" />
-                                    </SvgLinear>
-                                    <SvgLinear id="grad3" x1="28" y1="24" x2="36" y2="24">
-                                        <Stop offset="0%" stopColor="#3730A3" />
-                                        <Stop offset="100%" stopColor="#818CF8" />
-                                    </SvgLinear>
-                                    <SvgLinear id="grad4" x1="16" y1="38" x2="48" y2="58">
-                                        <Stop offset="0%" stopColor="#3730A3" />
-                                        <Stop offset="100%" stopColor="#818CF8" />
-                                    </SvgLinear>
-                                </Defs>
-
-                                <Circle cx="20" cy="24" r="8" fill="url(#grad1)" />
-                                <Circle cx="44" cy="24" r="8" fill="url(#grad2)" />
-
-                                <Path d="M28 24 L36 24" stroke="url(#grad3)" strokeWidth="3" strokeLinecap="round" />
-
-                                <Rect x="16" y="38" width="32" height="20" rx="4" fill="url(#grad4)" />
-
-                                <Rect x="20" y="34" width="4" height="6" rx="2" fill="#3730A3" />
-                                <Rect x="40" y="34" width="4" height="6" rx="2" fill="#3730A3" />
-                            </Svg>
+                            <Image
+                                source={require('../assets/images/logo.png')}
+                                style={styles.logoImage}
+                                resizeMode="contain"
+                            />
                         </View>
 
                         <Text style={styles.title}>JOYNER</Text>
@@ -190,6 +227,25 @@ const LoginScreen = () => {
                     </View>
                     <Text style={styles.googleButtonText}>Google로 로그인하기</Text>
                 </TouchableOpacity>
+
+                {/* Apple 로그인 버튼 (iOS만 표시) */}
+                {Platform.OS === 'ios' && (
+                    <TouchableOpacity
+                        style={styles.appleButton}
+                        onPress={handleAppleLogin}
+                        activeOpacity={0.9}
+                    >
+                        <View style={styles.appleIconWrapper}>
+                            <Svg width={20} height={24} viewBox="0 0 170 170">
+                                <Path
+                                    d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.197-2.12-9.973-3.17-14.34-3.17-4.58 0-9.492 1.05-14.746 3.17-5.262 2.13-9.501 3.24-12.742 3.35-4.929.21-9.842-1.96-14.746-6.52-3.13-2.73-7.045-7.41-11.735-14.04-5.032-7.08-9.169-15.29-12.41-24.65-3.471-10.11-5.211-19.9-5.211-29.378 0-10.857 2.346-20.221 7.045-28.068 3.693-6.303 8.606-11.275 14.755-14.925s12.793-5.51 19.948-5.629c3.915 0 9.049 1.211 15.429 3.591 6.362 2.388 10.447 3.599 12.238 3.599 1.339 0 5.877-1.416 13.57-4.239 7.275-2.618 13.415-3.702 18.445-3.275 13.63 1.1 23.87 6.473 30.68 16.153-12.19 7.386-18.22 17.731-18.1 31.002.11 10.337 3.86 18.939 11.23 25.769 3.34 3.17 7.07 5.62 11.22 7.36-.9 2.61-1.85 5.11-2.86 7.51zM119.11 7.24c0 8.102-2.96 15.667-8.86 22.669-7.12 8.324-15.732 13.134-25.071 12.375a25.222 25.222 0 0 1-.188-3.07c0-7.778 3.386-16.102 9.399-22.908 3.002-3.446 6.82-6.311 11.45-8.597 4.62-2.252 8.99-3.497 13.1-3.71.12 1.083.17 2.166.17 3.24z"
+                                    fill="#FFFFFF"
+                                />
+                            </Svg>
+                        </View>
+                        <Text style={styles.appleButtonText}>Apple로 로그인하기</Text>
+                    </TouchableOpacity>
+                )}
 
                 <Text style={styles.footerText}>
                 </Text>
@@ -303,6 +359,24 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: 'bold',
         color: COLORS.neutralSlate,
+    },
+    appleButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#000000',
+        paddingVertical: 16,
+        borderRadius: 16,
+        elevation: 2,
+        marginBottom: 16,
+    },
+    appleIconWrapper: {
+        marginRight: 12,
+    },
+    appleButtonText: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: '#FFFFFF',
     },
     footerText: {
         fontSize: 10,

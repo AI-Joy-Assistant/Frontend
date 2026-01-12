@@ -81,7 +81,7 @@ const GOOGLE_CALENDAR_TERM_CONTENT = `JOYNER가 귀하의 일정을 확인하고
 const TermsAgreementScreen = () => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
     const route = useRoute<TermsAgreementRouteProp>();
-    const { register_token, email, name, picture } = route.params || {};
+    const { register_token, email, name, picture, auth_provider } = route.params || {};
 
     const [agreedToTerms, setAgreedToTerms] = useState(false);
     const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
@@ -107,6 +107,7 @@ const TermsAgreementScreen = () => {
                 name,
                 picture,
                 terms_agreed: true,
+                auth_provider,
             });
         }
     };

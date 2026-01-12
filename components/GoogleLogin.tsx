@@ -3,68 +3,45 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getBackendUrl } from '../utils/environment';
 
-interface GoogleLoginProps {
-  onLoginSuccess: (token: string) => void;
-  onLoginError: (error: string) => void;
-}
+// ... (existing imports)
 
 export default function GoogleLogin({ onLoginSuccess, onLoginError }: GoogleLoginProps) {
-  useEffect(() => {
-    // URL 파라미터에서 토큰 확인 (OAuth 콜백 후)
-    const checkUrlParams = async () => {
-      try {
-        const url = await WebBrowser.getRedirectUrl();
-        if (url) {
-          const urlObj = new URL(url);
-          const token = urlObj.searchParams.get('token');
-          const error = urlObj.searchParams.get('error');
-          
-          if (token) {
-            await AsyncStorage.setItem('access_token', token);
-            onLoginSuccess(token);
-          } else if (error) {
-            onLoginError(error);
-          }
-        }
-      } catch (error) {
-        console.log('URL 파라미터 확인 중 오류:', error);
-      }
-    };
-
-    checkUrlParams();
-  }, []);
+  // ... (existing useEffect)
 
   const handleGoogleLogin = async () => {
     try {
       // 백엔드 서버가 실행되지 않을 경우를 대비한 테스트
       console.log('🔗 Google 로그인 시도...');
-      
+
+      const BACKEND_URL = getBackendUrl();
+
       // 백엔드 서버 상태 확인
       try {
-        const response = await fetch('http://localhost:8000/');
+        const response = await fetch(`${BACKEND_URL}/`);
         console.log('✅ 백엔드 서버 연결 성공');
       } catch (error) {
         console.log('❌ 백엔드 서버 연결 실패:', error);
         onLoginError('백엔드 서버에 연결할 수 없습니다.');
         return;
       }
-      
+
       // 백엔드의 Google OAuth URL로 리다이렉트
-      const authUrl = 'http://localhost:8000/auth/google';
-      
+      const authUrl = `${BACKEND_URL}/auth/google`;
+
       console.log('🔗 Google OAuth URL:', authUrl);
-      
+
       const result = await WebBrowser.openAuthSessionAsync(
         authUrl,
-        'http://localhost:8081' // 리다이렉트 URL
+        'exp://192.168.0.100:8081' // 개발 환경에서는 exp:// 프로토콜 권장 (또는 makeRedirectUri 사용)
       );
 
       if (result.type === 'success') {
         const url = new URL(result.url);
         const token = url.searchParams.get('token');
         const error = url.searchParams.get('error');
-        
+
         if (token) {
           await AsyncStorage.setItem('access_token', token);
           onLoginSuccess(token);
