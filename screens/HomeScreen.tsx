@@ -59,6 +59,7 @@ import { API_BASE } from '../constants/config';
 import WebSocketService from '../services/WebSocketService';
 import NotificationPanel from '../components/NotificationPanel';
 import { badgeStore } from '../store/badgeStore';
+import { useTutorial } from '../store/TutorialContext';
 
 // Pending 요청 타입 정의
 interface PendingRequest {
@@ -277,8 +278,14 @@ export default function HomeScreen() {
   };
 
   // 화면에 포커스될 때마다 요청 및 알림 새로고침
+  // 튜토리얼 훅
+  const { checkAndShowTutorial } = useTutorial();
+
   useFocusEffect(
     useCallback(() => {
+      // 튜토리얼 체크 (첫 방문 시)
+      checkAndShowTutorial('home');
+
       fetchCurrentUser();
       fetchPendingRequests();
       fetchNotifications();

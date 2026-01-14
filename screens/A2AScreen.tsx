@@ -46,6 +46,7 @@ import { RootStackParamList, A2ALog, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
 import { API_BASE } from '../constants/config';
 import WebSocketService from '../services/WebSocketService';
+import { useTutorial } from '../store/TutorialContext';
 
 // Colors based on the provided React/Tailwind code
 const COLORS = {
@@ -81,6 +82,14 @@ const A2AScreen = () => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
     const route = useRoute<RouteProp<RootStackParamList, 'A2A'>>();
     const initialLogId = route.params?.initialLogId;
+    const { checkAndShowTutorial } = useTutorial();
+
+    // 튜토리얼 체크
+    useFocusEffect(
+        useCallback(() => {
+            checkAndShowTutorial('event');
+        }, [])
+    );
 
     const [logs, setLogs] = useState<A2ALog[]>([]);
     const [loading, setLoading] = useState(true);
