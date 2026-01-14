@@ -11,7 +11,7 @@ export const getBackendUrl = (): string => {
     }
     // 모바일 환경 (iOS, Android)
     // 개발 시에는 컴퓨터의 IP 주소 사용
-    return 'http://192.168.45.131:8000';
+    return 'http://10.50.110.9:8000';
 };
 
 /**

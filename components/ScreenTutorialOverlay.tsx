@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
     },
     backdrop: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(20, 20, 30, 0.90)',
+        backgroundColor: 'rgba(55, 48, 107, 0.75)',
     },
     headerContainer: {
         position: 'absolute',

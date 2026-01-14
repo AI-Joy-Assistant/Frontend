@@ -46,7 +46,7 @@ const LoginScreen = () => {
                     redirectUri = redirectUri.replace(/^http(s)?/, 'exp');
                 }
                 if (redirectUri.includes('localhost')) {
-                    redirectUri = redirectUri.replace('localhost', '192.168.45.131');
+                    redirectUri = redirectUri.replace('localhost', '10.50.110.9');
                 }
             }
 

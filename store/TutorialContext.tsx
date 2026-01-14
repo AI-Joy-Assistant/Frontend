@@ -43,7 +43,7 @@ export const SCREEN_TUTORIALS: Record<TutorialScreen, {
             {
                 id: 'add-schedule',
                 title: '일정 추가',
-                description: '새로운 일정을\n추가할 수 있어요',
+                description: '개인 일정 추가 및\nA2A 기능으로 친구와\n일정 조율이 가능해요',
                 icon: 'add-circle-outline',
                 position: 'bottom-right',
             },
@@ -55,22 +55,22 @@ export const SCREEN_TUTORIALS: Record<TutorialScreen, {
         items: [
             {
                 id: 'friend-select',
-                title: '친구 선택',
-                description: '함께할 친구들을\n선택하세요',
-                icon: 'people-outline',
+                title: '일정 기간',
+                description: '일정 총 기간과\n조율 날짜 범위를\n설정하세요',
+                icon: 'calendar-outline',
                 position: 'custom-friend-select', // 커스텀 위치
             },
             {
                 id: 'date-time',
-                title: '날짜/시간',
-                description: '원하는 날짜와\n시간을 선택하세요',
-                icon: 'time-outline',
+                title: '친구 선택',
+                description: '함께할 친구들을\n선택하세요',
+                icon: 'people-outline',
                 position: 'custom-time-select', // 커스텀 위치
             },
             {
                 id: 'send-request',
                 title: '요청 보내기',
-                description: 'AI가 자동으로\n일정을 조율해드려요',
+                description: 'AI가 자동으로\n최적의 일정을\n찾아드려요',
                 icon: 'send-outline',
                 position: 'custom-send-btn', // 커스텀 위치 (하단 탭 위)
             },
@@ -78,12 +78,12 @@ export const SCREEN_TUTORIALS: Record<TutorialScreen, {
     },
     chat: {
         title: '채팅',
-        subtitle: 'AI와 대화하며 일정을 조율하세요',
+        subtitle: 'AI 챗봇과 일정을 조율하세요',
         items: [
             {
                 id: 'ai-chat',
-                title: 'AI 채팅',
-                description: '자연어로 일정을\n요청할 수 있어요',
+                title: 'AI 대화',
+                description: '챗봇과 대화로\n일정을 조율할 수 있어요',
                 icon: 'chatbubble-outline',
                 position: 'mid-center-left', // 화면 중앙 좌측
             },
@@ -102,23 +102,23 @@ export const SCREEN_TUTORIALS: Record<TutorialScreen, {
         items: [
             {
                 id: 'waiting',
-                title: '대기 중 일정',
-                description: '협의가 필요한\n일정들이에요',
+                title: '대기 중',
+                description: '응답을 기다리는\n일정이에요',
                 icon: 'hourglass-outline',
                 position: 'top-left',
             },
             {
-                id: 'reschedule',
-                title: '재조율',
-                description: '다른 시간을\n제안할 수 있어요',
-                icon: 'refresh-outline',
+                id: 'in-progress',
+                title: '진행 중',
+                description: '협의가 진행되고\n있는 일정이에요',
+                icon: 'sync-outline',
                 position: 'bottom-left',
             },
             {
-                id: 'approve',
-                title: '승인/거절',
-                description: '일정을 승인하거나\n거절할 수 있어요',
-                icon: 'checkmark-circle-outline',
+                id: 'completed',
+                title: '완료됨 / 거절됨',
+                description: '확정되거나\n거절된 일정이에요',
+                icon: 'checkmark-done-outline',
                 position: 'bottom-right',
             }
         ],
