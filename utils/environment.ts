@@ -1,8 +1,7 @@
 import { Platform } from 'react-native';
-import { DEV_IP_ADDRESS, BACKEND_PORT } from '../constants/private';
 
 // 프로덕션 배포 URL (Cloud Run 직접 사용)
-const PRODUCTION_URL = 'https://joyner-backend-269078722638.asia-northeast3.run.app';
+const PRODUCTION_URL = 'https://api.joyner.co.kr';
 
 /**
  * 현재 실행 환경에 맞는 백엔드 URL 반환

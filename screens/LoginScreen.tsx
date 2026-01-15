@@ -58,8 +58,8 @@ const LoginScreen = () => {
 
             const finalUrl = (result as any)?.url || '';
 
-            // 회원가입 딥링크
-            if (finalUrl.includes('auth-register')) {
+            // 회원가입 딥링크 (auth-register 또는 auth_action=register)
+            if (finalUrl.includes('auth-register') || finalUrl.includes('auth_action=register')) {
                 const params = new URLSearchParams(finalUrl.split('?')[1]);
                 navigation.navigate('TermsAgreement', {
                     register_token: params.get('register_token') || '',
