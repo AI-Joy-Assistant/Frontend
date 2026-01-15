@@ -1,17 +1,25 @@
 import { Platform } from 'react-native';
+import { DEV_IP_ADDRESS, BACKEND_PORT } from '../constants/private';
+
+// 프로덕션 배포 URL (Cloud Run 직접 사용)
+const PRODUCTION_URL = 'https://joyner-backend-269078722638.asia-northeast3.run.app';
 
 /**
  * 현재 실행 환경에 맞는 백엔드 URL 반환
  * - Web: localhost 사용
- * - Mobile: 개발 서버의 IP 주소 사용
+ * - Mobile: Cloud Run URL 사용
  */
 export const getBackendUrl = (): string => {
+    // 모바일은 배포된 서버 사용 (Google OAuth redirect URI 때문)
+    if (Platform.OS === 'ios' || Platform.OS === 'android') {
+        return PRODUCTION_URL;
+    }
+
+    // 웹 개발 환경
     if (Platform.OS === 'web') {
         return 'http://localhost:8000';
     }
-    // 모바일 환경 (iOS, Android)
-    // 개발 시에는 컴퓨터의 IP 주소 사용
-    return 'http://10.50.110.9:8000';
+    return PRODUCTION_URL;
 };
 
 /**

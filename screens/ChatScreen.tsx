@@ -363,31 +363,33 @@ export default function ChatScreen() {
       const date = new Date(isoString);
       if (isNaN(date.getTime())) return "";
 
-      // 한국 시간대로 변환하여 표시
-      const kstOptions: Intl.DateTimeFormatOptions = {
-        timeZone: "Asia/Seoul",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      };
+      // KST는 UTC+9
+      const KST_OFFSET = 9 * 60 * 60 * 1000;
+      const kstDate = new Date(date.getTime() + KST_OFFSET);
 
       // 오늘인지 확인 (KST 기준)
       const now = new Date();
-      const nowKST = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-      const dateKST = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+      const kstNow = new Date(now.getTime() + KST_OFFSET);
 
       const isToday =
-        dateKST.getDate() === nowKST.getDate() &&
-        dateKST.getMonth() === nowKST.getMonth() &&
-        dateKST.getFullYear() === nowKST.getFullYear();
+        kstDate.getUTCDate() === kstNow.getUTCDate() &&
+        kstDate.getUTCMonth() === kstNow.getUTCMonth() &&
+        kstDate.getUTCFullYear() === kstNow.getUTCFullYear();
 
-      const timeStr = date.toLocaleTimeString("ko-KR", kstOptions);
+      // 시간 포맷 (오전/오후)
+      const hours = kstDate.getUTCHours();
+      const minutes = kstDate.getUTCMinutes();
+      const ampm = hours < 12 ? "오전" : "오후";
+      const displayHours = hours % 12 || 12;
+      const timeStr = `${ampm} ${displayHours}:${minutes.toString().padStart(2, "0")}`;
+
 
       if (isToday) {
         return timeStr;
       } else {
-        const dateStr = `${dateKST.getMonth() + 1}월 ${dateKST.getDate()}일`;
-        return `${dateStr} ${timeStr}`;
+        const month = kstDate.getUTCMonth() + 1;
+        const day = kstDate.getUTCDate();
+        return `${month}월 ${day}일 ${timeStr}`;
       }
     } catch (e) {
       return "";

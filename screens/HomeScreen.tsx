@@ -17,6 +17,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import * as WebBrowser from 'expo-web-browser';
+import { getBackendUrl } from '../utils/environment';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -99,6 +101,7 @@ export default function HomeScreen() {
   // 현재 사용자 ID와 프로필 사진
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [userPicture, setUserPicture] = useState<string | null>(null);
+  const [authProvider, setAuthProvider] = useState<string | null>(null);
 
   // Pending 요청 카드 State
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
@@ -260,6 +263,12 @@ export default function HomeScreen() {
         setUserPicture(storedPicture);
       }
 
+      // AsyncStorage에서 auth provider 가져오기
+      const storedAuthProvider = await AsyncStorage.getItem('authProvider');
+      if (storedAuthProvider) {
+        setAuthProvider(storedAuthProvider);
+      }
+
       const response = await fetch(`${API_BASE}/auth/me`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -373,6 +382,9 @@ export default function HomeScreen() {
   const [customAlertMessage, setCustomAlertMessage] = useState('');
   const [customAlertType, setCustomAlertType] = useState<'success' | 'error' | 'info'>('info');
 
+  // Google Calendar Integration Modal State
+  const [showCalendarIntegrationModal, setShowCalendarIntegrationModal] = useState(false);
+
   // Date Picker Modal State
   const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [pickerYear, setPickerYear] = useState(new Date().getFullYear());
@@ -458,6 +470,76 @@ export default function HomeScreen() {
     if (visibleRequest) {
       onDismissRequest(visibleRequest.id);
       onNavigateToA2A(visibleRequest.thread_id);
+    }
+  };
+
+  // Google 캘린더 연동 핸들러
+  const handleConnectGoogleCalendar = async () => {
+    try {
+      setIsLoading(true);
+      const BACKEND_URL = getBackendUrl();
+      const token = await AsyncStorage.getItem('accessToken');
+
+      // 1. 캘린더 연동 전용 URL 가져오기 (Apple 로그인 사용자용)
+      console.log('Token for calendar link:', token ? 'exists' : 'null');
+      console.log('Backend URL:', BACKEND_URL);
+
+      const authUrlRes = await fetch(`${BACKEND_URL}/calendar/link-url`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
+
+      console.log('Auth URL response status:', authUrlRes.status);
+
+      if (!authUrlRes.ok) {
+        const errorBody = await authUrlRes.text();
+        console.error('Auth URL error:', errorBody);
+        throw new Error(`인증 URL 요청 실패: ${authUrlRes.status} - ${errorBody}`);
+      }
+      const { auth_url } = await authUrlRes.json();
+
+      // 2. WebBrowser로 인증 진행
+      // 백엔드에서 frontend://calendar-linked 로 리다이렉트
+      const result = await WebBrowser.openAuthSessionAsync(
+        auth_url,
+        'frontend://calendar-linked'
+      );
+
+      console.log('OAuth result type:', result.type);
+      console.log('OAuth result:', JSON.stringify(result));
+
+      if (result.type === 'success' && result.url) {
+        // 3. URL에서 success 또는 error 파라미터 확인
+        const url = new URL(result.url);
+        const success = url.searchParams.get('success');
+        const errorParam = url.searchParams.get('error');
+        const returnedToken = url.searchParams.get('token');
+
+        console.log('Success:', success, 'Error:', errorParam, 'Token:', returnedToken);
+
+        if (success === 'true') {
+          // 새 /calendar/link-callback 방식 - 백엔드에서 이미 토큰 저장됨
+          Alert.alert('성공', 'Google 캘린더가 연동되었습니다!');
+          fetchSchedules();
+        } else if (errorParam) {
+          Alert.alert('오류', `캘린더 연동 실패: ${errorParam}`);
+        } else if (returnedToken) {
+          // 이전 방식 호환
+          Alert.alert('성공', 'Google 캘린더가 연동되었습니다!');
+          fetchSchedules();
+        } else {
+          Alert.alert('알림', '연동이 완료되었습니다. 캘린더를 새로고침합니다.');
+          fetchSchedules();
+        }
+      } else if (result.type === 'cancel') {
+        console.log('User cancelled calendar auth');
+      } else if (result.type === 'dismiss') {
+        console.log('Browser dismissed');
+      }
+    } catch (error) {
+      console.error('Calendar link error:', error);
+      Alert.alert('오류', '캘린더 연동 중 오류가 발생했습니다.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1140,6 +1222,37 @@ export default function HomeScreen() {
           contentContainerStyle={{ paddingBottom: 100 }}
           showsVerticalScrollIndicator={false}
         >
+
+          {/* Google Calendar Link Button - Apple 로그인 사용자에게만 표시 */}
+          {authProvider === 'apple' && (
+            <TouchableOpacity
+              onPress={() => setShowCalendarIntegrationModal(true)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: COLORS.primaryBg,
+                marginHorizontal: 20,
+                marginTop: 15,
+                marginBottom: 3,
+                paddingVertical: 14,
+                paddingHorizontal: 16,
+                borderRadius: 12,
+                borderWidth: 1.5,
+                borderColor: COLORS.primaryLight,
+              }}
+            >
+              <CalendarIcon size={26} color={COLORS.primaryMain} style={{ marginRight: 14 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: COLORS.primaryMain }}>
+                  Google 캘린더 연동하기
+                </Text>
+                <Text style={{ fontSize: 13, color: '#8B95A5', marginTop: 3 }}>
+                  일정을 자동으로 동기화하세요
+                </Text>
+              </View>
+              <ChevronRight size={22} color={COLORS.primaryMain} />
+            </TouchableOpacity>
+          )}
 
           {/* Calendar Section  */}
           <View style={[
@@ -2278,6 +2391,116 @@ export default function HomeScreen() {
                     color: 'white',
                   }}>
                     확인
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Google 캘린더 연동 설명 모달 */}
+      <Modal
+        visible={showCalendarIntegrationModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowCalendarIntegrationModal(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowCalendarIntegrationModal(false)}>
+          <View style={styles.deleteModalOverlay}>
+            <TouchableWithoutFeedback onPress={() => { }}>
+              <View style={{
+                backgroundColor: 'white',
+                borderRadius: 20,
+                padding: 20,
+                width: '92%',
+                maxWidth: 360,
+                alignItems: 'center',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.15,
+                shadowRadius: 12,
+                elevation: 8,
+              }}>
+                {/* 아이콘 */}
+                <View style={{
+                  width: 50,
+                  height: 50,
+                  borderRadius: 25,
+                  backgroundColor: '#E0E7FF',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  marginBottom: 14,
+                }}>
+                  <CalendarIcon size={26} color={COLORS.primaryMain} />
+                </View>
+
+                {/* 제목 */}
+                <Text style={{
+                  fontSize: 18,
+                  fontWeight: '700',
+                  color: '#1F2937',
+                  marginBottom: 12,
+                  textAlign: 'center',
+                }}>
+                  Google Calendar 연동하기
+                </Text>
+
+                {/* 설명 */}
+                <Text style={{
+                  fontSize: 14,
+                  color: '#6B7280',
+                  lineHeight: 20,
+                  textAlign: 'center',
+                  marginBottom: 18,
+                }}>
+                  연동 시 기존 일정을 자동으로 가져오고,{'\n'}앱에서 추가한 일정도 동기화됩니다.{'\n'}연동하지 않으면 <Text style={{ fontWeight: '600', color: COLORS.primaryMain }}>JOYNER 자체 캘린더</Text>로만{'\n'}사용할 수 있습니다.
+                </Text>
+
+                {/* 버튼들 */}
+                <TouchableOpacity
+                  style={{
+                    width: '100%',
+                    height: 50,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderRadius: 12,
+                    backgroundColor: COLORS.primaryMain,
+                    marginBottom: 10,
+                  }}
+                  onPress={() => {
+                    setShowCalendarIntegrationModal(false);
+                    handleConnectGoogleCalendar();
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: '600',
+                    color: 'white',
+                  }}>
+                    연동하기
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{
+                    width: '100%',
+                    height: 50,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderRadius: 12,
+                    backgroundColor: '#F3F4F6',
+                  }}
+                  onPress={() => {
+                    setShowCalendarIntegrationModal(false);
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: '600',
+                    color: '#6B7280',
+                  }}>
+                    연동하지 않기
                   </Text>
                 </TouchableOpacity>
               </View>
