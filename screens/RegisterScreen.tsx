@@ -14,13 +14,15 @@ const RegisterScreen = () => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
     const route = useRoute<RegisterScreenRouteProp>();
 
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState('');
+    const { resetTutorialState } = useTutorial();
+
     // route.params가 undefined일 수 있으므로 안전하게 접근
     const { register_token, email, name: initialName, picture, terms_agreed, auth_provider } = route.params || {};
 
     const [name, setName] = useState(initialName || '');
     const [handle, setHandle] = useState('');
-    const [error, setError] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
         if (!register_token) {
@@ -64,6 +66,10 @@ const RegisterScreen = () => {
 
             // 토큰 저장 및 홈으로 이동
             await AsyncStorage.setItem('accessToken', data.access_token);
+
+            // 튜토리얼 상태 초기화 (Context State + AsyncStorage 동기화)
+            await resetTutorialState();
+
             navigation.reset({
                 index: 0,
                 routes: [{ name: 'Home' }],

@@ -19,7 +19,6 @@ export const getBackendUrl = (): string => {
     if (Platform.OS === 'web') {
         return 'http://localhost:8000';
     }
-
     return PRODUCTION_URL;
 };
 
