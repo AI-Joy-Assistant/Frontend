@@ -100,6 +100,7 @@ export default function HomeScreen() {
   // 현재 사용자 ID와 프로필 사진
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [userPicture, setUserPicture] = useState<string | null>(null);
+  const [authProvider, setAuthProvider] = useState<string | null>(null);
 
   // Pending 요청 카드 State
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
@@ -261,6 +262,12 @@ export default function HomeScreen() {
         setUserPicture(storedPicture);
       }
 
+      // AsyncStorage에서 auth provider 가져오기
+      const storedAuthProvider = await AsyncStorage.getItem('authProvider');
+      if (storedAuthProvider) {
+        setAuthProvider(storedAuthProvider);
+      }
+
       const response = await fetch(`${API_BASE}/auth/me`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -368,6 +375,9 @@ export default function HomeScreen() {
   const [customAlertMessage, setCustomAlertMessage] = useState('');
   const [customAlertType, setCustomAlertType] = useState<'success' | 'error' | 'info'>('info');
 
+  // Google Calendar Integration Modal State
+  const [showCalendarIntegrationModal, setShowCalendarIntegrationModal] = useState(false);
+
   // Date Picker Modal State
   const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [pickerYear, setPickerYear] = useState(new Date().getFullYear());
@@ -461,48 +471,62 @@ export default function HomeScreen() {
     try {
       setIsLoading(true);
       const BACKEND_URL = getBackendUrl();
+      const token = await AsyncStorage.getItem('accessToken');
 
-      // 1. Google 인증 URL 가져오기
-      const authUrlRes = await fetch(`${BACKEND_URL}/calendar/auth-url`);
-      if (!authUrlRes.ok) throw new Error('인증 URL 요청 실패');
+      // 1. 캘린더 연동 전용 URL 가져오기 (Apple 로그인 사용자용)
+      console.log('Token for calendar link:', token ? 'exists' : 'null');
+      console.log('Backend URL:', BACKEND_URL);
+
+      const authUrlRes = await fetch(`${BACKEND_URL}/calendar/link-url`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
+
+      console.log('Auth URL response status:', authUrlRes.status);
+
+      if (!authUrlRes.ok) {
+        const errorBody = await authUrlRes.text();
+        console.error('Auth URL error:', errorBody);
+        throw new Error(`인증 URL 요청 실패: ${authUrlRes.status} - ${errorBody}`);
+      }
       const { auth_url } = await authUrlRes.json();
 
       // 2. WebBrowser로 인증 진행
+      // 백엔드에서 frontend://calendar-linked 로 리다이렉트
       const result = await WebBrowser.openAuthSessionAsync(
         auth_url,
-        'exp://192.168.0.100:8081' // 개발 환경용 Redirect URI
+        'frontend://calendar-linked'
       );
 
-      if (result.type === 'success') {
-        // 3. 인증 코드로 토큰 교환 (백엔드가 Redirect URI에서 처리하도록 구성됨)
-        // 백엔드 /calendar/auth-callback 또는 /calendar/auth 호출 필요
-        // 하지만 useGoogleCalendar 훅 로직을 보면 code를 받아서 /calendar/auth로 POST함.
-        // openAuthSessionAsync가 리다이렉트된 URL을 반환하므로 여기서 code 파싱 필요.
+      console.log('OAuth result type:', result.type);
+      console.log('OAuth result:', JSON.stringify(result));
 
+      if (result.type === 'success' && result.url) {
+        // 3. URL에서 success 또는 error 파라미터 확인
         const url = new URL(result.url);
-        const code = url.searchParams.get('code');
+        const success = url.searchParams.get('success');
+        const errorParam = url.searchParams.get('error');
+        const returnedToken = url.searchParams.get('token');
 
-        if (code) {
-          const token = await AsyncStorage.getItem('accessToken');
-          const linkRes = await fetch(`${BACKEND_URL}/calendar/auth`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-              code,
-              redirect_uri: `${BACKEND_URL}/auth/google/callback` // 백엔드 설정과 일치시켜야 함
-            }),
-          });
+        console.log('Success:', success, 'Error:', errorParam, 'Token:', returnedToken);
 
-          if (linkRes.ok) {
-            Alert.alert('성공', 'Google 캘린더가 연동되었습니다.');
-            fetchSchedules(); // 일정 새로고침
-          } else {
-            Alert.alert('실패', '캘린더 연동에 실패했습니다.');
-          }
+        if (success === 'true') {
+          // 새 /calendar/link-callback 방식 - 백엔드에서 이미 토큰 저장됨
+          Alert.alert('성공', 'Google 캘린더가 연동되었습니다!');
+          fetchSchedules();
+        } else if (errorParam) {
+          Alert.alert('오류', `캘린더 연동 실패: ${errorParam}`);
+        } else if (returnedToken) {
+          // 이전 방식 호환
+          Alert.alert('성공', 'Google 캘린더가 연동되었습니다!');
+          fetchSchedules();
+        } else {
+          Alert.alert('알림', '연동이 완료되었습니다. 캘린더를 새로고침합니다.');
+          fetchSchedules();
         }
+      } else if (result.type === 'cancel') {
+        console.log('User cancelled calendar auth');
+      } else if (result.type === 'dismiss') {
+        console.log('Browser dismissed');
       }
     } catch (error) {
       console.error('Calendar link error:', error);
@@ -1192,32 +1216,37 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
         >
 
-          {/* Google Calendar Link Button */}
-          <View style={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 5 }}>
+          {/* Google Calendar Link Button - Apple 로그인 사용자에게만 표시 */}
+          {authProvider === 'apple' && (
             <TouchableOpacity
-              onPress={handleConnectGoogleCalendar}
+              onPress={() => setShowCalendarIntegrationModal(true)}
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: '#ffffff',
-                paddingVertical: 12,
+                backgroundColor: COLORS.primaryBg,
+                marginHorizontal: 20,
+                marginTop: 15,
+                marginBottom: 3,
+                paddingVertical: 14,
+                paddingHorizontal: 16,
                 borderRadius: 12,
-                borderWidth: 1,
-                borderColor: '#E2E8F0',
-                marginBottom: 10,
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.05,
-                shadowRadius: 2,
-                elevation: 2,
+                borderWidth: 1.5,
+                borderColor: COLORS.primaryLight,
               }}
             >
-              <Text style={{ fontSize: 14, fontWeight: '600', color: '#4B5563' }}>
-                📅  Google 캘린더 연동하기
-              </Text>
+              <CalendarIcon size={26} color={COLORS.primaryMain} style={{ marginRight: 14 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: COLORS.primaryMain }}>
+                  Google 캘린더 연동하기
+                </Text>
+                <Text style={{ fontSize: 13, color: '#8B95A5', marginTop: 3 }}>
+                  일정을 자동으로 동기화하세요
+                </Text>
+              </View>
+              <ChevronRight size={22} color={COLORS.primaryMain} />
             </TouchableOpacity>
-          </View>
+          )}
+
           {/* Calendar Section  */}
           <View style={[
             styles.calendarContainer,
@@ -2355,6 +2384,116 @@ export default function HomeScreen() {
                     color: 'white',
                   }}>
                     확인
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Google 캘린더 연동 설명 모달 */}
+      <Modal
+        visible={showCalendarIntegrationModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowCalendarIntegrationModal(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowCalendarIntegrationModal(false)}>
+          <View style={styles.deleteModalOverlay}>
+            <TouchableWithoutFeedback onPress={() => { }}>
+              <View style={{
+                backgroundColor: 'white',
+                borderRadius: 20,
+                padding: 20,
+                width: '92%',
+                maxWidth: 360,
+                alignItems: 'center',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.15,
+                shadowRadius: 12,
+                elevation: 8,
+              }}>
+                {/* 아이콘 */}
+                <View style={{
+                  width: 50,
+                  height: 50,
+                  borderRadius: 25,
+                  backgroundColor: '#E0E7FF',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  marginBottom: 14,
+                }}>
+                  <CalendarIcon size={26} color={COLORS.primaryMain} />
+                </View>
+
+                {/* 제목 */}
+                <Text style={{
+                  fontSize: 18,
+                  fontWeight: '700',
+                  color: '#1F2937',
+                  marginBottom: 12,
+                  textAlign: 'center',
+                }}>
+                  Google Calendar 연동하기
+                </Text>
+
+                {/* 설명 */}
+                <Text style={{
+                  fontSize: 14,
+                  color: '#6B7280',
+                  lineHeight: 20,
+                  textAlign: 'center',
+                  marginBottom: 18,
+                }}>
+                  연동 시 기존 일정을 자동으로 가져오고,{'\n'}앱에서 추가한 일정도 동기화됩니다.{'\n'}연동하지 않으면 <Text style={{ fontWeight: '600', color: COLORS.primaryMain }}>JOYNER 자체 캘린더</Text>로만{'\n'}사용할 수 있습니다.
+                </Text>
+
+                {/* 버튼들 */}
+                <TouchableOpacity
+                  style={{
+                    width: '100%',
+                    height: 50,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderRadius: 12,
+                    backgroundColor: COLORS.primaryMain,
+                    marginBottom: 10,
+                  }}
+                  onPress={() => {
+                    setShowCalendarIntegrationModal(false);
+                    handleConnectGoogleCalendar();
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: '600',
+                    color: 'white',
+                  }}>
+                    연동하기
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{
+                    width: '100%',
+                    height: 50,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderRadius: 12,
+                    backgroundColor: '#F3F4F6',
+                  }}
+                  onPress={() => {
+                    setShowCalendarIntegrationModal(false);
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: '600',
+                    color: '#6B7280',
+                  }}>
+                    연동하지 않기
                   </Text>
                 </TouchableOpacity>
               </View>

@@ -75,6 +75,7 @@ const LoginScreen = () => {
             if (tokenMatch && tokenMatch[1]) {
                 const token = decodeURIComponent(tokenMatch[1]);
                 await AsyncStorage.setItem('accessToken', token);
+                await AsyncStorage.setItem('authProvider', 'google');
                 navigation.navigate('Home');
                 return;
             }
@@ -88,6 +89,7 @@ const LoginScreen = () => {
             if (tokenResponse.ok) {
                 const tokenData = await tokenResponse.json();
                 await AsyncStorage.setItem('accessToken', tokenData.accessToken);
+                await AsyncStorage.setItem('authProvider', 'google');
                 navigation.navigate('Home');
                 return;
             }
@@ -135,6 +137,7 @@ const LoginScreen = () => {
                 if (data.access_token) {
                     // 기존 사용자 - 바로 로그인
                     await AsyncStorage.setItem('accessToken', data.access_token);
+                    await AsyncStorage.setItem('authProvider', 'apple');
                     navigation.navigate('Home');
                 } else if (data.register_token) {
                     // 신규 사용자 - 회원가입 화면으로
