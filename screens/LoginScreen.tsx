@@ -53,6 +53,53 @@ const LoginScreen = () => {
         }
     }, []);
 
+    // 딥링크 이벤트 리스너 (Android Linking.openURL 대응)
+    useEffect(() => {
+        const handleDeepLink = async (event: { url: string }) => {
+            const { url } = event;
+            if (!url) return;
+
+            // 이미 처리된 URL인지 확인 (중복 호출 방지)
+            // ... (필요하다면 로직 추가)
+
+            handleAuthRedirect(url);
+        };
+
+        const subscription = Linking.addEventListener('url', handleDeepLink);
+
+        // 앱이 이미 켜져있는 상태에서 URL로 열렸을 때 (Cold Start 등) 체크
+        Linking.getInitialURL().then((url) => {
+            if (url) handleAuthRedirect(url);
+        });
+
+        return () => {
+            subscription.remove();
+        };
+    }, []);
+
+    const handleAuthRedirect = async (url: string) => {
+        // 회원가입 딥링크 (auth-register 또는 auth_action=register)
+        if (url.includes('auth-register') || url.includes('auth_action=register')) {
+            const params = new URLSearchParams(url.split('?')[1]);
+            navigation.navigate('TermsAgreement', {
+                register_token: params.get('register_token') || '',
+                email: params.get('email') || '',
+                name: params.get('name') || '',
+                picture: params.get('picture') || ''
+            });
+            return;
+        }
+
+        // 토큰 딥링크
+        const tokenMatch = /[?&]token=([^&#]+)/.exec(url);
+        if (tokenMatch && tokenMatch[1]) {
+            const token = decodeURIComponent(tokenMatch[1]);
+            await AsyncStorage.setItem('accessToken', token);
+            await AsyncStorage.setItem('authProvider', 'google');
+            navigation.navigate('Home');
+        }
+    };
+
     const handleGoogleLogin = async () => {
         try {
             if (isWeb()) {
@@ -81,55 +128,27 @@ const LoginScreen = () => {
                 if (redirectUri.startsWith('http')) {
                     redirectUri = redirectUri.replace(/^http(s)?/, 'exp');
                 }
+                // Expo Go 개발 환경 (localhost -> 실제 IP)
                 if (redirectUri.includes('localhost')) {
+                    // 주의: 사용자의 로컬 IP로 변경해야 함. 현재는 하드코딩된 값 사용 중인 것으로 보임.
+                    // 필요시 Constants.expoConfig.hostUri 등을 활용 가능
                     redirectUri = redirectUri.replace('localhost', '10.50.110.9');
                 }
             }
 
             const authUrl = `${BACKEND_URL}/auth/google?redirect_scheme=${encodeURIComponent(redirectUri)}`;
-            const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
 
-            if (isWeb()) return;
-
-            const finalUrl = (result as any)?.url || '';
-
-            // 회원가입 딥링크 (auth-register 또는 auth_action=register)
-            if (finalUrl.includes('auth-register') || finalUrl.includes('auth_action=register')) {
-                const params = new URLSearchParams(finalUrl.split('?')[1]);
-                navigation.navigate('TermsAgreement', {
-                    register_token: params.get('register_token') || '',
-                    email: params.get('email') || '',
-                    name: params.get('name') || '',
-                    picture: params.get('picture') || ''
-                });
-                return;
+            if (Platform.OS === 'android') {
+                // [Android] 403 오류 방지를 위해 외부 브라우저(Chrome) 강제 사용
+                await Linking.openURL(authUrl);
+            } else {
+                // [iOS/Web] 기존 방식 유지 (WebBrowser or openAuthSessionAsync)
+                const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
+                if (result.type === 'success' && result.url) {
+                    handleAuthRedirect(result.url);
+                }
             }
 
-            // 토큰 딥링크
-            const tokenMatch = /[?&]token=([^&#]+)/.exec(finalUrl);
-            if (tokenMatch && tokenMatch[1]) {
-                const token = decodeURIComponent(tokenMatch[1]);
-                await AsyncStorage.setItem('accessToken', token);
-                await AsyncStorage.setItem('authProvider', 'google');
-                navigation.navigate('Home');
-                return;
-            }
-
-            // 세션 기반 토큰 조회
-            const tokenResponse = await fetch(`${BACKEND_URL}/auth/token`, {
-                method: 'GET',
-                credentials: 'include',
-            });
-
-            if (tokenResponse.ok) {
-                const tokenData = await tokenResponse.json();
-                await AsyncStorage.setItem('accessToken', tokenData.accessToken);
-                await AsyncStorage.setItem('authProvider', 'google');
-                navigation.navigate('Home');
-                return;
-            }
-
-            Alert.alert('로그인 실패', '토큰을 받아오지 못했습니다. 다시 시도해 주세요.');
         } catch (error) {
             console.error('Google 로그인 오류:', error);
             Alert.alert('로그인 실패', '로그인 중 오류가 발생했습니다.');
