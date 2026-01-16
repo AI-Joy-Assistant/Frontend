@@ -102,7 +102,34 @@ const LoginScreen = () => {
 
     const handleGoogleLogin = async () => {
         try {
+            // [Web] 카카오톡 등 인앱 브라우저 감지 및 외부 브라우저 전환 처리
             if (isWeb()) {
+                const userAgent = navigator.userAgent;
+                const isAndroid = /Android/i.test(userAgent);
+
+                // 인앱 브라우저 감지 (카카오톡, 인스타그램, 페이스북, 라인, 네이버, 트위터 등)
+                const isInAppBrowser =
+                    userAgent.includes('KAKAOTALK') ||
+                    userAgent.includes('Instagram') ||
+                    userAgent.includes('FB_IAB') ||
+                    userAgent.includes('FBAN') ||
+                    userAgent.includes('FBAV') ||
+                    userAgent.includes('Line') ||
+                    userAgent.includes('NAVER') ||
+                    userAgent.includes('Twitter') ||
+                    userAgent.includes('Snapchat') ||
+                    (userAgent.includes('wv') && isAndroid); // 일반 Android WebView
+
+                if (isInAppBrowser && isAndroid) {
+                    // 현재 페이지 URL
+                    const currentUrl = window.location.href;
+                    // intent 스킴 생성 (Chrome으로 띄우기)
+                    const intentUrl = `intent://${currentUrl.replace(/^https?:\/\//, '')}#Intent;scheme=https;package=com.android.chrome;end`;
+
+                    window.location.href = intentUrl;
+                    return;
+                }
+
                 const messageHandler = async (event: MessageEvent) => {
                     if (event.data.type === 'GOOGLE_LOGIN_SUCCESS') {
                         window.removeEventListener('message', messageHandler);
@@ -130,8 +157,6 @@ const LoginScreen = () => {
                 }
                 // Expo Go 개발 환경 (localhost -> 실제 IP)
                 if (redirectUri.includes('localhost')) {
-                    // 주의: 사용자의 로컬 IP로 변경해야 함. 현재는 하드코딩된 값 사용 중인 것으로 보임.
-                    // 필요시 Constants.expoConfig.hostUri 등을 활용 가능
                     redirectUri = redirectUri.replace('localhost', '10.50.110.9');
                 }
             }
@@ -139,10 +164,10 @@ const LoginScreen = () => {
             const authUrl = `${BACKEND_URL}/auth/google?redirect_scheme=${encodeURIComponent(redirectUri)}`;
 
             if (Platform.OS === 'android') {
-                // [Android] 403 오류 방지를 위해 외부 브라우저(Chrome) 강제 사용
+                // [Native Android] 403 오류 방지를 위해 외부 브라우저(Chrome) 강제 사용
                 await Linking.openURL(authUrl);
             } else {
-                // [iOS/Web] 기존 방식 유지 (WebBrowser or openAuthSessionAsync)
+                // [iOS/Web] 기존 방식 유지
                 const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
                 if (result.type === 'success' && result.url) {
                     handleAuthRedirect(result.url);
