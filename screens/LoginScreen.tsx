@@ -44,6 +44,12 @@ const LoginScreen = () => {
                     window.close();
                 }
             }
+        } else {
+            // [Native] 브라우저 세션 예열 (Android Custom Tabs 안정성 향상)
+            WebBrowser.warmUpAsync();
+            return () => {
+                WebBrowser.coolDownAsync();
+            };
         }
     }, []);
 
