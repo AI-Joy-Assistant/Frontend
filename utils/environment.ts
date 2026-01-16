@@ -9,12 +9,17 @@ const PRODUCTION_URL = 'https://api.joyner.co.kr';
  * - Mobile: Cloud Run URL 사용
  */
 export const getBackendUrl = (): string => {
-    // 모바일은 배포된 서버 사용 (Google OAuth redirect URI 때문)
+    // 1. 프로덕션 빌드(배포됨) 상태라면 무조건 운영 서버 사용
+    if (!__DEV__) {
+        return PRODUCTION_URL;
+    }
+
+    // 2. 모바일 (개발 중에도 편의를 위해 운영 서버 사용 중)
     if (Platform.OS === 'ios' || Platform.OS === 'android') {
         return PRODUCTION_URL;
     }
 
-    // 웹 개발 환경
+    // 3. 웹 개발 환경 (로컬 서버 사용)
     if (Platform.OS === 'web') {
         return 'http://localhost:8000';
     }
