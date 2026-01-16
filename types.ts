@@ -2,8 +2,8 @@
 export type RootStackParamList = {
   Splash: undefined;
   Login: undefined;
-  TermsAgreement: { register_token: string; email: string; name: string; picture: string };
-  Register: { register_token: string; email: string; name: string; picture: string; terms_agreed: boolean };
+  TermsAgreement: { register_token: string; email: string; name: string; picture: string; auth_provider?: 'google' | 'apple' };
+  Register: { register_token: string; email: string; name: string; picture: string; terms_agreed: boolean; auth_provider?: 'google' | 'apple' };
   LoginDetailScreen: undefined;
   Home: undefined;
   Chat: undefined;

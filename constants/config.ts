@@ -1,19 +1,11 @@
 import { Platform } from 'react-native';
+import { getBackendUrl } from '../utils/environment';
 
-// 웹에서는 localhost, 모바일에서는 환경 변수 또는 localhost 사용
-const getApiBase = () => {
-    if (Platform.OS === 'web') {
-        return 'http://localhost:8000';
-    }
-    // 모바일에서는 환경 변수가 없으면 localhost 사용
-    return process.env.EXPO_PUBLIC_API_BASE || 'http://localhost:8000';
-};
-
-export const API_BASE = getApiBase();
+export const API_BASE = getBackendUrl();
 
 // WebSocket URL (http:// → ws://, https:// → wss://)
 const getWsBase = () => {
-    const httpBase = getApiBase();
+    const httpBase = getBackendUrl();
     return httpBase.replace('http://', 'ws://').replace('https://', 'wss://');
 };
 

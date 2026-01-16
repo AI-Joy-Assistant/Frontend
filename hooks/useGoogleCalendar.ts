@@ -34,10 +34,10 @@ export function useGoogleCalendar() {
     const next = new Date(d);
     next.setDate(d.getDate() + 1);
     const toYmd = (x: Date) =>
-        `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+      `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
     return {
       from: `${dateISO}T00:00:00+09:00`,
-      to:   `${toYmd(next)}T00:00:00+09:00`,
+      to: `${toYmd(next)}T00:00:00+09:00`,
     };
   };
 
@@ -65,7 +65,7 @@ export function useGoogleCalendar() {
 
     if (res.status === 401) {
       let body: any = {};
-      try { body = await res.clone().json(); } catch {}
+      try { body = await res.clone().json(); } catch { }
       if (body?.detail === 'token_expired') {
         const newJwt = await tryRefreshToken(jwt);
         if (newJwt) {
@@ -106,10 +106,10 @@ export function useGoogleCalendar() {
 
   // 월 전체
   const fetchMonthEvents = async (year: number, month: number) => {
-    const first = `${year}-${String(month).padStart(2,'0')}-01T00:00:00+09:00`;
+    const first = `${year}-${String(month).padStart(2, '0')}-01T00:00:00+09:00`;
     const nextMonth = month === 12 ? 1 : month + 1;
-    const nextYear  = month === 12 ? year + 1 : year;
-    const nextFirst = `${nextYear}-${String(nextMonth).padStart(2,'0')}-01T00:00:00+09:00`;
+    const nextYear = month === 12 ? year + 1 : year;
+    const nextFirst = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01T00:00:00+09:00`;
     await fetchEventsRangeForMonth(first, nextFirst);
   };
 
@@ -134,7 +134,7 @@ export function useGoogleCalendar() {
       const res = await fetch(`${API_BASE}/calendar/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, redirect_uri: 'http://localhost:8000/auth/google/callback' }),
+        body: JSON.stringify({ code, redirect_uri: `${API_BASE}/auth/google/callback` }),
       });
       if (!res.ok) return null;
       const data = await res.json();
@@ -190,16 +190,16 @@ export function useGoogleCalendar() {
   // ---- 시간/겹침 유틸 ----
   const eventInterval = (ev: CalendarEvent) => {
     const s = ev.start?.dateTime
-        ? new Date(ev.start.dateTime)
-        : ev.start?.date
-            ? new Date(`${ev.start.date}T00:00:00+09:00`)
-            : null;
+      ? new Date(ev.start.dateTime)
+      : ev.start?.date
+        ? new Date(`${ev.start.date}T00:00:00+09:00`)
+        : null;
 
     const e = ev.end?.dateTime
-        ? new Date(ev.end.dateTime)
-        : ev.end?.date
-            ? new Date(`${ev.end.date}T00:00:00+09:00`) // 구글 종일 종료일은 배타
-            : null;
+      ? new Date(ev.end.dateTime)
+      : ev.end?.date
+        ? new Date(`${ev.end.date}T00:00:00+09:00`) // 구글 종일 종료일은 배타
+        : null;
 
     return { start: s, end: e };
   };
