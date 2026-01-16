@@ -21,7 +21,7 @@ export const getBackendUrl = (): string => {
 
     // 3. 웹 개발 환경 (로컬 서버 사용)
     if (Platform.OS === 'web') {
-        return 'http://localhost:8000';
+        return 'https://api.joyner.co.kr';
     }
     return PRODUCTION_URL;
 };

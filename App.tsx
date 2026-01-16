@@ -40,9 +40,17 @@ export default function App() {
     <TutorialProvider>
       <NavigationContainer
         linking={{
-          prefixes: ['frontend://', 'exp://'],
+          prefixes: [
+            'frontend://',
+            'exp://',
+            'https://joyner.co.kr',
+            'https://www.joyner.co.kr',
+            'http://localhost:8081',
+          ],
           config: {
             screens: {
+              Login: 'auth-success',
+              TermsAgreement: 'TermsAgreement',
               Home: 'home',
               // ... other screens
             },
