@@ -18,6 +18,35 @@ const { height } = Dimensions.get('window');
 const LoginScreen = () => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
+    // [Web only] 팝업에서 로그인 완료 후 토큰을 부모 창으로 전달하고 닫기
+    useEffect(() => {
+        if (isWeb()) {
+            const url = new URL(window.location.href);
+            // auth-success 경로로 들어왔는지 확인 (토큰이 있는 경우)
+            const token = url.searchParams.get('token');
+            const registerToken = url.searchParams.get('register_token');
+
+            if (token || registerToken) {
+                if (window.opener) {
+                    // 부모 창이 있으면 메시지 전달
+                    if (token) {
+                        window.opener.postMessage({ type: 'GOOGLE_LOGIN_SUCCESS', token }, '*');
+                    } else if (registerToken) {
+                        window.opener.postMessage({
+                            type: 'GOOGLE_REGISTER_REQUIRED',
+                            register_token: registerToken,
+                            email: url.searchParams.get('email'),
+                            name: url.searchParams.get('name'),
+                            picture: url.searchParams.get('picture')
+                        }, '*');
+                    }
+                    // 팝업 닫기
+                    window.close();
+                }
+            }
+        }
+    }, []);
+
     const handleGoogleLogin = async () => {
         try {
             if (isWeb()) {
