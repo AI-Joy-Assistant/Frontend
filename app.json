@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "frontend",
+    "name": "JOYNER",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -25,7 +25,24 @@
     },
     "web": {
       "bundler": "metro",
-      "favicon": "./assets/images/logo.png"
+      "favicon": "./assets/images/logo.png",
+      "name": "JOYNER",
+      "shortName": "JOYNER",
+      "description": "내 손안의 AI 스케줄링 비서, JOYNER",
+      "startUrl": "/",
+      "display": "standalone",
+      "backgroundColor": "#ffffff",
+      "themeColor": "#ffffff",
+      "meta": {
+        "apple": {
+          "mobileWebAppCapable": "yes"
+        },
+        "og:site_name": "JOYNER",
+        "og:title": "JOYNER - AI Scheduling Assistant",
+        "og:description": "내 손안의 AI 스케줄링 비서, JOYNER를 지금 만나보세요.",
+        "og:type": "website",
+        "og:image": "./assets/images/logo.png"
+      }
     },
     "experiments": {
       "tsconfigPaths": true
