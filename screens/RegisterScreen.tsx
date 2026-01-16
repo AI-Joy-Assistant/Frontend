@@ -7,6 +7,7 @@ import { User, AtSign, Sparkles, ArrowRight } from 'lucide-react-native';
 import { COLORS } from '../constants/Colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getBackendUrl } from '../utils/environment';
+import { useTutorial } from '../store/TutorialContext';
 
 type RegisterScreenRouteProp = RouteProp<RootStackParamList, 'Register'>;
 
