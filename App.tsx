@@ -43,6 +43,7 @@ export default function App() {
           prefixes: ['frontend://', 'exp://'],
           config: {
             screens: {
+              Login: 'auth-success',
               Home: 'home',
               // ... other screens
             },
