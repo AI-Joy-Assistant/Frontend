@@ -41,7 +41,7 @@
         "og:title": "JOYNER - AI Scheduling Assistant",
         "og:description": "내 손안의 AI 스케줄링 비서, JOYNER를 지금 만나보세요.",
         "og:type": "website",
-        "og:image": "./assets/images/og-image.png"
+        "og:image": "https://www.joyner.co.kr/logo.png"
       }
     },
     "experiments": {
