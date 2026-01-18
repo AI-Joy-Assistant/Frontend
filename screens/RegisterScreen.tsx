@@ -78,8 +78,14 @@ const RegisterScreen = () => {
 
         } catch (e: any) {
             console.error('회원가입 오류:', e);
-            setError(e.message);
-            Alert.alert('회원가입 실패', e.message);
+            // 중복 아이디 에러 메시지 처리
+            const errorMessage = e.message || '';
+            if (errorMessage.includes('handle') || errorMessage.includes('duplicate') || errorMessage.includes('already') || errorMessage.includes('exists') || errorMessage.includes('중복')) {
+                setError('중복된 아이디가 존재합니다.');
+            } else {
+                setError(errorMessage || '회원가입에 실패했습니다.');
+            }
+            // Alert 제거 - 하단 에러 메시지로만 표시
         } finally {
             setIsLoading(false);
         }
@@ -253,7 +259,7 @@ const styles = StyleSheet.create({
     },
     errorText: {
         fontSize: 12,
-        color: COLORS.error,
+        color: COLORS.primaryMain,
         fontWeight: '500',
         paddingLeft: 4,
         marginTop: -12,
