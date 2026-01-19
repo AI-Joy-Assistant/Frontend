@@ -18,7 +18,7 @@ import {
   Dimensions,
   Keyboard,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -99,6 +99,7 @@ interface ChatSession {
 }
 
 export default function ChatScreen() {
+  const insets = useSafeAreaInsets();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { checkAndShowTutorial } = useTutorial();
@@ -1313,13 +1314,13 @@ export default function ChatScreen() {
   }, []);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       {/* 1. Header */}
       <LinearGradient
         colors={['#818CF8', '#3730A3']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
-        style={styles.header}
+        style={[styles.header, { paddingTop: insets.top + 20 }]}
       >
         <View style={styles.headerDecor} />
         <View style={styles.headerContent}>
@@ -1364,7 +1365,7 @@ export default function ChatScreen() {
           </TouchableWithoutFeedback>
 
           <View style={styles.sidebarPanel}>
-            <View style={styles.sidebarHeader}>
+            <View style={[styles.sidebarHeader, { paddingTop: insets.top + 20 }]}>
               <Text style={styles.sidebarTitle}>채팅방</Text>
               <TouchableOpacity
                 onPress={createNewSession}
@@ -1934,7 +1935,7 @@ export default function ChatScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 

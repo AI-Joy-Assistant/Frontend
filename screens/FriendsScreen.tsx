@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { UserPlus, Check, X, Info } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
@@ -75,6 +76,7 @@ interface Friend {
 }
 
 const FriendsScreen = () => {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'Friends'>>();
   const [isAdding, setIsAdding] = useState(false);
@@ -354,9 +356,9 @@ const FriendsScreen = () => {
 
   if (isAdding) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={styles.container}>
         {/* Header */}
-        <View style={styles.headerContainer}>
+        <View style={[styles.headerContainer, { paddingTop: insets.top + 24 }]}>
           <View style={styles.headerContent}>
             <TouchableOpacity
               onPress={() => setIsAdding(false)}
@@ -490,14 +492,14 @@ const FriendsScreen = () => {
             </View>
           </TouchableWithoutFeedback>
         </Modal>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       {/* Header */}
-      <View style={styles.mainHeader}>
+      <View style={[styles.mainHeader, { paddingTop: insets.top + 24 }]}>
         {/* Tab Switcher - Moved to top */}
         <View style={styles.mainHeaderTop}>
           <View style={styles.tabContainer}>
@@ -744,7 +746,7 @@ const FriendsScreen = () => {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 };
 
