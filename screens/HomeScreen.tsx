@@ -15,7 +15,7 @@ import {
   FlatList,
   Image
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
 import { getBackendUrl } from '../utils/environment';
@@ -96,6 +96,7 @@ interface Friend {
 type CalendarViewMode = 'CONDENSED' | 'STACKED' | 'DETAILED';
 
 export default function HomeScreen() {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   // 현재 사용자 ID와 프로필 사진
@@ -290,6 +291,25 @@ export default function HomeScreen() {
   // 튜토리얼 훅
   const { checkAndShowTutorial } = useTutorial();
 
+  // 캘린더 연동 상태 확인
+  const checkCalendarLinkStatus = async () => {
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) return;
+
+      const response = await fetch(`${API_BASE}/calendar/link-status`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setIsCalendarLinked(data.is_linked || false);
+      }
+    } catch (error) {
+      console.error('캘린더 연동 상태 확인 실패:', error);
+    }
+  };
+
   useFocusEffect(
     useCallback(() => {
       // 튜토리얼 체크 (첫 방문 시)
@@ -298,8 +318,13 @@ export default function HomeScreen() {
       fetchCurrentUser();
       fetchPendingRequests();
       fetchNotifications();
+
+      // Apple 로그인 사용자만 캘린더 연동 상태 확인
+      if (authProvider === 'apple') {
+        checkCalendarLinkStatus();
+      }
       // 배지 폴링은 BottomNav에서 처리하므로 여기서는 제거
-    }, [])
+    }, [authProvider])
   );
 
   // WebSocket for real-time A2A notifications (using singleton service)
@@ -384,6 +409,7 @@ export default function HomeScreen() {
 
   // Google Calendar Integration Modal State
   const [showCalendarIntegrationModal, setShowCalendarIntegrationModal] = useState(false);
+  const [isCalendarLinked, setIsCalendarLinked] = useState<boolean | null>(null);
 
   // Date Picker Modal State
   const [datePickerVisible, setDatePickerVisible] = useState(false);
@@ -518,16 +544,31 @@ export default function HomeScreen() {
 
         if (success === 'true') {
           // 새 /calendar/link-callback 방식 - 백엔드에서 이미 토큰 저장됨
-          Alert.alert('성공', 'Google 캘린더가 연동되었습니다!');
+          setCustomAlertTitle('성공');
+          setCustomAlertMessage('Google 캘린더가 연동되었습니다!');
+          setCustomAlertType('success');
+          setCustomAlertVisible(true);
+          setIsCalendarLinked(true);
           fetchSchedules();
         } else if (errorParam) {
-          Alert.alert('오류', `캘린더 연동 실패: ${errorParam}`);
+          setCustomAlertTitle('오류');
+          setCustomAlertMessage(`캘린더 연동 실패: ${errorParam}`);
+          setCustomAlertType('error');
+          setCustomAlertVisible(true);
         } else if (returnedToken) {
           // 이전 방식 호환
-          Alert.alert('성공', 'Google 캘린더가 연동되었습니다!');
+          setCustomAlertTitle('성공');
+          setCustomAlertMessage('Google 캘린더가 연동되었습니다!');
+          setCustomAlertType('success');
+          setCustomAlertVisible(true);
+          setIsCalendarLinked(true);
           fetchSchedules();
         } else {
-          Alert.alert('알림', '연동이 완료되었습니다. 캘린더를 새로고침합니다.');
+          setCustomAlertTitle('알림');
+          setCustomAlertMessage('연동이 완료되었습니다. 캘린더를 새로고침합니다.');
+          setCustomAlertType('info');
+          setCustomAlertVisible(true);
+          setIsCalendarLinked(true);
           fetchSchedules();
         }
       } else if (result.type === 'cancel') {
@@ -537,7 +578,10 @@ export default function HomeScreen() {
       }
     } catch (error) {
       console.error('Calendar link error:', error);
-      Alert.alert('오류', '캘린더 연동 중 오류가 발생했습니다.');
+      setCustomAlertTitle('오류');
+      setCustomAlertMessage('캘린더 연동 중 오류가 발생했습니다.');
+      setCustomAlertType('error');
+      setCustomAlertVisible(true);
     } finally {
       setIsLoading(false);
     }
@@ -1191,10 +1235,10 @@ export default function HomeScreen() {
   const visibleRequests = pendingRequests.filter(req => !dismissedRequestIds.includes(req.id));
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.contentContainer}>
         {/* Top Header with Logo and Profile */}
-        <View style={styles.topHeader}>
+        <View style={[styles.topHeader, { paddingTop: insets.top + 14 }]}>
           <View style={styles.logoContainer}>
             <Image
               source={require('../assets/images/logo.png')}
@@ -1223,8 +1267,8 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
         >
 
-          {/* Google Calendar Link Button - Apple 로그인 사용자에게만 표시 */}
-          {authProvider === 'apple' && (
+          {/* Google Calendar Link Button - Apple 로그인 사용자에게만 표시, 연동 완료 시 숨김 */}
+          {authProvider === 'apple' && isCalendarLinked === false && (
             <TouchableOpacity
               onPress={() => setShowCalendarIntegrationModal(true)}
               style={{
@@ -2510,7 +2554,7 @@ export default function HomeScreen() {
       </Modal>
 
       <BottomNav activeTab={Tab.HOME} />
-    </SafeAreaView >
+    </View>
   );
 }
 

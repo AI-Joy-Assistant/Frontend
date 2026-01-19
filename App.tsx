@@ -57,7 +57,7 @@ export default function App() {
           },
         }}
       >
-        <Stack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false }}>
+        <Stack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false, animation: 'none' }}>
           <Stack.Screen name="Splash" component={SplashScreen} />
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="TermsAgreement" component={TermsAgreementScreen} />
