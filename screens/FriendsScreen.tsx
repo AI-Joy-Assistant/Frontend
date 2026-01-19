@@ -94,6 +94,9 @@ const FriendsScreen = () => {
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<{ id: string; name: string } | null>(null);
 
+  // 중복 클릭 방지를 위한 처리 중인 요청 ID 목록
+  const [processingRequestIds, setProcessingRequestIds] = useState<Set<string>>(new Set());
+
   // Custom Alert Modal State
   const [customAlertVisible, setCustomAlertVisible] = useState(false);
   const [customAlertTitle, setCustomAlertTitle] = useState('');
@@ -301,6 +304,17 @@ const FriendsScreen = () => {
   };
 
   const handleAcceptRequest = async (requestId: string) => {
+    // 이미 처리 중인 요청이면 무시
+    if (processingRequestIds.has(requestId)) {
+      return;
+    }
+
+    // 처리 중 상태로 설정
+    setProcessingRequestIds(prev => new Set(prev).add(requestId));
+
+    // UI에서 즉시 제거 (낙관적 업데이트)
+    setFriendRequests(prev => prev.filter(req => req.id !== requestId));
+
     try {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) return;
@@ -312,17 +326,38 @@ const FriendsScreen = () => {
 
       if (response.ok) {
         showAlert('성공', '친구 요청을 수락했습니다.', 'success');
-        fetchFriendRequests();
         fetchFriends();
       } else {
+        // 실패 시 요청 목록 다시 불러오기
+        fetchFriendRequests();
         showAlert('오류', '요청 수락에 실패했습니다.', 'error');
       }
     } catch (e) {
+      // 오류 시 요청 목록 다시 불러오기
+      fetchFriendRequests();
       showAlert('오류', '요청 처리 중 오류가 발생했습니다.', 'error');
+    } finally {
+      // 처리 완료 후 상태 정리
+      setProcessingRequestIds(prev => {
+        const next = new Set(prev);
+        next.delete(requestId);
+        return next;
+      });
     }
   };
 
   const handleRejectRequest = async (requestId: string) => {
+    // 이미 처리 중인 요청이면 무시
+    if (processingRequestIds.has(requestId)) {
+      return;
+    }
+
+    // 처리 중 상태로 설정
+    setProcessingRequestIds(prev => new Set(prev).add(requestId));
+
+    // UI에서 즉시 제거 (낙관적 업데이트)
+    setFriendRequests(prev => prev.filter(req => req.id !== requestId));
+
     try {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) return;
@@ -334,12 +369,22 @@ const FriendsScreen = () => {
 
       if (response.ok) {
         showAlert('성공', '친구 요청을 거절했습니다.', 'success');
-        fetchFriendRequests();
       } else {
+        // 실패 시 요청 목록 다시 불러오기
+        fetchFriendRequests();
         showAlert('오류', '요청 거절에 실패했습니다.', 'error');
       }
     } catch (e) {
+      // 오류 시 요청 목록 다시 불러오기
+      fetchFriendRequests();
       showAlert('오류', '요청 처리 중 오류가 발생했습니다.', 'error');
+    } finally {
+      // 처리 완료 후 상태 정리
+      setProcessingRequestIds(prev => {
+        const next = new Set(prev);
+        next.delete(requestId);
+        return next;
+      });
     }
   };
 
@@ -609,14 +654,22 @@ const FriendsScreen = () => {
                 </View>
                 <View style={styles.requestActions}>
                   <TouchableOpacity
-                    style={styles.acceptButton}
+                    style={[
+                      styles.acceptButton,
+                      processingRequestIds.has(item.id) && { opacity: 0.5 }
+                    ]}
                     onPress={() => handleAcceptRequest(item.id)}
+                    disabled={processingRequestIds.has(item.id)}
                   >
                     <Check size={18} color={COLORS.white} />
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.rejectButton}
+                    style={[
+                      styles.rejectButton,
+                      processingRequestIds.has(item.id) && { opacity: 0.5 }
+                    ]}
                     onPress={() => handleRejectRequest(item.id)}
+                    disabled={processingRequestIds.has(item.id)}
                   >
                     <X size={18} color={COLORS.red400} />
                   </TouchableOpacity>
@@ -968,6 +1021,7 @@ const styles = StyleSheet.create({
   friendInfo: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
   avatarContainer: {
     position: 'relative',
@@ -1055,6 +1109,8 @@ const styles = StyleSheet.create({
   requestActions: {
     flexDirection: 'row',
     gap: 8,
+    flexShrink: 0,
+    marginLeft: 8,
   },
   acceptButton: {
     width: 36,
