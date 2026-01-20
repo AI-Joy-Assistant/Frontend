@@ -84,6 +84,13 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
     );
 };
 
+// 플랫폼별 하단 패딩 계산
+const getBottomPadding = () => {
+    if (Platform.OS === 'ios') return 20;
+    if (Platform.OS === 'web') return 24; // 웹에서 더 큰 패딩 (CSS env()가 추가로 적용됨)
+    return 12; // Android
+};
+
 const styles = StyleSheet.create({
     container: {
         position: 'absolute',
@@ -99,7 +106,7 @@ const styles = StyleSheet.create({
         shadowRadius: 20,
         elevation: 20,
         paddingHorizontal: 24,
-        paddingBottom: Platform.OS === 'ios' ? 20 : 12, // Reduced bottom padding
+        paddingBottom: getBottomPadding(),
         paddingTop: 12, // Reduced top padding
         zIndex: 50,
     },
