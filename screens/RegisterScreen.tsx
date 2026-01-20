@@ -38,6 +38,11 @@ const RegisterScreen = () => {
             return;
         }
 
+        if (!/^[a-zA-Z0-9]*$/.test(handle)) {
+            setError('아이디는 영어와 숫자만 입력 가능합니다.');
+            return;
+        }
+
         setIsLoading(true);
         try {
             // auth_provider에 따라 다른 엔드포인트 호출
@@ -137,7 +142,11 @@ const RegisterScreen = () => {
                             value={handle}
                             onChangeText={(text) => {
                                 setHandle(text);
-                                setError('');
+                                if (!/^[a-zA-Z0-9]*$/.test(text)) {
+                                    setError('아이디는 영어와 숫자만 입력 가능합니다.');
+                                } else {
+                                    setError('');
+                                }
                             }}
                             placeholder="joyner_user"
                             placeholderTextColor={COLORS.neutral300}
@@ -161,10 +170,10 @@ const RegisterScreen = () => {
                 </Text>
                 <TouchableOpacity
                     onPress={handleSubmit}
-                    disabled={!name || !handle || isLoading}
+                    disabled={!name || !handle || isLoading || !!error}
                     style={[
                         styles.button,
-                        (name && handle && !isLoading) ? styles.buttonActive : styles.buttonDisabled
+                        (name && handle && !isLoading && !error) ? styles.buttonActive : styles.buttonDisabled
                     ]}
                 >
                     {isLoading ? (
