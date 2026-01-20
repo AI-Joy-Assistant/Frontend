@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, Image, TouchableOpacity, Modal, TextInput, Alert, ScrollView, Platform
+  View, Text, StyleSheet, Image, TouchableOpacity, Modal, TextInput, Alert, ScrollView, Platform, TouchableWithoutFeedback
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -9,7 +9,9 @@ import BottomNav from '../components/BottomNav';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE } from '../constants/config';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Bot, Settings, LogOut, Trash2, ChevronRight, User as UserIcon } from 'lucide-react-native';
+import { Bot, Settings, LogOut, Trash2, ChevronRight, User as UserIcon, Calendar as CalendarIcon, Check, AlertCircle, Info } from 'lucide-react-native';
+import * as WebBrowser from 'expo-web-browser';
+import { getBackendUrl } from '../utils/environment';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -49,6 +51,13 @@ const MyPageScreen = () => {
   const [nicknameModalVisible, setNicknameModalVisible] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [withdrawModalVisible, setWithdrawModalVisible] = useState(false);
+  const [authProvider, setAuthProvider] = useState<string | null>(null);
+  const [showCalendarIntegrationModal, setShowCalendarIntegrationModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  // 결과 알림 모달 상태
+  const [resultModalVisible, setResultModalVisible] = useState(false);
+  const [resultModalType, setResultModalType] = useState<'success' | 'error' | 'info'>('success');
+  const [resultModalMessage, setResultModalMessage] = useState('');
 
   // 사용자 정보 불러오기
   const fetchUserInfo = async () => {
@@ -58,6 +67,12 @@ const MyPageScreen = () => {
         Alert.alert('오류', '로그인이 필요합니다.');
         navigation.navigate('Login');
         return;
+      }
+
+      // AsyncStorage에서 auth provider 가져오기
+      const storedAuthProvider = await AsyncStorage.getItem('authProvider');
+      if (storedAuthProvider) {
+        setAuthProvider(storedAuthProvider);
       }
 
       // 백엔드에서 사용자 정보 가져오기
@@ -78,6 +93,57 @@ const MyPageScreen = () => {
     } catch (error) {
       console.error('사용자 정보 조회 오류:', error);
       Alert.alert('오류', '사용자 정보를 불러오지 못했습니다.');
+    }
+  };
+
+  // Google 캘린더 연동 핸들러
+  const handleConnectGoogleCalendar = async () => {
+    try {
+      setIsLoading(true);
+      const BACKEND_URL = getBackendUrl();
+      const token = await AsyncStorage.getItem('accessToken');
+
+      const authUrlRes = await fetch(`${BACKEND_URL}/calendar/link-url`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
+
+      if (!authUrlRes.ok) {
+        const errorBody = await authUrlRes.text();
+        throw new Error(`인증 URL 요청 실패: ${authUrlRes.status} - ${errorBody}`);
+      }
+      const { auth_url } = await authUrlRes.json();
+
+      const result = await WebBrowser.openAuthSessionAsync(
+        auth_url,
+        'frontend://calendar-linked'
+      );
+
+      if (result.type === 'success' && result.url) {
+        const url = new URL(result.url);
+        const success = url.searchParams.get('success');
+        const errorParam = url.searchParams.get('error');
+
+        if (success === 'true') {
+          setResultModalType('success');
+          setResultModalMessage('Google 캘린더가 연동되었습니다!');
+          setResultModalVisible(true);
+        } else if (errorParam) {
+          setResultModalType('error');
+          setResultModalMessage(`캘린더 연동 실패: ${errorParam}`);
+          setResultModalVisible(true);
+        } else {
+          setResultModalType('info');
+          setResultModalMessage('연동이 완료되었습니다.');
+          setResultModalVisible(true);
+        }
+      }
+    } catch (error) {
+      console.error('Calendar link error:', error);
+      setResultModalType('error');
+      setResultModalMessage('캘린더 연동 중 오류가 발생했습니다.');
+      setResultModalVisible(true);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -252,6 +318,25 @@ const MyPageScreen = () => {
 
         {/* Settings List */}
         <View style={styles.settingsContainer}>
+          {/* Google 캘린더 연동 버튼 - Apple 로그인 사용자에게만 표시 */}
+          {authProvider === 'apple' && (
+            <TouchableOpacity
+              onPress={() => setShowCalendarIntegrationModal(true)}
+              style={styles.calendarLinkButton}
+            >
+              <CalendarIcon size={26} color={COLORS.primaryMain} style={{ marginRight: 14 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: COLORS.primaryMain }}>
+                  Google 캘린더 연동하기
+                </Text>
+                <Text style={{ fontSize: 13, color: '#8B95A5', marginTop: 3 }}>
+                  일정을 자동으로 동기화하세요
+                </Text>
+              </View>
+              <ChevronRight size={22} color={COLORS.primaryMain} />
+            </TouchableOpacity>
+          )}
+
           <View style={styles.settingsCard}>
             <SettingItem icon={PenSquareIcon} label="닉네임 설정" onPress={() => setNicknameModalVisible(true)} />
             <Divider />
@@ -332,6 +417,92 @@ const MyPageScreen = () => {
         {`탈퇴 시 데이터가 삭제되며 복구할 수 없습니다.\n`}
         <Text style={{ fontWeight: 'bold' }}>정말 탈퇴 하시겠습니까?</Text>
       </ConfirmationModal>
+
+      {/* Google 캘린더 연동 설명 모달 */}
+      <Modal
+        visible={showCalendarIntegrationModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowCalendarIntegrationModal(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowCalendarIntegrationModal(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={() => { }}>
+              <View style={styles.calendarModalContent}>
+                <View style={styles.calendarModalIconContainer}>
+                  <CalendarIcon size={26} color={COLORS.primaryMain} />
+                </View>
+                <Text style={styles.calendarModalTitle}>Google Calendar 연동하기</Text>
+                <Text style={styles.calendarModalDescription}>
+                  연동 시 기존 일정을 자동으로 가져오고,{'\n'}앱에서 추가한 일정도 동기화됩니다.{'\n'}연동하지 않으면 <Text style={{ fontWeight: '600', color: COLORS.primaryMain }}>JOYNER 자체 캘린더</Text>로만{'\n'}사용할 수 있습니다.
+                </Text>
+                <TouchableOpacity
+                  style={styles.calendarConnectButton}
+                  onPress={() => {
+                    setShowCalendarIntegrationModal(false);
+                    handleConnectGoogleCalendar();
+                  }}
+                >
+                  <Text style={styles.calendarConnectButtonText}>연동하기</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.calendarCancelButton}
+                  onPress={() => setShowCalendarIntegrationModal(false)}
+                >
+                  <Text style={styles.calendarCancelButtonText}>나중에</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* 결과 알림 모달 */}
+      <Modal
+        visible={resultModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setResultModalVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setResultModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={() => { }}>
+              <View style={styles.resultModalContent}>
+                <View style={[
+                  styles.resultModalIconContainer,
+                  resultModalType === 'success' && { backgroundColor: '#E0E7FF' },
+                  resultModalType === 'error' && { backgroundColor: '#FEE2E2' },
+                  resultModalType === 'info' && { backgroundColor: '#E0E7FF' },
+                ]}>
+                  {resultModalType === 'success' && <Check size={28} color={COLORS.primaryMain} />}
+                  {resultModalType === 'error' && <AlertCircle size={28} color="#EF4444" />}
+                  {resultModalType === 'info' && <Info size={28} color={COLORS.primaryMain} />}
+                </View>
+                <Text style={[
+                  styles.resultModalTitle,
+                  resultModalType === 'success' && { color: COLORS.primaryMain },
+                  resultModalType === 'error' && { color: '#EF4444' },
+                  resultModalType === 'info' && { color: COLORS.primaryMain },
+                ]}>
+                  {resultModalType === 'success' ? '성공' : resultModalType === 'error' ? '오류' : '알림'}
+                </Text>
+                <Text style={styles.resultModalMessage}>{resultModalMessage}</Text>
+                <TouchableOpacity
+                  style={[
+                    styles.resultModalButton,
+                    resultModalType === 'success' && { backgroundColor: COLORS.primaryMain },
+                    resultModalType === 'error' && { backgroundColor: '#EF4444' },
+                    resultModalType === 'info' && { backgroundColor: COLORS.primaryMain },
+                  ]}
+                  onPress={() => setResultModalVisible(false)}
+                >
+                  <Text style={styles.resultModalButtonText}>확인</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
 
       <BottomNav activeTab={Tab.USER} />
     </View>
@@ -616,6 +787,128 @@ const styles = StyleSheet.create({
   },
   deleteButtonText: {
     fontSize: 14,
+    fontWeight: '600',
+    color: 'white',
+  },
+  // Google Calendar Integration Styles
+  calendarLinkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primaryBg,
+    marginBottom: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: COLORS.primaryLight,
+  },
+  calendarModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 20,
+    width: '92%',
+    maxWidth: 360,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  calendarModalIconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#E0E7FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  calendarModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  calendarModalDescription: {
+    fontSize: 14,
+    color: '#6B7280',
+    lineHeight: 20,
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  calendarConnectButton: {
+    width: '100%',
+    height: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+    backgroundColor: COLORS.primaryMain,
+    marginBottom: 10,
+  },
+  calendarConnectButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: 'white',
+  },
+  calendarCancelButton: {
+    width: '100%',
+    height: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+  },
+  calendarCancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  // Result Modal Styles
+  resultModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 24,
+    width: '85%',
+    maxWidth: 320,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  resultModalIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  resultModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  resultModalMessage: {
+    fontSize: 15,
+    color: '#6B7280',
+    lineHeight: 22,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  resultModalButton: {
+    width: '100%',
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+  },
+  resultModalButtonText: {
+    fontSize: 16,
     fontWeight: '600',
     color: 'white',
   },

@@ -29,6 +29,7 @@
       "name": "JOYNER",
       "shortName": "JOYNER",
       "description": "내 손안의 AI 스케줄링 비서, JOYNER",
+      "lang": "ko",
       "startUrl": "/",
       "display": "standalone",
       "backgroundColor": "#ffffff",
@@ -38,10 +39,11 @@
           "mobileWebAppCapable": "yes"
         },
         "og:site_name": "JOYNER",
-        "og:title": "JOYNER - AI Scheduling Assistant",
+        "og:title": "JOYNER - AI 스케줄링 비서",
         "og:description": "내 손안의 AI 스케줄링 비서, JOYNER를 지금 만나보세요.",
         "og:type": "website",
-        "og:image": "https://www.joyner.co.kr/logo.png"
+        "og:image": "https://www.joyner.co.kr/logo.png",
+        "og:locale": "ko_KR"
       }
     },
     "experiments": {

@@ -1,0 +1,59 @@
+/* 웹 브라우저에서 모바일 Safe Area 지원을 위한 글로벌 CSS */
+
+/* Safe Area Inset 변수 정의 (모바일 브라우저 호환성) */
+:root {
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sat: env(safe-area-inset-top, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+/* 전체 화면 높이 설정 - 모바일 브라우저 주소창 고려 */
+html, body, #root {
+  height: 100%;
+  min-height: 100%;
+  min-height: -webkit-fill-available;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* 모바일 브라우저에서 viewport height 버그 수정 */
+html {
+  height: 100vh;
+  height: calc(var(--vh, 1vh) * 100);
+}
+
+body {
+  min-height: 100vh;
+  min-height: -webkit-fill-available;
+}
+
+/* Bottom Navigation Safe Area 패딩 */
+.bottom-nav-safe-area {
+  padding-bottom: env(safe-area-inset-bottom, 12px);
+}
+
+/* iOS Safari에서 하단 toolbar 영역 대응 */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .bottom-nav-container {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* 모바일 브라우저에서 상단 Safe Area */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}
+
+/* 스크롤바 숨기기 (선택사항) */
+::-webkit-scrollbar {
+  display: none;
+}
+
+* {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

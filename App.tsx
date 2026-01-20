@@ -27,12 +27,48 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export default function App() {
   React.useEffect(() => {
     if (Platform.OS === 'web') {
+      // 기존 focus outline 제거 스타일
       const style = document.createElement('style');
       style.textContent = `
         :focus { outline: none !important; }
         input, textarea, select, div, button { outline: none !important; }
       `;
       document.head.appendChild(style);
+
+      // global.css 로드 (Safe Area 지원)
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = '/global.css';
+      document.head.appendChild(link);
+
+      // HTML lang 속성을 한국어로 설정 (브라우저 번역 팝업 방지)
+      document.documentElement.lang = 'ko';
+
+      // viewport meta 태그 업데이트 (Safe Area 지원)
+      let viewportMeta = document.querySelector('meta[name="viewport"]') as HTMLMetaElement;
+      if (viewportMeta) {
+        viewportMeta.content = 'width=device-width, initial-scale=1.0, viewport-fit=cover';
+      } else {
+        viewportMeta = document.createElement('meta');
+        viewportMeta.name = 'viewport';
+        viewportMeta.content = 'width=device-width, initial-scale=1.0, viewport-fit=cover';
+        document.head.appendChild(viewportMeta);
+      }
+
+      // 모바일 브라우저 viewport height 버그 수정
+      // 주소창이 나타나고 사라질 때 100vh가 변경되는 문제 해결
+      const setVh = () => {
+        const vh = window.innerHeight * 0.01;
+        document.documentElement.style.setProperty('--vh', `${vh}px`);
+      };
+      setVh();
+      window.addEventListener('resize', setVh);
+      window.addEventListener('orientationchange', setVh);
+
+      return () => {
+        window.removeEventListener('resize', setVh);
+        window.removeEventListener('orientationchange', setVh);
+      };
     }
   }, []);
 
@@ -57,7 +93,7 @@ export default function App() {
           },
         }}
       >
-        <Stack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false }}>
+        <Stack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false, animation: 'none' }}>
           <Stack.Screen name="Splash" component={SplashScreen} />
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="TermsAgreement" component={TermsAgreementScreen} />
