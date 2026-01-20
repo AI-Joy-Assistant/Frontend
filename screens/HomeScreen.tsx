@@ -46,7 +46,8 @@ import {
   Users,
   Search,
   UserPlus,
-  Info
+  Info,
+  User as UserIcon
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { ScheduleItem } from '../types/schedule';
@@ -323,6 +324,10 @@ export default function HomeScreen() {
       // Apple 로그인 사용자만 캘린더 연동 상태 확인
       if (authProvider === 'apple') {
         checkCalendarLinkStatus();
+        // dismissed 상태 복원
+        AsyncStorage.getItem('calendarIntegrationDismissed').then(val => {
+          if (val === 'true') setIsCalendarDismissed(true);
+        });
       }
       // 배지 폴링은 BottomNav에서 처리하므로 여기서는 제거
     }, [authProvider])
@@ -411,6 +416,7 @@ export default function HomeScreen() {
   // Google Calendar Integration Modal State
   const [showCalendarIntegrationModal, setShowCalendarIntegrationModal] = useState(false);
   const [isCalendarLinked, setIsCalendarLinked] = useState<boolean | null>(null);
+  const [isCalendarDismissed, setIsCalendarDismissed] = useState(false);
 
   // Date Picker Modal State
   const [datePickerVisible, setDatePickerVisible] = useState(false);
@@ -1251,14 +1257,27 @@ export default function HomeScreen() {
             <Text style={styles.logoText}>JOYNER</Text>
           </View>
           <View style={styles.profileButton}>
-            {currentUserId && (
-              <ExpoImage
-                source={{ uri: `${API_BASE}/auth/profile-image/${currentUserId}` }}
-                style={styles.profileImage}
-                cachePolicy="memory-disk"
-                placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
-                transition={200}
-              />
+            {currentUserId ? (
+              <View style={styles.profilePlaceholder}>
+                <ExpoImage
+                  source={{ uri: `${API_BASE}/auth/profile-image/${currentUserId}` }}
+                  style={styles.profileImage}
+                  cachePolicy="memory-disk"
+                  transition={200}
+                />
+                {/* Fallback Icon underneath (will show if image is transparent or fails, 
+                    but better to use conditional rendering with state if we want true fallback. 
+                    However, simplify by showing UserIcon if no image could clearly be loaded is tricky with just CSS. 
+                    Let's use a background color container with the icon, and the image on top.
+                */}
+                <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', zIndex: -1 }]}>
+                  <UserIcon size={24} color={COLORS.primaryDark} />
+                </View>
+              </View>
+            ) : (
+              <View style={styles.profilePlaceholder}>
+                <UserIcon size={24} color={COLORS.primaryDark} />
+              </View>
             )}
           </View>
         </View>
@@ -1270,7 +1289,7 @@ export default function HomeScreen() {
         >
 
           {/* Google Calendar Link Button - Apple 로그인 사용자에게만 표시, 연동 완료 시 숨김 */}
-          {authProvider === 'apple' && isCalendarLinked === false && (
+          {authProvider === 'apple' && isCalendarLinked === false && !isCalendarDismissed && (
             <TouchableOpacity
               onPress={() => setShowCalendarIntegrationModal(true)}
               style={{
@@ -2537,8 +2556,10 @@ export default function HomeScreen() {
                     borderRadius: 12,
                     backgroundColor: '#F3F4F6',
                   }}
-                  onPress={() => {
+                  onPress={async () => {
                     setShowCalendarIntegrationModal(false);
+                    setIsCalendarDismissed(true);
+                    await AsyncStorage.setItem('calendarIntegrationDismissed', 'true');
                   }}
                 >
                   <Text style={{
@@ -2623,14 +2644,15 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   profilePlaceholder: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: COLORS.neutral200,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'white',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'white',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+    overflow: 'hidden',
   },
   profilePlaceholderText: {
     fontSize: 18,
