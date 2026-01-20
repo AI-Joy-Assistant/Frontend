@@ -67,6 +67,7 @@ const RegisterScreen = () => {
 
             // 토큰 저장 및 홈으로 이동
             await AsyncStorage.setItem('accessToken', data.access_token);
+            await AsyncStorage.setItem('authProvider', auth_provider || 'google');
 
             // 튜토리얼 상태 초기화 (Context State + AsyncStorage 동기화)
             await resetTutorialState();
