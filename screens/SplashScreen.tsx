@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Platform, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFonts } from 'expo-font';
 import Animated, {
@@ -113,34 +113,11 @@ const SplashScreen = ({ navigation }: { navigation: any }) => {
                     entering={ZoomIn.duration(800)}
                     style={styles.logoWrapper}
                 >
-                    <Svg width={64} height={64} viewBox="0 0 64 64">
-                        <Defs>
-                            <SvgLinear id="grad1" x1="12" y1="16" x2="28" y2="32">
-                                <Stop offset="0%" stopColor="#3730A3" />
-                                <Stop offset="100%" stopColor="#818CF8" />
-                            </SvgLinear>
-                            <SvgLinear id="grad2" x1="36" y1="16" x2="52" y2="32">
-                                <Stop offset="0%" stopColor="#818CF8" />
-                                <Stop offset="100%" stopColor="#3730A3" />
-                            </SvgLinear>
-                            <SvgLinear id="grad3" x1="28" y1="24" x2="36" y2="24">
-                                <Stop offset="0%" stopColor="#3730A3" />
-                                <Stop offset="100%" stopColor="#818CF8" />
-                            </SvgLinear>
-                            <SvgLinear id="grad4" x1="16" y1="38" x2="48" y2="58">
-                                <Stop offset="0%" stopColor="#3730A3" />
-                                <Stop offset="100%" stopColor="#818CF8" />
-                            </SvgLinear>
-                        </Defs>
-
-                        <Circle cx="20" cy="24" r="8" fill="url(#grad1)" />
-                        <Circle cx="44" cy="24" r="8" fill="url(#grad2)" />
-
-                        <Rect x="16" y="38" width="32" height="20" rx="4" fill="url(#grad4)" />
-
-                        <Rect x="20" y="34" width="4" height="6" rx="2" fill="#3730A3" />
-                        <Rect x="40" y="34" width="4" height="6" rx="2" fill="#3730A3" />
-                    </Svg>
+                    <Image
+                        source={require('../assets/images/logo.png')}
+                        style={styles.logoImage}
+                        resizeMode="contain"
+                    />
                 </Animated.View>
 
                 {/* App Name */}

@@ -15,6 +15,7 @@ import {
   FlatList,
   Image
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
@@ -1240,23 +1241,24 @@ export default function HomeScreen() {
         {/* Top Header with Logo and Profile */}
         <View style={[styles.topHeader, { paddingTop: insets.top + 14 }]}>
           <View style={styles.logoContainer}>
-            <Image
-              source={require('../assets/images/logo.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
-            />
+            <View style={styles.logoImageWrapper}>
+              <Image
+                source={require('../assets/images/logo.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
+            </View>
             <Text style={styles.logoText}>JOYNER</Text>
           </View>
           <View style={styles.profileButton}>
-            {currentUserId ? (
-              <Image
+            {currentUserId && (
+              <ExpoImage
                 source={{ uri: `${API_BASE}/auth/profile-image/${currentUserId}` }}
                 style={styles.profileImage}
+                cachePolicy="memory-disk"
+                placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
+                transition={200}
               />
-            ) : (
-              <View style={styles.profilePlaceholder}>
-                <Text style={styles.profilePlaceholderText}>👤</Text>
-              </View>
             )}
           </View>
         </View>
@@ -2591,12 +2593,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  logoImageWrapper: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 4,
+  },
   logoImage: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.08)',  // 보일듯 안보일듯한 연한 stroke
+    width: 30,
+    height: 30,
   },
   logoText: {
     fontSize: 20,

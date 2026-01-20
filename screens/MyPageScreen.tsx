@@ -580,7 +580,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerGradient: {
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingTop: Platform.OS === 'ios' ? 80 : 60,
     paddingBottom: 40,
     paddingHorizontal: 24,
     borderBottomLeftRadius: 32,
