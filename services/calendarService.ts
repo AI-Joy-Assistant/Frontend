@@ -72,7 +72,10 @@ class CalendarService {
     try {
       const accessToken = await this.getStoredAccessToken();
       if (!accessToken) {
-        throw new Error('액세스 토큰이 없습니다. Google 인증을 먼저 진행해주세요.');
+        // Apple 로그인 유저가 아직 Google Calendar 연동 안 했을 경우
+        // 에러 대신 빈 배열 반환 (조용히 처리)
+        console.log('[CalendarService] 액세스 토큰 없음 - Google Calendar 미연동 상태');
+        return [];
       }
 
       const params = new URLSearchParams({
@@ -93,14 +96,20 @@ class CalendarService {
       });
 
       if (!response.ok) {
+        // 401/403 에러는 토큰 만료 또는 권한 없음 - 빈 배열 반환
+        if (response.status === 401 || response.status === 403) {
+          console.log('[CalendarService] 캘린더 접근 권한 없음 - 빈 배열 반환');
+          return [];
+        }
         throw new Error('캘린더 이벤트 조회 실패');
       }
 
       const data = await response.json();
       return data.events || [];
     } catch (error) {
-      console.error('캘린더 이벤트 조회 실패:', error);
-      throw error;
+      // 네트워크 에러 등 예외 상황에서도 에러 throw 대신 빈 배열 반환
+      console.warn('[CalendarService] 캘린더 이벤트 조회 실패 (무시됨):', error);
+      return [];
     }
   }
 
