@@ -1147,25 +1147,39 @@ const RequestMeetingScreen = () => {
                 </View>
 
                 {/* Send Button */}
-                <View style={styles.sendButtonContainer}>
-                    <TouchableOpacity
-                        onPress={handleSendWithTutorial}
-                        disabled={(!isSent && recommendations.length > 0 && appliedRecIndex === null) || isSending}
-                        style={[styles.sendButton, ((!isSent && recommendations.length > 0 && appliedRecIndex === null) || isSending) && styles.sendButtonDisabled]}
-                        testID="btn_send_request"
-                    >
-                        {isSending ? (
-                            <>
-                                <ActivityIndicator size="small" color={COLORS.white} style={{ marginRight: 8 }} />
-                                <Text style={styles.sendButtonText}>요청을 보내는 중...</Text>
-                            </>
-                        ) : (
-                            <Text style={styles.sendButtonText}>
-                                {appliedRecIndex !== null ? '선택한 일정으로 요청 보내기' : '일정 조율 요청 보내기'}
-                            </Text>
-                        )}
-                    </TouchableOpacity>
-                </View>
+                {hasAnalyzed && (
+                    <View style={styles.sendButtonContainer}>
+                        <TouchableOpacity
+                            onPress={isTutorialActive ? handleSendWithTutorial : handleSend}
+                            disabled={
+                                isTutorialActive
+                                    ? ((!isSent && recommendations.length > 0 && appliedRecIndex === null) || isSending)
+                                    : (selectedFriends.length === 0 || isSending)
+                            }
+                            style={[
+                                styles.sendButton,
+                                (isTutorialActive
+                                    ? ((!isSent && recommendations.length > 0 && appliedRecIndex === null) || isSending)
+                                    : (selectedFriends.length === 0 || isSending)) && styles.sendButtonDisabled
+                            ]}
+                            testID="btn_send_request"
+                        >
+                            {isSending ? (
+                                <>
+                                    <ActivityIndicator size="small" color={COLORS.white} style={{ marginRight: 8 }} />
+                                    <Text style={styles.sendButtonText}>요청을 보내는 중...</Text>
+                                </>
+                            ) : (
+                                <Text style={styles.sendButtonText}>
+                                    {isTutorialActive && appliedRecIndex !== null
+                                        ? '선택한 일정으로 요청 보내기'
+                                        : `${selectedFriends.length}명에게 요청 보내기`
+                                    }
+                                </Text>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                )}
             </ScrollView>
 
             {/* Time Picker Modal */}
