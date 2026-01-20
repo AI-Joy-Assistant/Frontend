@@ -102,7 +102,10 @@ export default function HomeScreen() {
   const {
     isTutorialActive,
     currentStep,
-    fakeSchedule
+    fakeSchedule,
+    registerTarget,
+    currentSubStep,
+    nextSubStep
   } = useTutorial();
 
   // 현재 사용자 ID와 프로필 사진
@@ -971,6 +974,13 @@ export default function HomeScreen() {
     // 친구 목록 새로고침
     fetchFriends();
     setShowScheduleModal(true);
+
+    // [NEW] 튜토리얼: 홈 추가 버튼 클릭 처리 (모달 열리는 시간 고려)
+    if (isTutorialActive && currentStep === 'COMPLETE' && currentSubStep?.id === 'show_home_add_button') {
+      setTimeout(() => {
+        nextSubStep();
+      }, 500);
+    }
   };
 
   const handleScheduleClick = (schedule: ScheduleItem) => {
@@ -1552,7 +1562,18 @@ export default function HomeScreen() {
               <Text style={styles.scheduleListDate}>{getSelectedDateDisplay()}</Text>
               <TouchableOpacity
                 onPress={handleOpenAddSchedule}
-                style={styles.addButton}
+                style={[
+                  styles.addButton,
+                  isTutorialActive && currentStep === 'COMPLETE' && currentSubStep?.id === 'show_home_add_button' && {
+                    borderColor: COLORS.primaryMain,
+                    borderWidth: 2,
+                    backgroundColor: '#EDE9FE',
+                    shadowColor: COLORS.primaryMain,
+                    elevation: 5
+                  }
+                ]}
+                testID="btn_home_add"
+                ref={(r) => { if (r) registerTarget('btn_home_add', r); }}
               >
                 <Plus size={20} color={COLORS.primaryMain} />
               </TouchableOpacity>
@@ -1964,8 +1985,23 @@ export default function HomeScreen() {
                   <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
                     <Text style={styles.label}>시작 날짜</Text>
                     <TouchableOpacity
-                      style={styles.iconInput}
-                      onPress={() => setShowStartDatePicker(true)}
+                      style={[
+                        styles.iconInput,
+                        isTutorialActive && currentStep === 'COMPLETE' && currentSubStep?.id === 'start_end_time' && {
+                          borderColor: COLORS.primaryMain,
+                          borderWidth: 2,
+                          backgroundColor: '#EDE9FE'
+                        }
+                      ]}
+                      onPress={() => {
+                        setShowStartDatePicker(true);
+                        // [NEW] 튜토리얼: 날짜 클릭 시 다음 단계로
+                        if (isTutorialActive && currentStep === 'COMPLETE' && currentSubStep?.id === 'start_end_time') {
+                          nextSubStep();
+                        }
+                      }}
+                      testID="input_start_date"
+                      ref={(r) => { if (r) registerTarget('input_start_date', r); }}
                     >
                       <CalendarIcon size={18} color={COLORS.neutral700} />
                       <Text style={styles.inputNoBorder}>{formStartDate || 'YYYY-MM-DD'}</Text>

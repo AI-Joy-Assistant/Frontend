@@ -344,7 +344,7 @@ const RequestMeetingScreen = () => {
     // ✅ [NEW] 튜토리얼: 자동 제목 입력
     useEffect(() => {
         if (isTutorialActive && currentStep === 'CREATE_REQUEST' && currentSubStep?.id === 'enter_title') {
-            const predefinedTitle = '팀 회식';
+            const predefinedTitle = '프로젝트 킥오프';
             let currentIndex = 0;
             const interval = setInterval(() => {
                 if (currentIndex <= predefinedTitle.length) {

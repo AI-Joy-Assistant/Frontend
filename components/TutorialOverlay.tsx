@@ -132,6 +132,14 @@ const TutorialOverlay: React.FC = () => {
             transform: [{ translateY: slideAnim }]
         };
 
+        // center 위치인 경우 화면 중앙에 배치
+        if (position === 'center') {
+            const screenHeight = Dimensions.get('window').height;
+            baseStyle.top = (screenHeight / 2) - 50; // 툴팁 높이의 절반을 빼서 정중앙
+            baseStyle.bottom = undefined;
+            return baseStyle;
+        }
+
         if (targetLayout) {
             if (position === 'top') {
                 // 타겟 바로 위에 표시

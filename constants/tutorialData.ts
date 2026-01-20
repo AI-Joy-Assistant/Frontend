@@ -97,7 +97,7 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
         subSteps: [
             {
                 id: 'go_to_request',
-                message: 'Request 탭을 눌러주세요',
+                message: '조율 탭을 눌러주세요',
                 targetId: 'tab_request',
                 action: 'navigate'
             },
@@ -175,7 +175,7 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
             {
                 id: 'view_events',
                 message: '방금 보낸 "프로젝트 킥오프" 요청을 확인할 수 있습니다.',
-                position: 'bottom',
+                position: 'center',
                 autoComplete: true,
                 delay: 2000
             }
@@ -188,9 +188,8 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
         subSteps: [
             {
                 id: 'view_received_request',
-                message: '조이너 가이드님이 보낸 "팀 회식" 요청이 도착했어요! 확인해보세요.\n 요청 카드를 눌러 상세 내용을 확인하세요.',
-                targetId: 'log_card_tutorial_received_request',
-                position: 'bottom',
+                message: 'JOYNER 가이드님이 보낸 "팀 회식" 요청이 도착했어요.\n요청 카드를 눌러 상세 내용을 확인하세요.',
+                position: 'center',
                 action: 'click'
             },
             {
@@ -225,10 +224,22 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
             },
             {
                 id: 'event_guide',
-                message: 'Event페이지의 각 일정 요청은 약속날짜가 지나면 자동으로 삭제됩니다.',
-                delay: 2000,
-                autoComplete: true
-            }
+                message: '이벤트 탭의 각 일정 요청은 약속날짜가 지나면 자동으로 삭제됩니다.',
+                action: 'click'
+            },
+            {
+                id: 'go_to_home_final',
+                message: '창을 닫고 홈 탭을 눌러주세요.',
+                targetId: 'tab_home',
+                action: 'navigate'
+            },
+            {
+                id: 'show_home_add_button',
+                message: '홈 화면의 + 버튼을 눌러서도 일정 조율 요청을 보낼 수 있어요.\n개인일정 추가가 가능하고, 일정요청도 보낼 수 있습니다.\n이곳에서는 조율 탭의 날짜 선택과 다르게 지정한 날짜에 요청을 보냅니다.',
+                targetId: 'btn_home_add',
+                position: 'top',
+                action: 'click'
+            },
         ]
     },
     {
@@ -263,7 +274,7 @@ export const FAKE_FRIEND_REQUEST = {
 export const FAKE_A2A_REQUEST = {
     id: 'tutorial_fake_request',
     thread_id: 'tutorial_thread',
-    title: '팀 회식 🍻',
+    title: '팀 회식',
     summary: '나: 다음주 금요일 팀 회식 일정 제안합니다.',
     initiator_id: TUTORIAL_GUIDE.id,
     initiator_name: TUTORIAL_GUIDE.name,
@@ -284,7 +295,7 @@ export const FAKE_A2A_REQUEST = {
 export const FAKE_RECEIVED_REQUEST = {
     id: 'tutorial_received_request',
     thread_id: 'tutorial_thread_received',
-    title: '팀 회식 🍻',
+    title: '팀 회식',
     summary: '조이너 가이드: 이번주 금요일에 회식 어때요?',
     initiator_id: TUTORIAL_GUIDE.id,
     initiator_name: TUTORIAL_GUIDE.name,
@@ -298,13 +309,54 @@ export const FAKE_RECEIVED_REQUEST = {
     proposed_time: '18:30',
     status: 'pending_approval', // 승인 대기 상태
     created_at: new Date(Date.now() - 3600000).toISOString(), // 1시간 전
-    type: 'new' as const
+    type: 'new' as const,
+    // [NEW] 상세 정보 추가 (협상 로그 포함)
+    details: {
+        proposer: TUTORIAL_GUIDE.name,
+        proposerAvatar: TUTORIAL_GUIDE.picture,
+        purpose: '팀 회식',
+        proposedDate: (() => {
+            const nextFri = new Date();
+            nextFri.setDate(nextFri.getDate() + (5 - nextFri.getDay() + 7) % 7);
+            return `${nextFri.getMonth() + 1}월 ${nextFri.getDate()}일`;
+        })(),
+        proposedTime: '18:30',
+        location: '강남역',
+        participants: ['나', TUTORIAL_GUIDE.name],
+        attendees: [
+            { id: 'current_user', name: '나', avatar: null },
+            { id: TUTORIAL_GUIDE.id, name: TUTORIAL_GUIDE.name, avatar: TUTORIAL_GUIDE.picture }
+        ],
+        // 협상 로그 (process)
+        process: [
+            {
+                step: '요청 생성',
+                description: 'JOYNER 가이드님이 "팀 회식" 일정을 제안했습니다.',
+                created_at: new Date(Date.now() - 3600000).toISOString()
+            },
+            {
+                step: '일정 분석',
+                description: 'AI가 참여자들의 캘린더를 분석했습니다.',
+                created_at: new Date(Date.now() - 3500000).toISOString()
+            },
+            {
+                step: '시간 제안',
+                description: '금요일 18:30 시간이 제안되었습니다.',
+                created_at: new Date(Date.now() - 3400000).toISOString()
+            },
+            {
+                step: '승인 대기',
+                description: '귀하의 승인을 기다리고 있습니다.',
+                created_at: new Date(Date.now() - 3300000).toISOString()
+            }
+        ]
+    }
 };
 
 // 가짜 확정 일정 (튜토리얼용)
 export const FAKE_CONFIRMED_SCHEDULE = {
     id: 'tutorial_confirmed_schedule',
-    title: '팀 회식 🍻',
+    title: '팀 회식',
     date: (() => {
         const nextFri = new Date();
         nextFri.setDate(nextFri.getDate() + (5 - nextFri.getDay() + 7) % 7);
