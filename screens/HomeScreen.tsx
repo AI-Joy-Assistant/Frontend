@@ -15,6 +15,7 @@ import {
   FlatList,
   Image
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
@@ -45,7 +46,8 @@ import {
   Users,
   Search,
   UserPlus,
-  Info
+  Info,
+  User as UserIcon
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { ScheduleItem } from '../types/schedule';
@@ -347,6 +349,10 @@ export default function HomeScreen() {
       // Apple 로그인 사용자만 캘린더 연동 상태 확인
       if (authProvider === 'apple') {
         checkCalendarLinkStatus();
+        // dismissed 상태 복원
+        AsyncStorage.getItem('calendarIntegrationDismissed').then(val => {
+          if (val === 'true') setIsCalendarDismissed(true);
+        });
       }
       // 배지 폴링은 BottomNav에서 처리하므로 여기서는 제거
     }, [authProvider])
@@ -435,6 +441,7 @@ export default function HomeScreen() {
   // Google Calendar Integration Modal State
   const [showCalendarIntegrationModal, setShowCalendarIntegrationModal] = useState(false);
   const [isCalendarLinked, setIsCalendarLinked] = useState<boolean | null>(null);
+  const [isCalendarDismissed, setIsCalendarDismissed] = useState(false);
 
   // Date Picker Modal State
   const [datePickerVisible, setDatePickerVisible] = useState(false);
@@ -1288,25 +1295,16 @@ export default function HomeScreen() {
         {/* Top Header with Logo and Profile */}
         <View style={[styles.topHeader, { paddingTop: insets.top + 14 }]}>
           <View style={styles.logoContainer}>
-            <Image
-              source={require('../assets/images/logo.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
-            />
+            <View style={styles.logoImageWrapper}>
+              <Image
+                source={require('../assets/images/logo.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
+            </View>
             <Text style={styles.logoText}>JOYNER</Text>
           </View>
-          <View style={styles.profileButton}>
-            {currentUserId ? (
-              <Image
-                source={{ uri: `${API_BASE}/auth/profile-image/${currentUserId}` }}
-                style={styles.profileImage}
-              />
-            ) : (
-              <View style={styles.profilePlaceholder}>
-                <Text style={styles.profilePlaceholderText}>👤</Text>
-              </View>
-            )}
-          </View>
+
         </View>
 
         <ScrollView
@@ -1316,7 +1314,7 @@ export default function HomeScreen() {
         >
 
           {/* Google Calendar Link Button - Apple 로그인 사용자에게만 표시, 연동 완료 시 숨김 */}
-          {authProvider === 'apple' && isCalendarLinked === false && (
+          {authProvider === 'apple' && isCalendarLinked === false && !isCalendarDismissed && (
             <TouchableOpacity
               onPress={() => setShowCalendarIntegrationModal(true)}
               style={{
@@ -1365,10 +1363,10 @@ export default function HomeScreen() {
                     setPickerMode('YEAR');
                     setDatePickerVisible(true);
                   }}
-                  style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 8 }}
+                  style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 2 }}
                 >
                   <Text style={styles.calendarTitle}>{getDisplayDateHeader()}</Text>
-                  <ChevronDown size={20} color={COLORS.neutralSlate} style={{ marginLeft: 4 }} />
+                  <ChevronDown size={20} color={COLORS.neutralSlate} style={{ marginLeft: 0 }} />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={handleNextClick} style={styles.iconButton}>
                   <ChevronRight size={24} color={COLORS.neutral400} />
@@ -2609,8 +2607,10 @@ export default function HomeScreen() {
                     borderRadius: 12,
                     backgroundColor: '#F3F4F6',
                   }}
-                  onPress={() => {
+                  onPress={async () => {
                     setShowCalendarIntegrationModal(false);
+                    setIsCalendarDismissed(true);
+                    await AsyncStorage.setItem('calendarIntegrationDismissed', 'true');
                   }}
                 >
                   <Text style={{
@@ -2665,12 +2665,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  logoImageWrapper: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 4,
+  },
   logoImage: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.08)',  // 보일듯 안보일듯한 연한 stroke
+    width: 30,
+    height: 30,
   },
   logoText: {
     fontSize: 20,
@@ -2691,14 +2695,15 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   profilePlaceholder: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: COLORS.neutral200,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'white',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'white',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+    overflow: 'hidden',
   },
   profilePlaceholderText: {
     fontSize: 18,
@@ -2826,12 +2831,13 @@ const styles = StyleSheet.create({
   calendarHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginLeft: -12, // Shift left as requested
   },
   calendarTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.neutral900,
-    marginHorizontal: 10,
+    marginHorizontal: 4,
   },
   calendarHeaderRight: {
     flexDirection: 'row',

@@ -338,7 +338,11 @@ const FriendsScreen = () => {
       } else {
         const errorData = await response.json();
         console.log('친구 추가 에러 응답:', errorData);
-        showAlert('오류', errorData.detail || errorData.error || '친구 추가에 실패했습니다.', 'error');
+        let errorMsg = errorData.detail || errorData.error || '친구 추가에 실패했습니다.';
+        if (typeof errorMsg === 'string' && errorMsg.includes('해당 이메일 또는 아이디의 사용자를 찾을 수 없습니다.')) {
+          errorMsg = '해당 이메일 또는 아이디의\n사용자를 찾을 수 없습니다.';
+        }
+        showAlert('오류', errorMsg, 'error');
       }
     } catch (error) {
       console.error('친구 추가 예외:', error);

@@ -382,7 +382,12 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 24,
-        elevation: 10,
+        overflow: 'hidden',
+        // 안티앨리어싱 회색 픽셀을 가리기 위한 흰색 테두리
+        borderWidth: 1,
+        borderColor: COLORS.white,
+        shadowOpacity: 0,
+        elevation: 0,
     },
     logoImage: {
         width: 64,

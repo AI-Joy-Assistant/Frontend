@@ -35,12 +35,12 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
     const { isTutorialActive, currentSubStep, nextSubStep } = useTutorial();
 
     const navItems = [
-        { id: Tab.HOME, label: 'Home', icon: 'home', route: 'Home' },
-        { id: Tab.REQUEST, label: 'Request', icon: 'add-circle', route: 'RequestMeeting' },
-        { id: Tab.CHAT, label: 'Chat', icon: 'chatbubble', route: 'Chat' },
-        { id: Tab.FRIENDS, label: 'Friends', icon: 'people', route: 'Friends' },
-        { id: Tab.A2A, label: 'Event', icon: 'calendar', route: 'A2A' },
-        { id: Tab.USER, label: 'User', icon: 'information-circle', route: 'User' },
+        { id: Tab.HOME, label: '홈', icon: 'home', route: 'Home' },
+        { id: Tab.REQUEST, label: '조율', icon: 'add-circle', route: 'RequestMeeting' },
+        { id: Tab.CHAT, label: '채팅', icon: 'chatbubble', route: 'Chat' },
+        { id: Tab.FRIENDS, label: '친구', icon: 'people', route: 'Friends' },
+        { id: Tab.A2A, label: '이벤트', icon: 'calendar', route: 'A2A' },
+        { id: Tab.USER, label: '프로필', icon: 'information-circle', route: 'User' },
     ];
 
     const handlePress = (item: any) => {
