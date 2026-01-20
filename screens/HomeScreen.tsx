@@ -15,6 +15,7 @@ import {
   FlatList,
   Image
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
@@ -45,7 +46,8 @@ import {
   Users,
   Search,
   UserPlus,
-  Info
+  Info,
+  User as UserIcon
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { ScheduleItem } from '../types/schedule';
@@ -62,6 +64,7 @@ import WebSocketService from '../services/WebSocketService';
 import NotificationPanel from '../components/NotificationPanel';
 import { badgeStore } from '../store/badgeStore';
 import { useTutorial } from '../store/TutorialContext';
+import { FAKE_CONFIRMED_SCHEDULE } from '../constants/tutorialData';
 
 // Pending 요청 타입 정의
 interface PendingRequest {
@@ -98,6 +101,14 @@ type CalendarViewMode = 'CONDENSED' | 'STACKED' | 'DETAILED';
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const {
+    isTutorialActive,
+    currentStep,
+    fakeSchedule,
+    registerTarget,
+    currentSubStep,
+    nextSubStep
+  } = useTutorial();
 
   // 현재 사용자 ID와 프로필 사진
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -252,6 +263,38 @@ export default function HomeScreen() {
     }
   };
 
+  // 캘린더 연동 상태 확인
+  const checkCalendarLinkStatus = async () => {
+    console.log('[DEBUG] checkCalendarLinkStatus 호출됨');
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) {
+        console.log('[DEBUG] checkCalendarLinkStatus - 토큰 없음');
+        return;
+      }
+
+      const response = await fetch(`${API_BASE}/calendar/link-status`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      console.log('[DEBUG] calendar/link-status 응답:', response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[DEBUG] link-status 데이터:', data);
+        setIsCalendarLinked(data.is_linked || false);
+      } else {
+        // API 호출 실패 시 (연동 안 됨으로 처리)
+        console.log('[DEBUG] API 실패 - isCalendarLinked = false');
+        setIsCalendarLinked(false);
+      }
+    } catch (error) {
+      console.error('캘린더 연동 상태 확인 실패:', error);
+      // 에러 시에도 연동 안 됨으로 처리 (버튼 표시)
+      setIsCalendarLinked(false);
+    }
+  };
+
   // 현재 사용자 정보 조회
   const fetchCurrentUser = async () => {
     try {
@@ -266,8 +309,16 @@ export default function HomeScreen() {
 
       // AsyncStorage에서 auth provider 가져오기
       const storedAuthProvider = await AsyncStorage.getItem('authProvider');
+      console.log('[DEBUG] storedAuthProvider:', storedAuthProvider);
       if (storedAuthProvider) {
         setAuthProvider(storedAuthProvider);
+        // Apple 로그인 유저면 바로 캘린더 연동 상태 체크 (타이밍 이슈 해결)
+        if (storedAuthProvider === 'apple') {
+          console.log('[DEBUG] Apple 유저 감지 - checkCalendarLinkStatus 호출');
+          checkCalendarLinkStatus();
+        }
+      } else {
+        console.log('[DEBUG] authProvider가 AsyncStorage에 없음!');
       }
 
       const response = await fetch(`${API_BASE}/auth/me`, {
@@ -288,32 +339,8 @@ export default function HomeScreen() {
   };
 
   // 화면에 포커스될 때마다 요청 및 알림 새로고침
-  // 튜토리얼 훅
-  const { checkAndShowTutorial } = useTutorial();
-
-  // 캘린더 연동 상태 확인
-  const checkCalendarLinkStatus = async () => {
-    try {
-      const token = await AsyncStorage.getItem('accessToken');
-      if (!token) return;
-
-      const response = await fetch(`${API_BASE}/calendar/link-status`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setIsCalendarLinked(data.is_linked || false);
-      }
-    } catch (error) {
-      console.error('캘린더 연동 상태 확인 실패:', error);
-    }
-  };
-
   useFocusEffect(
     useCallback(() => {
-      // 튜토리얼 체크 (첫 방문 시)
-      checkAndShowTutorial('home');
 
       fetchCurrentUser();
       fetchPendingRequests();
@@ -322,6 +349,10 @@ export default function HomeScreen() {
       // Apple 로그인 사용자만 캘린더 연동 상태 확인
       if (authProvider === 'apple') {
         checkCalendarLinkStatus();
+        // dismissed 상태 복원
+        AsyncStorage.getItem('calendarIntegrationDismissed').then(val => {
+          if (val === 'true') setIsCalendarDismissed(true);
+        });
       }
       // 배지 폴링은 BottomNav에서 처리하므로 여기서는 제거
     }, [authProvider])
@@ -410,6 +441,7 @@ export default function HomeScreen() {
   // Google Calendar Integration Modal State
   const [showCalendarIntegrationModal, setShowCalendarIntegrationModal] = useState(false);
   const [isCalendarLinked, setIsCalendarLinked] = useState<boolean | null>(null);
+  const [isCalendarDismissed, setIsCalendarDismissed] = useState(false);
 
   // Date Picker Modal State
   const [datePickerVisible, setDatePickerVisible] = useState(false);
@@ -709,6 +741,22 @@ export default function HomeScreen() {
         };
       });
 
+      // [NEW] 튜토리얼 중이고 'CHECK_HOME' 또는 'COMPLETE' 단계라면 가짜 확정 일정 추가
+      if (isTutorialActive && (currentStep === 'CHECK_HOME' || currentStep === 'COMPLETE')) {
+        console.log('📅 Injecting fake tutorial schedule');
+        mappedSchedules.push({
+          id: fakeSchedule.id,
+          title: fakeSchedule.title,
+          date: fakeSchedule.date,
+          time: fakeSchedule.time,
+          participants: fakeSchedule.participants,
+          type: 'A2A',
+          location: fakeSchedule.location,
+          hasConflict: false,
+          conflictWith: []
+        });
+      }
+
       // 충돌(중복) 감지 로직
       const schedulesWithConflicts = detectScheduleConflicts(mappedSchedules);
       setSchedules(schedulesWithConflicts);
@@ -785,7 +833,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     fetchSchedules();
-  }, [viewYear, viewMonth]);
+  }, [viewYear, viewMonth, isTutorialActive, currentStep]);
 
   // Helper: Get all events for a specific date
   const getEventsForDate = (dateStr: string) => {
@@ -933,6 +981,13 @@ export default function HomeScreen() {
     // 친구 목록 새로고침
     fetchFriends();
     setShowScheduleModal(true);
+
+    // [NEW] 튜토리얼: 홈 추가 버튼 클릭 처리 (모달 열리는 시간 고려)
+    if (isTutorialActive && currentStep === 'COMPLETE' && currentSubStep?.id === 'show_home_add_button') {
+      setTimeout(() => {
+        nextSubStep();
+      }, 500);
+    }
   };
 
   const handleScheduleClick = (schedule: ScheduleItem) => {
@@ -1240,25 +1295,16 @@ export default function HomeScreen() {
         {/* Top Header with Logo and Profile */}
         <View style={[styles.topHeader, { paddingTop: insets.top + 14 }]}>
           <View style={styles.logoContainer}>
-            <Image
-              source={require('../assets/images/logo.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
-            />
+            <View style={styles.logoImageWrapper}>
+              <Image
+                source={require('../assets/images/logo.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
+            </View>
             <Text style={styles.logoText}>JOYNER</Text>
           </View>
-          <View style={styles.profileButton}>
-            {currentUserId ? (
-              <Image
-                source={{ uri: `${API_BASE}/auth/profile-image/${currentUserId}` }}
-                style={styles.profileImage}
-              />
-            ) : (
-              <View style={styles.profilePlaceholder}>
-                <Text style={styles.profilePlaceholderText}>👤</Text>
-              </View>
-            )}
-          </View>
+
         </View>
 
         <ScrollView
@@ -1268,7 +1314,7 @@ export default function HomeScreen() {
         >
 
           {/* Google Calendar Link Button - Apple 로그인 사용자에게만 표시, 연동 완료 시 숨김 */}
-          {authProvider === 'apple' && isCalendarLinked === false && (
+          {authProvider === 'apple' && isCalendarLinked === false && !isCalendarDismissed && (
             <TouchableOpacity
               onPress={() => setShowCalendarIntegrationModal(true)}
               style={{
@@ -1317,10 +1363,10 @@ export default function HomeScreen() {
                     setPickerMode('YEAR');
                     setDatePickerVisible(true);
                   }}
-                  style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 8 }}
+                  style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 2 }}
                 >
                   <Text style={styles.calendarTitle}>{getDisplayDateHeader()}</Text>
-                  <ChevronDown size={20} color={COLORS.neutralSlate} style={{ marginLeft: 4 }} />
+                  <ChevronDown size={20} color={COLORS.neutralSlate} style={{ marginLeft: 0 }} />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={handleNextClick} style={styles.iconButton}>
                   <ChevronRight size={24} color={COLORS.neutral400} />
@@ -1514,7 +1560,18 @@ export default function HomeScreen() {
               <Text style={styles.scheduleListDate}>{getSelectedDateDisplay()}</Text>
               <TouchableOpacity
                 onPress={handleOpenAddSchedule}
-                style={styles.addButton}
+                style={[
+                  styles.addButton,
+                  isTutorialActive && currentStep === 'COMPLETE' && currentSubStep?.id === 'show_home_add_button' && {
+                    borderColor: COLORS.primaryMain,
+                    borderWidth: 2,
+                    backgroundColor: '#EDE9FE',
+                    shadowColor: COLORS.primaryMain,
+                    elevation: 5
+                  }
+                ]}
+                testID="btn_home_add"
+                ref={(r) => { if (r) registerTarget('btn_home_add', r); }}
               >
                 <Plus size={20} color={COLORS.primaryMain} />
               </TouchableOpacity>
@@ -1926,8 +1983,23 @@ export default function HomeScreen() {
                   <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
                     <Text style={styles.label}>시작 날짜</Text>
                     <TouchableOpacity
-                      style={styles.iconInput}
-                      onPress={() => setShowStartDatePicker(true)}
+                      style={[
+                        styles.iconInput,
+                        isTutorialActive && currentStep === 'COMPLETE' && currentSubStep?.id === 'start_end_time' && {
+                          borderColor: COLORS.primaryMain,
+                          borderWidth: 2,
+                          backgroundColor: '#EDE9FE'
+                        }
+                      ]}
+                      onPress={() => {
+                        setShowStartDatePicker(true);
+                        // [NEW] 튜토리얼: 날짜 클릭 시 다음 단계로
+                        if (isTutorialActive && currentStep === 'COMPLETE' && currentSubStep?.id === 'start_end_time') {
+                          nextSubStep();
+                        }
+                      }}
+                      testID="input_start_date"
+                      ref={(r) => { if (r) registerTarget('input_start_date', r); }}
                     >
                       <CalendarIcon size={18} color={COLORS.neutral700} />
                       <Text style={styles.inputNoBorder}>{formStartDate || 'YYYY-MM-DD'}</Text>
@@ -2535,8 +2607,10 @@ export default function HomeScreen() {
                     borderRadius: 12,
                     backgroundColor: '#F3F4F6',
                   }}
-                  onPress={() => {
+                  onPress={async () => {
                     setShowCalendarIntegrationModal(false);
+                    setIsCalendarDismissed(true);
+                    await AsyncStorage.setItem('calendarIntegrationDismissed', 'true');
                   }}
                 >
                   <Text style={{
@@ -2591,12 +2665,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  logoImageWrapper: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 4,
+  },
   logoImage: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.08)',  // 보일듯 안보일듯한 연한 stroke
+    width: 30,
+    height: 30,
   },
   logoText: {
     fontSize: 20,
@@ -2617,14 +2695,15 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   profilePlaceholder: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: COLORS.neutral200,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'white',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'white',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+    overflow: 'hidden',
   },
   profilePlaceholderText: {
     fontSize: 18,
@@ -2752,12 +2831,13 @@ const styles = StyleSheet.create({
   calendarHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginLeft: -12, // Shift left as requested
   },
   calendarTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.neutral900,
-    marginHorizontal: 10,
+    marginHorizontal: 4,
   },
   calendarHeaderRight: {
     flexDirection: 'row',

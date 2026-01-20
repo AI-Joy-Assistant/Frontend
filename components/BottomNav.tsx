@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList, Tab } from '../types';
+import { useTutorial } from '../store/TutorialContext';
 
 
 interface BottomNavProps {
@@ -21,24 +22,40 @@ const COLORS = {
     badge: '#FF3B30',       // 배지 색상 (빨간색)
 };
 
+// 튜토리얼 탭 ID 매핑
+const TUTORIAL_TAB_MAP: Record<string, string> = {
+    'tab_friends': 'friends',
+    'tab_request': 'request',
+    'tab_a2a': 'events',
+    'tab_home': 'home',
+};
+
 const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-
-
-
-
+    const { isTutorialActive, currentSubStep, nextSubStep } = useTutorial();
 
     const navItems = [
-        { id: Tab.HOME, label: 'Home', icon: 'home', route: 'Home' },
-        { id: Tab.REQUEST, label: 'Request', icon: 'add-circle', route: 'RequestMeeting' },
-        { id: Tab.CHAT, label: 'Chat', icon: 'chatbubble', route: 'Chat' },
-        { id: Tab.FRIENDS, label: 'Friends', icon: 'people', route: 'Friends' },
-        { id: Tab.A2A, label: 'Event', icon: 'calendar', route: 'A2A' },
-        { id: Tab.USER, label: 'User', icon: 'information-circle', route: 'User' },
+        { id: Tab.HOME, label: '홈', icon: 'home', route: 'Home' },
+        { id: Tab.REQUEST, label: '조율', icon: 'add-circle', route: 'RequestMeeting' },
+        { id: Tab.CHAT, label: '채팅', icon: 'chatbubble', route: 'Chat' },
+        { id: Tab.FRIENDS, label: '친구', icon: 'people', route: 'Friends' },
+        { id: Tab.A2A, label: '이벤트', icon: 'calendar', route: 'A2A' },
+        { id: Tab.USER, label: '프로필', icon: 'information-circle', route: 'User' },
     ];
 
     const handlePress = (item: any) => {
+        // 튜토리얼 모드일 때 탭 클릭 감지
+        if (isTutorialActive && currentSubStep?.targetId) {
+            const expectedTabId = `tab_${item.id.toLowerCase()}`;
 
+            // 현재 튜토리얼 단계에서 기대하는 탭인지 확인
+            if (currentSubStep.targetId === expectedTabId ||
+                currentSubStep.targetId === `tab_${item.label.toLowerCase()}`) {
+                console.log(`[Tutorial] Tab clicked: ${expectedTabId}, advancing to next step`);
+                // 다음 튜토리얼 단계로 진행
+                setTimeout(() => nextSubStep(), 300);
+            }
+        }
 
         if (activeTab !== item.id) {
             navigation.navigate(item.route as any);
@@ -52,13 +69,21 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
                     const isActive = activeTab === item.id;
                     const iconName = isActive ? item.icon : `${item.icon}-outline`;
 
+                    // 튜토리얼에서 하이라이트 할 탭인지 확인
+                    const expectedTabId = `tab_${item.id.toLowerCase()}`;
+                    const isHighlighted = isTutorialActive &&
+                        currentSubStep?.targetId === expectedTabId;
 
                     return (
                         <TouchableOpacity
                             key={item.id}
                             onPress={() => handlePress(item)}
-                            style={styles.tabButton}
+                            style={[
+                                styles.tabButton,
+                                isHighlighted && styles.highlightedTab
+                            ]}
                             activeOpacity={0.7}
+                            testID={`tab_${item.id.toLowerCase()}`}
                         >
                             <View style={styles.iconContainer}>
                                 <Ionicons
@@ -123,6 +148,12 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         width: 50, // Reduced width
         height: 50, // Reduced height
+    },
+    highlightedTab: {
+        backgroundColor: 'rgba(129, 140, 248, 0.3)',
+        borderRadius: 12,
+        borderWidth: 2,
+        borderColor: COLORS.lightIndigo,
     },
     iconContainer: {
         marginBottom: 4,

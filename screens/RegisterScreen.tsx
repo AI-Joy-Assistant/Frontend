@@ -17,7 +17,9 @@ const RegisterScreen = () => {
 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
-    const { resetTutorialState } = useTutorial();
+
+    // 튜토리얼 훅
+    const { startTutorial } = useTutorial();
 
     // route.params가 undefined일 수 있으므로 안전하게 접근
     const { register_token, email, name: initialName, picture, terms_agreed, auth_provider } = route.params || {};
@@ -35,6 +37,11 @@ const RegisterScreen = () => {
     const handleSubmit = async () => {
         if (!name.trim() || !handle.trim()) {
             setError('이름과 아이디를 모두 입력해주세요.');
+            return;
+        }
+
+        if (!/^[a-zA-Z0-9]*$/.test(handle)) {
+            setError('아이디는 영어와 숫자만 입력 가능합니다.');
             return;
         }
 
@@ -67,9 +74,13 @@ const RegisterScreen = () => {
 
             // 토큰 저장 및 홈으로 이동
             await AsyncStorage.setItem('accessToken', data.access_token);
+            await AsyncStorage.setItem('authProvider', auth_provider || 'google');
 
-            // 튜토리얼 상태 초기화 (Context State + AsyncStorage 동기화)
-            await resetTutorialState();
+            // 신규 가입자 표시 저장 (튜토리얼용)
+            await AsyncStorage.setItem('isNewUser', 'true');
+
+            // 튜토리얼 자동 시작
+            startTutorial();
 
             navigation.reset({
                 index: 0,
@@ -136,7 +147,11 @@ const RegisterScreen = () => {
                             value={handle}
                             onChangeText={(text) => {
                                 setHandle(text);
-                                setError('');
+                                if (!/^[a-zA-Z0-9]*$/.test(text)) {
+                                    setError('아이디는 영어와 숫자만 입력 가능합니다.');
+                                } else {
+                                    setError('');
+                                }
                             }}
                             placeholder="joyner_user"
                             placeholderTextColor={COLORS.neutral300}
@@ -160,10 +175,10 @@ const RegisterScreen = () => {
                 </Text>
                 <TouchableOpacity
                     onPress={handleSubmit}
-                    disabled={!name || !handle || isLoading}
+                    disabled={!name || !handle || isLoading || !!error}
                     style={[
                         styles.button,
-                        (name && handle && !isLoading) ? styles.buttonActive : styles.buttonDisabled
+                        (name && handle && !isLoading && !error) ? styles.buttonActive : styles.buttonDisabled
                     ]}
                 >
                     {isLoading ? (

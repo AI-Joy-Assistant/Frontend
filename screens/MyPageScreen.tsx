@@ -9,9 +9,11 @@ import BottomNav from '../components/BottomNav';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE } from '../constants/config';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Bot, Settings, LogOut, Trash2, ChevronRight, User as UserIcon, Calendar as CalendarIcon, Check, AlertCircle, Info } from 'lucide-react-native';
+import { Bot, Settings, LogOut, Trash2, ChevronRight, User as UserIcon, Calendar as CalendarIcon, Check, AlertCircle, Info, BookOpen } from 'lucide-react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { getBackendUrl } from '../utils/environment';
+import { useTutorial } from '../store/TutorialContext';
+import { useFocusEffect } from '@react-navigation/native';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -40,6 +42,7 @@ const COLORS = {
 
 const MyPageScreen = () => {
   const navigation = useNavigation<NavigationProp>();
+  const { resetTutorial } = useTutorial();
   const [userInfo, setUserInfo] = useState<{
     id: string;
     name: string;
@@ -58,6 +61,7 @@ const MyPageScreen = () => {
   const [resultModalVisible, setResultModalVisible] = useState(false);
   const [resultModalType, setResultModalType] = useState<'success' | 'error' | 'info'>('success');
   const [resultModalMessage, setResultModalMessage] = useState('');
+  const [isCalendarLinked, setIsCalendarLinked] = useState<boolean | null>(null);
 
   // 사용자 정보 불러오기
   const fetchUserInfo = async () => {
@@ -127,6 +131,7 @@ const MyPageScreen = () => {
           setResultModalType('success');
           setResultModalMessage('Google 캘린더가 연동되었습니다!');
           setResultModalVisible(true);
+          setIsCalendarLinked(true); // 즉시 상태 업데이트
         } else if (errorParam) {
           setResultModalType('error');
           setResultModalMessage(`캘린더 연동 실패: ${errorParam}`);
@@ -135,6 +140,7 @@ const MyPageScreen = () => {
           setResultModalType('info');
           setResultModalMessage('연동이 완료되었습니다.');
           setResultModalVisible(true);
+          setIsCalendarLinked(true); // 즉시 상태 업데이트
         }
       }
     } catch (error) {
@@ -147,9 +153,34 @@ const MyPageScreen = () => {
     }
   };
 
-  useEffect(() => {
-    fetchUserInfo();
-  }, [navigation]);
+  // 캘린더 연동 상태 확인
+  const checkCalendarLinkStatus = async () => {
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) return;
+
+      const response = await fetch(`${API_BASE}/calendar/link-status`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setIsCalendarLinked(data.is_linked);
+      }
+    } catch (error) {
+      console.error('캘린더 상태 확인 오류:', error);
+    }
+  };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchUserInfo();
+      checkCalendarLinkStatus();
+    }, [])
+  );
 
   // 닉네임 수정
   const handleNicknameUpdate = async () => {
@@ -203,6 +234,17 @@ const MyPageScreen = () => {
   const confirmLogout = async () => {
     try {
       await AsyncStorage.removeItem('accessToken');
+      await AsyncStorage.removeItem('authProvider');
+      await AsyncStorage.removeItem('userPicture');
+      // calendarIntegrationDismissed는 로그아웃 시 유지 (기기 설정처럼 동작)
+      // 그 외 알림 관련 로컬 데이터도 삭제 여부 결정 필요하지만, 
+      // 사용자가 캘린더 버튼만 명시했으므로 캘린더 관련 키 삭제는 제거함.
+      // 다른 dismissed 데이터들도 사용자별 데이터라면 지우는게 맞지만, 
+      // 현재 요청은 "연동하지 않기" 상태 유지임.
+
+      // 사용자별 데이터인 dismissedRequestIds 등은 지우는게 맞을 수 있으나
+      // 일단 사용자가 지적한 캘린더 버튼 관련만 수정.
+
       setLogoutModalVisible(false);
       navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
     } catch (error) {
@@ -230,6 +272,13 @@ const MyPageScreen = () => {
 
       if (response.ok) {
         await AsyncStorage.removeItem('accessToken');
+        await AsyncStorage.removeItem('authProvider');
+        await AsyncStorage.removeItem('userPicture');
+        await AsyncStorage.removeItem('calendarIntegrationDismissed'); // 캘린더 연동 무시 상태 초기화
+        await AsyncStorage.removeItem('dismissedRequestIds');
+        await AsyncStorage.removeItem('dismissedNotificationIds');
+        await AsyncStorage.removeItem('viewedRequestIds');
+        await AsyncStorage.removeItem('viewedNotificationIds');
         Alert.alert('탈퇴 완료', '정상적으로 탈퇴되었습니다.');
         setWithdrawModalVisible(false);
         navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
@@ -318,29 +367,37 @@ const MyPageScreen = () => {
 
         {/* Settings List */}
         <View style={styles.settingsContainer}>
-          {/* Google 캘린더 연동 버튼 - Apple 로그인 사용자에게만 표시 */}
-          {authProvider === 'apple' && (
-            <TouchableOpacity
-              onPress={() => setShowCalendarIntegrationModal(true)}
-              style={styles.calendarLinkButton}
-            >
-              <CalendarIcon size={26} color={COLORS.primaryMain} style={{ marginRight: 14 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 16, fontWeight: '600', color: COLORS.primaryMain }}>
-                  Google 캘린더 연동하기
-                </Text>
-                <Text style={{ fontSize: 13, color: '#8B95A5', marginTop: 3 }}>
-                  일정을 자동으로 동기화하세요
-                </Text>
-              </View>
-              <ChevronRight size={22} color={COLORS.primaryMain} />
-            </TouchableOpacity>
-          )}
+
 
           <View style={styles.settingsCard}>
+            {/* Google Calendar 메뉴 항목 */}
+            <TouchableOpacity
+              style={styles.settingItem}
+              onPress={() => {
+                if (!isCalendarLinked) {
+                  setShowCalendarIntegrationModal(true);
+                }
+              }}
+              activeOpacity={isCalendarLinked ? 1 : 0.7}
+            >
+              <View style={styles.settingItemLeft}>
+                <View style={[styles.iconContainer, styles.normalIconContainer]}>
+                  <CalendarIcon size={18} color="#525252" />
+                </View>
+                <Text style={[styles.settingLabel, styles.normalLabel]}>Google Calendar</Text>
+              </View>
+              {isCalendarLinked ? (
+                <Text style={{ fontSize: 14, color: COLORS.primaryMain, fontWeight: '600' }}>연동됨</Text>
+              ) : (
+                <Text style={{ fontSize: 14, color: COLORS.primaryMain, fontWeight: '600' }}>연동하기</Text>
+              )}
+            </TouchableOpacity>
+            <Divider />
             <SettingItem icon={PenSquareIcon} label="닉네임 설정" onPress={() => setNicknameModalVisible(true)} />
             <Divider />
             <SettingItem icon={SettingsIcon} label="앱 설정" onPress={() => Alert.alert('알림', '준비 중인 기능입니다.')} />
+            <Divider />
+            <SettingItem icon={BookOpen} label="튜토리얼 다시보기" onPress={resetTutorial} />
             <Divider />
             <SettingItem icon={LogOut} label="로그아웃" isDanger onPress={handleLogout} />
             <Divider />
@@ -580,7 +637,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerGradient: {
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingTop: Platform.OS === 'ios' ? 80 : 60,
     paddingBottom: 40,
     paddingHorizontal: 24,
     borderBottomLeftRadius: 32,

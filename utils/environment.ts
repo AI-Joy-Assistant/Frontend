@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 
 // 프로덕션 배포 URL (Cloud Run 직접 사용)
 const PRODUCTION_URL = 'https://api.joyner.co.kr';
-// export const PRODUCTION_URL = 'https://ai-joy-backend-kebqzc2uiq-uc.a.run.app';
+// const PRODUCTION_URL = 'http://127.0.0.1:8000'
 
 /**
  * 현재 실행 환경에 맞는 백엔드 URL 반환
