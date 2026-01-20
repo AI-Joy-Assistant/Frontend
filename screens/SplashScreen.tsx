@@ -136,8 +136,6 @@ const SplashScreen = ({ navigation }: { navigation: any }) => {
                         <Circle cx="20" cy="24" r="8" fill="url(#grad1)" />
                         <Circle cx="44" cy="24" r="8" fill="url(#grad2)" />
 
-                        <Path d="M28 24 L36 24" stroke="url(#grad3)" strokeWidth="3" strokeLinecap="round" />
-
                         <Rect x="16" y="38" width="32" height="20" rx="4" fill="url(#grad4)" />
 
                         <Rect x="20" y="34" width="4" height="6" rx="2" fill="#3730A3" />
