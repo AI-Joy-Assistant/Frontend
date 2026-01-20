@@ -19,7 +19,8 @@ import {
   Modal,
   TouchableWithoutFeedback,
   Pressable,
-  Platform
+  Platform,
+  Animated
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -27,6 +28,7 @@ import { RootStackParamList, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
 import { getBackendUrl } from '../utils/environment';
 import WebSocketService from '../services/WebSocketService';
+import { useTutorial } from '../store/TutorialContext';
 
 // Colors
 const COLORS = {
@@ -85,6 +87,45 @@ const FriendsScreen = () => {
   const [activeTab, setActiveTab] = useState<'friends' | 'requests'>(
     route.params?.initialTab || 'friends'
   );
+
+  // 튜토리얼 훅 사용
+  const {
+    isTutorialActive,
+    fakeFriendRequest,
+    currentStep,
+    nextSubStep,
+    markTutorialFriendAdded,
+    tutorialFriendAdded,
+    ghostFriend,
+    currentSubStep,
+    registerTarget
+  } = useTutorial();
+
+  // ✅ [NEW] 튜토리얼 탭 강조 애니메이션
+  const tabScale = React.useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (isTutorialActive && currentStep === 'ACCEPT_FRIEND' && currentSubStep?.id === 'go_to_requests') {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(tabScale, {
+            toValue: 1.1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(tabScale, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    } else {
+      tabScale.setValue(1);
+    }
+  }, [isTutorialActive, currentStep, currentSubStep?.id]);
 
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -158,6 +199,35 @@ const FriendsScreen = () => {
       console.error('Error fetching friend requests:', error);
     }
   };
+
+  // 튜토리얼 모드일 때 가짜 요청 주입
+  const displayedRequests = React.useMemo(() => {
+    if (isTutorialActive && currentStep === 'ACCEPT_FRIEND' && !tutorialFriendAdded) {
+      // 이미 실제 목록에 있는지 확인
+      const exists = friendRequests.some(r => r.id === fakeFriendRequest.id);
+      if (!exists) {
+        return [fakeFriendRequest, ...friendRequests];
+      }
+    }
+    return friendRequests;
+  }, [isTutorialActive, currentStep, tutorialFriendAdded, friendRequests, fakeFriendRequest]);
+
+  // 튜토리얼 모드일 때 가짜 친구 주입
+  const displayedFriends = React.useMemo(() => {
+    if (tutorialFriendAdded || (isTutorialActive && currentStep !== 'INTRO' && currentStep !== 'ACCEPT_FRIEND')) {
+      // 이미 실제 목록에 있는지 확인
+      const exists = friends.some(f => f.friend.id === ghostFriend.id);
+      if (!exists) {
+        const fakeFriend: Friend = {
+          id: 'tutorial_friend_relation',
+          friend: ghostFriend,
+          created_at: new Date().toISOString()
+        };
+        return [fakeFriend, ...friends];
+      }
+    }
+    return friends;
+  }, [tutorialFriendAdded, isTutorialActive, currentStep, friends, ghostFriend]);
 
   const fetchFriends = async () => {
     try {
@@ -311,6 +381,31 @@ const FriendsScreen = () => {
       return;
     }
 
+    // 튜토리얼 가짜 요청 수락 처리
+    if (isTutorialActive && requestId === fakeFriendRequest.id) {
+      // 백엔드에 실제로 가이드 친구 추가 요청 (튜토리얼용 엔드포인트)
+      try {
+        const token = await AsyncStorage.getItem('accessToken');
+        if (token) {
+          await fetch(`${getBackendUrl()}/friends/tutorial/add-guide`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+        }
+      } catch (e) {
+        console.error('Tutorial guide add error:', e);
+      }
+
+      markTutorialFriendAdded();
+      showAlert('성공', '친구 요청을 수락했습니다.', 'success');
+
+      // 다음 단계로 진행
+      setTimeout(() => {
+        nextSubStep();
+      }, 500);
+      return;
+    }
+
     // 처리 중 상태로 설정
     setProcessingRequestIds(prev => new Set(prev).add(requestId));
 
@@ -429,10 +524,11 @@ const FriendsScreen = () => {
                 onSubmitEditing={handleAddFriend}
                 autoCapitalize="none"
                 keyboardType="email-address"
+                testID="input_friend_handle"
               />
             </View>
             {searchTerm.length > 0 && (
-              <TouchableOpacity style={styles.addButton} onPress={handleAddFriend}>
+              <TouchableOpacity style={styles.addButton} onPress={handleAddFriend} testID="btn_send_friend_request">
                 <Text style={styles.addButtonText}>추가</Text>
               </TouchableOpacity>
             )}
@@ -551,23 +647,55 @@ const FriendsScreen = () => {
             <TouchableOpacity
               style={[styles.tab, activeTab === 'friends' && styles.activeTab]}
               onPress={() => setActiveTab('friends')}
+              testID="tab_friends_list"
             >
               <Text style={[styles.tabText, activeTab === 'friends' && styles.activeTabText]}>
                 친구 목록
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === 'requests' && styles.activeTab]}
-              onPress={() => setActiveTab('requests')}
-            >
-              <Text style={[styles.tabText, activeTab === 'requests' && styles.activeTabText]}>
-                받은 요청 {friendRequests.length > 0 && `(${friendRequests.length})`}
-              </Text>
-            </TouchableOpacity>
+
+            <Animated.View style={{ transform: [{ scale: tabScale }] }}>
+              <TouchableOpacity
+                style={[
+                  styles.tab,
+                  activeTab === 'requests' && styles.activeTab,
+                  // 튜토리얼 강조 스타일
+                  isTutorialActive && currentSubStep?.id === 'go_to_requests' && {
+                    borderColor: COLORS.primaryMain,
+                    borderWidth: 2,
+                    backgroundColor: '#EDE9FE', // Light purple bg
+                    shadowColor: COLORS.primaryMain,
+                    shadowOffset: { width: 0, height: 0 },
+                    shadowOpacity: 0.5,
+                    shadowRadius: 8,
+                    elevation: 5
+                  }
+                ]}
+                onPress={() => {
+                  setActiveTab('requests');
+                  // 튜토리얼 진행: 받은 요청 탭 클릭 시
+                  if (isTutorialActive && currentStep === 'ACCEPT_FRIEND') {
+                    console.log('[FriendsScreen] Requests tab clicked in tutorial');
+                    setTimeout(() => nextSubStep(), 300);
+                  }
+                }}
+                testID="tab_requests"
+                ref={(r) => { if (r) registerTarget('tab_requests', r); }}
+              >
+                <Text style={[
+                  styles.tabText,
+                  activeTab === 'requests' && styles.activeTabText,
+                  isTutorialActive && currentSubStep?.id === 'go_to_requests' && { color: COLORS.primaryMain, fontWeight: 'bold' }
+                ]}>
+                  받은 요청 {displayedRequests.length > 0 && `(${displayedRequests.length})`}
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
           </View>
           <TouchableOpacity
             style={styles.addUserButton}
             onPress={() => setIsAdding(true)}
+            testID="btn_add_friend"
           >
             <UserPlus size={25} color={COLORS.primaryMain} />
           </TouchableOpacity>
@@ -585,7 +713,7 @@ const FriendsScreen = () => {
                 onChangeText={setFriendSearchQuery}
               />
             </View>
-            <Text style={styles.friendListCount}>친구목록 {friends.length}명</Text>
+            <Text style={styles.friendListCount}>친구목록 {displayedFriends.length}명</Text>
           </>
         )}
       </View>
@@ -596,8 +724,8 @@ const FriendsScreen = () => {
           <ActivityIndicator size="large" color={COLORS.primaryMain} style={{ marginTop: 20 }} />
         ) : activeTab === 'friends' ? (
           <FlatList
-            data={friends.filter(f =>
-              !friendRequests.some(req => req.from_user.id === f.friend.id) &&
+            data={displayedFriends.filter(f =>
+              !displayedRequests.some(req => req.from_user.id === f.friend.id) &&
               (friendSearchQuery === '' ||
                 f.friend.name.toLowerCase().includes(friendSearchQuery.toLowerCase()) ||
                 f.friend.email.toLowerCase().includes(friendSearchQuery.toLowerCase()))
@@ -636,7 +764,7 @@ const FriendsScreen = () => {
           />
         ) : (
           <FlatList
-            data={friendRequests}
+            data={displayedRequests}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingBottom: 100 }}
             renderItem={({ item }) => (
@@ -662,6 +790,7 @@ const FriendsScreen = () => {
                     ]}
                     onPress={() => handleAcceptRequest(item.id)}
                     disabled={processingRequestIds.has(item.id)}
+                    testID={item.id === fakeFriendRequest.id ? 'btn_accept_friend' : undefined}
                   >
                     <Check size={18} color={COLORS.white} />
                   </TouchableOpacity>
@@ -799,7 +928,7 @@ const FriendsScreen = () => {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
-    </View>
+    </View >
   );
 };
 

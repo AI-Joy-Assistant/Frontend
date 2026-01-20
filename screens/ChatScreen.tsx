@@ -28,7 +28,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "../constants/config";
 import WebSocketService from "../services/WebSocketService";
 import { badgeStore } from "../store/badgeStore";
-import { useTutorial } from "../store/TutorialContext";
 
 import { LinearGradient } from "expo-linear-gradient";
 import {
@@ -102,14 +101,6 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { checkAndShowTutorial } = useTutorial();
-
-  // 튜토리얼 체크
-  useFocusEffect(
-    useCallback(() => {
-      checkAndShowTutorial('chat');
-    }, [])
-  );
 
   // --- Chat Session State ---
   const [sessions, setSessions] = useState<ChatSession[]>([]);

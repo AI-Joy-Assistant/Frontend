@@ -18,7 +18,8 @@ import RequestMeetingScreen from './screens/RequestMeetingScreen';
 import A2AChatDetailScreen from './screens/A2AChatDetailScreen';
 import { RootStackParamList } from './types';
 import { TutorialProvider } from './store/TutorialContext';
-import ScreenTutorialOverlay from './components/ScreenTutorialOverlay';
+import TutorialOverlay from './components/TutorialOverlay';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { Platform } from 'react-native';
 
@@ -73,48 +74,50 @@ export default function App() {
   }, []);
 
   return (
-    <TutorialProvider>
-      <NavigationContainer
-        linking={{
-          prefixes: [
-            'frontend://',
-            'exp://',
-            'https://joyner.co.kr',
-            'https://www.joyner.co.kr',
-            'http://localhost:8081',
-          ],
-          config: {
-            screens: {
-              Login: 'auth-success',
-              TermsAgreement: 'TermsAgreement',
-              Home: 'home',
-              // ... other screens
+    <SafeAreaProvider>
+      <TutorialProvider>
+        <NavigationContainer
+          linking={{
+            prefixes: [
+              'frontend://',
+              'exp://',
+              'https://joyner.co.kr',
+              'https://www.joyner.co.kr',
+              'http://localhost:8081',
+            ],
+            config: {
+              screens: {
+                Login: 'auth-success',
+                TermsAgreement: 'TermsAgreement',
+                Home: 'home',
+                // ... other screens
+              },
             },
-          },
-        }}
-      >
-        <Stack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false, animation: 'none' }}>
-          <Stack.Screen name="Splash" component={SplashScreen} />
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="TermsAgreement" component={TermsAgreementScreen} />
-          <Stack.Screen name="Register" component={RegisterScreen} />
-          <Stack.Screen name="LoginDetailScreen" component={LoginDetailScreen} />
-          <Stack.Screen name="Home" component={HomeScreen} />
-          <Stack.Screen name="Chat" component={ChatScreen} />
-          <Stack.Screen name="Friends" component={FriendsScreen} />
-          <Stack.Screen name="A2A" component={A2AScreen} />
-          <Stack.Screen name="User" component={MyPageScreen} />
-          <Stack.Screen name="MyPage" component={MyPageScreen} />
-          <Stack.Screen name="Test" component={TestScreen} />
-          <Stack.Screen name="RequestMeeting" component={RequestMeetingScreen} />
-          <Stack.Screen
-            name="A2AChatDetail"
-            component={A2AChatDetailScreen}
-            options={{ headerShown: false }}
-          />
-        </Stack.Navigator>
-        <ScreenTutorialOverlay />
-      </NavigationContainer>
-    </TutorialProvider>
+          }}
+        >
+          <Stack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false, animation: 'none' }}>
+            <Stack.Screen name="Splash" component={SplashScreen} />
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="TermsAgreement" component={TermsAgreementScreen} />
+            <Stack.Screen name="Register" component={RegisterScreen} />
+            <Stack.Screen name="LoginDetailScreen" component={LoginDetailScreen} />
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="Chat" component={ChatScreen} />
+            <Stack.Screen name="Friends" component={FriendsScreen} />
+            <Stack.Screen name="A2A" component={A2AScreen} />
+            <Stack.Screen name="User" component={MyPageScreen} />
+            <Stack.Screen name="MyPage" component={MyPageScreen} />
+            <Stack.Screen name="Test" component={TestScreen} />
+            <Stack.Screen name="RequestMeeting" component={RequestMeetingScreen} />
+            <Stack.Screen
+              name="A2AChatDetail"
+              component={A2AChatDetailScreen}
+              options={{ headerShown: false }}
+            />
+          </Stack.Navigator>
+          <TutorialOverlay />
+        </NavigationContainer>
+      </TutorialProvider>
+    </SafeAreaProvider>
   );
 }

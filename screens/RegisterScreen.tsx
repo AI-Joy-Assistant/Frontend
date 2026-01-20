@@ -17,7 +17,9 @@ const RegisterScreen = () => {
 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
-    const { resetTutorialState } = useTutorial();
+
+    // 튜토리얼 훅
+    const { startTutorial } = useTutorial();
 
     // route.params가 undefined일 수 있으므로 안전하게 접근
     const { register_token, email, name: initialName, picture, terms_agreed, auth_provider } = route.params || {};
@@ -68,8 +70,11 @@ const RegisterScreen = () => {
             // 토큰 저장 및 홈으로 이동
             await AsyncStorage.setItem('accessToken', data.access_token);
 
-            // 튜토리얼 상태 초기화 (Context State + AsyncStorage 동기화)
-            await resetTutorialState();
+            // 신규 가입자 표시 저장 (튜토리얼용)
+            await AsyncStorage.setItem('isNewUser', 'true');
+
+            // 튜토리얼 자동 시작
+            startTutorial();
 
             navigation.reset({
                 index: 0,

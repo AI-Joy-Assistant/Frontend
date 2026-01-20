@@ -62,6 +62,7 @@ import WebSocketService from '../services/WebSocketService';
 import NotificationPanel from '../components/NotificationPanel';
 import { badgeStore } from '../store/badgeStore';
 import { useTutorial } from '../store/TutorialContext';
+import { FAKE_CONFIRMED_SCHEDULE } from '../constants/tutorialData';
 
 // Pending 요청 타입 정의
 interface PendingRequest {
@@ -98,6 +99,11 @@ type CalendarViewMode = 'CONDENSED' | 'STACKED' | 'DETAILED';
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const {
+    isTutorialActive,
+    currentStep,
+    fakeSchedule
+  } = useTutorial();
 
   // 현재 사용자 ID와 프로필 사진
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -252,6 +258,38 @@ export default function HomeScreen() {
     }
   };
 
+  // 캘린더 연동 상태 확인
+  const checkCalendarLinkStatus = async () => {
+    console.log('[DEBUG] checkCalendarLinkStatus 호출됨');
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) {
+        console.log('[DEBUG] checkCalendarLinkStatus - 토큰 없음');
+        return;
+      }
+
+      const response = await fetch(`${API_BASE}/calendar/link-status`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      console.log('[DEBUG] calendar/link-status 응답:', response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[DEBUG] link-status 데이터:', data);
+        setIsCalendarLinked(data.is_linked || false);
+      } else {
+        // API 호출 실패 시 (연동 안 됨으로 처리)
+        console.log('[DEBUG] API 실패 - isCalendarLinked = false');
+        setIsCalendarLinked(false);
+      }
+    } catch (error) {
+      console.error('캘린더 연동 상태 확인 실패:', error);
+      // 에러 시에도 연동 안 됨으로 처리 (버튼 표시)
+      setIsCalendarLinked(false);
+    }
+  };
+
   // 현재 사용자 정보 조회
   const fetchCurrentUser = async () => {
     try {
@@ -266,8 +304,16 @@ export default function HomeScreen() {
 
       // AsyncStorage에서 auth provider 가져오기
       const storedAuthProvider = await AsyncStorage.getItem('authProvider');
+      console.log('[DEBUG] storedAuthProvider:', storedAuthProvider);
       if (storedAuthProvider) {
         setAuthProvider(storedAuthProvider);
+        // Apple 로그인 유저면 바로 캘린더 연동 상태 체크 (타이밍 이슈 해결)
+        if (storedAuthProvider === 'apple') {
+          console.log('[DEBUG] Apple 유저 감지 - checkCalendarLinkStatus 호출');
+          checkCalendarLinkStatus();
+        }
+      } else {
+        console.log('[DEBUG] authProvider가 AsyncStorage에 없음!');
       }
 
       const response = await fetch(`${API_BASE}/auth/me`, {
@@ -288,32 +334,8 @@ export default function HomeScreen() {
   };
 
   // 화면에 포커스될 때마다 요청 및 알림 새로고침
-  // 튜토리얼 훅
-  const { checkAndShowTutorial } = useTutorial();
-
-  // 캘린더 연동 상태 확인
-  const checkCalendarLinkStatus = async () => {
-    try {
-      const token = await AsyncStorage.getItem('accessToken');
-      if (!token) return;
-
-      const response = await fetch(`${API_BASE}/calendar/link-status`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setIsCalendarLinked(data.is_linked || false);
-      }
-    } catch (error) {
-      console.error('캘린더 연동 상태 확인 실패:', error);
-    }
-  };
-
   useFocusEffect(
     useCallback(() => {
-      // 튜토리얼 체크 (첫 방문 시)
-      checkAndShowTutorial('home');
 
       fetchCurrentUser();
       fetchPendingRequests();
@@ -709,6 +731,22 @@ export default function HomeScreen() {
         };
       });
 
+      // [NEW] 튜토리얼 중이고 'CHECK_HOME' 또는 'COMPLETE' 단계라면 가짜 확정 일정 추가
+      if (isTutorialActive && (currentStep === 'CHECK_HOME' || currentStep === 'COMPLETE')) {
+        console.log('📅 Injecting fake tutorial schedule');
+        mappedSchedules.push({
+          id: fakeSchedule.id,
+          title: fakeSchedule.title,
+          date: fakeSchedule.date,
+          time: fakeSchedule.time,
+          participants: fakeSchedule.participants,
+          type: 'A2A',
+          location: fakeSchedule.location,
+          hasConflict: false,
+          conflictWith: []
+        });
+      }
+
       // 충돌(중복) 감지 로직
       const schedulesWithConflicts = detectScheduleConflicts(mappedSchedules);
       setSchedules(schedulesWithConflicts);
@@ -785,7 +823,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     fetchSchedules();
-  }, [viewYear, viewMonth]);
+  }, [viewYear, viewMonth, isTutorialActive, currentStep]);
 
   // Helper: Get all events for a specific date
   const getEventsForDate = (dateStr: string) => {

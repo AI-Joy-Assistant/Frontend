@@ -1,263 +1,308 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getBackendUrl } from '../utils/environment';
+import {
+    TUTORIAL_STEPS,
+    TutorialStep,
+    SubStep,
+    TutorialStepData,
+    TUTORIAL_GUIDE,
+    FAKE_FRIEND_REQUEST,
+    FAKE_A2A_REQUEST,
+    FAKE_CONFIRMED_SCHEDULE
+} from '../constants/tutorialData';
 
-// 각 화면별 튜토리얼 키
-export type TutorialScreen = 'home' | 'request' | 'chat' | 'event';
+// AsyncStorage 키
+const TUTORIAL_COMPLETED_KEY = 'tutorial_completed';
+const TUTORIAL_SKIPPED_KEY = 'tutorial_skipped';
 
-// 아이템 위치 타입
-export type ItemPosition = 'top-left' | 'top-right' | 'top-center' | 'center' | 'bottom-left' | 'bottom-right' | 'bottom-center' | 'mid-center-left' | 'mid-center-right' | 'custom-friend-select' | 'custom-time-select' | 'custom-send-btn';
-
-// 각 화면별 튜토리얼 설정
-export interface TutorialItem {
-    id: string;
-    title: string;
-    description: string;
-    icon: string;
-    position: ItemPosition;
-    arrowDirection?: 'up' | 'down' | 'left' | 'right' | 'none'; // 화살표 방향 지정
-}
-
-export const SCREEN_TUTORIALS: Record<TutorialScreen, {
-    title: string;
-    subtitle: string;
-    items: TutorialItem[];
-}> = {
-    home: {
-        title: '홈 화면',
-        subtitle: '캘린더와 일정을 한눈에 확인하세요',
-        items: [
-            {
-                id: 'notification',
-                title: '알림',
-                description: '새로운 일정 요청과\n알림을 확인하세요',
-                icon: 'notifications-outline',
-                position: 'top-right',
-            },
-            {
-                id: 'calendar',
-                title: '캘린더',
-                description: '날짜를 선택하면\n해당 날짜의 일정을 볼 수 있어요',
-                icon: 'calendar-outline',
-                position: 'center',
-            },
-            {
-                id: 'add-schedule',
-                title: '일정 추가',
-                description: '개인 일정 추가 및\nA2A 기능으로 친구와\n일정 조율이 가능해요',
-                icon: 'add-circle-outline',
-                position: 'bottom-right',
-            },
-        ],
-    },
-    request: {
-        title: '일정 요청',
-        subtitle: '친구에게 일정을 요청해보세요',
-        items: [
-            {
-                id: 'friend-select',
-                title: '일정 기간',
-                description: '일정 총 기간과\n조율 날짜 범위를\n설정하세요',
-                icon: 'calendar-outline',
-                position: 'custom-friend-select', // 커스텀 위치
-            },
-            {
-                id: 'date-time',
-                title: '친구 선택',
-                description: '함께할 친구들을\n선택하세요',
-                icon: 'people-outline',
-                position: 'custom-time-select', // 커스텀 위치
-            },
-            {
-                id: 'send-request',
-                title: '요청 보내기',
-                description: 'AI가 자동으로\n최적의 일정을\n찾아드려요',
-                icon: 'send-outline',
-                position: 'custom-send-btn', // 커스텀 위치 (하단 탭 위)
-            },
-        ],
-    },
-    chat: {
-        title: '채팅',
-        subtitle: 'AI 챗봇과 일정을 조율하세요',
-        items: [
-            {
-                id: 'ai-chat',
-                title: 'AI 대화',
-                description: '챗봇과 대화로\n일정을 조율할 수 있어요',
-                icon: 'chatbubble-outline',
-                position: 'mid-center-left', // 화면 중앙 좌측
-            },
-            {
-                id: 'chat-history',
-                title: '대화 기록',
-                description: '이전 대화 내용을\n확인할 수 있어요',
-                icon: 'list-outline',
-                position: 'mid-center-right', // 화면 중앙 우측
-            },
-        ],
-    },
-    event: {
-        title: '일정 협의',
-        subtitle: '협의 중인 일정을 관리하세요',
-        items: [
-            {
-                id: 'waiting',
-                title: '대기 중',
-                description: '응답을 기다리는\n일정이에요',
-                icon: 'hourglass-outline',
-                position: 'top-left',
-            },
-            {
-                id: 'in-progress',
-                title: '진행 중',
-                description: '협의가 진행되고\n있는 일정이에요',
-                icon: 'sync-outline',
-                position: 'bottom-left',
-            },
-            {
-                id: 'completed',
-                title: '완료됨 / 거절됨',
-                description: '확정되거나\n거절된 일정이에요',
-                icon: 'checkmark-done-outline',
-                position: 'bottom-right',
-            }
-        ],
-    },
-};
-
+// Context 타입 정의
 interface TutorialContextType {
-    activeScreen: TutorialScreen | null;
-    showScreenTutorial: (screen: TutorialScreen) => void;
-    hideScreenTutorial: () => void;
-    checkAndShowTutorial: (screen: TutorialScreen) => Promise<boolean>;
-    markTutorialComplete: (screen: TutorialScreen) => Promise<void>;
-    isNewUser: boolean;
-    setIsNewUser: (value: boolean) => void;
-    resetTutorialState: () => Promise<void>;
+    // 상태
+    isTutorialActive: boolean;
+    currentStep: TutorialStep;
+    currentSubStepIndex: number;
+    currentStepData: TutorialStepData | null;
+    currentSubStep: SubStep | null;
+    isCompleted: boolean;
+
+    // 튜토리얼용 데이터
+    ghostFriend: typeof TUTORIAL_GUIDE;
+    fakeFriendRequest: typeof FAKE_FRIEND_REQUEST;
+    fakeRequest: typeof FAKE_A2A_REQUEST;
+    fakeSchedule: typeof FAKE_CONFIRMED_SCHEDULE;
+    tutorialFriendAdded: boolean;
+    tutorialRequestSent: boolean;
+
+    // 액션
+    startTutorial: () => void;
+    skipTutorial: () => void;
+    nextSubStep: () => void;
+    prevSubStep: () => void;
+    goToStep: (step: TutorialStep) => void;
+    completeTutorial: () => void;
+    resetTutorial: () => Promise<void>;
+
+    // 튜토리얼 친구 추가 완료 표시
+    markTutorialFriendAdded: () => void;
+    markTutorialRequestSent: () => void;
+
+    // 유틸리티
+    isHighlighted: (targetId: string) => boolean;
+    shouldAutoFill: (targetId: string) => string | null;
+
+    // 타겟 요소 Layout 등록
+    registerTarget: (id: string, ref: any) => void;
+    unregisterTarget: (id: string) => void;
+    targetRefs: React.MutableRefObject<Record<string, any>>;
 }
 
 const TutorialContext = createContext<TutorialContextType | undefined>(undefined);
 
-export const useTutorial = () => {
-    const context = useContext(TutorialContext);
-    if (!context) {
-        throw new Error('useTutorial must be used within a TutorialProvider');
-    }
-    return context;
-};
-
+// Provider Props
 interface TutorialProviderProps {
     children: ReactNode;
 }
 
 export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) => {
-    const [activeScreen, setActiveScreen] = useState<TutorialScreen | null>(null);
-    const [isNewUser, setIsNewUser] = useState(false);
-    const [completedTutorials, setCompletedTutorials] = useState<Set<TutorialScreen>>(new Set());
+    // 튜토리얼 상태
+    const [isTutorialActive, setIsTutorialActive] = useState(false);
+    const [currentStep, setCurrentStep] = useState<TutorialStep>('INTRO');
+    const [currentSubStepIndex, setCurrentSubStepIndex] = useState(0);
+    const [isCompleted, setIsCompleted] = useState(false);
 
+    // 튜토리얼 진행 상태
+    const [tutorialFriendAdded, setTutorialFriendAdded] = useState(false);
+    const [tutorialRequestSent, setTutorialRequestSent] = useState(false);
+
+    // 타겟 Refs 저장소
+    const targetRefs = React.useRef<Record<string, any>>({});
+
+    // 현재 단계 데이터
+    const currentStepData = TUTORIAL_STEPS.find(s => s.step === currentStep) || null;
+    const currentSubStep = currentStepData?.subSteps[currentSubStepIndex] || null;
+
+    // 초기 로드 - 튜토리얼 완료 여부 확인
     useEffect(() => {
-        const loadTutorialState = async () => {
+        const checkTutorialStatus = async () => {
             try {
-                const newUserFlag = await AsyncStorage.getItem('isNewUser');
-                setIsNewUser(newUserFlag === 'true');
+                const completed = await AsyncStorage.getItem(TUTORIAL_COMPLETED_KEY);
+                const skipped = await AsyncStorage.getItem(TUTORIAL_SKIPPED_KEY);
 
-                const completed = await AsyncStorage.getItem('completedTutorials');
-                if (completed) {
-                    setCompletedTutorials(new Set(JSON.parse(completed)));
+                if (completed === 'true' || skipped === 'true') {
+                    setIsCompleted(true);
                 }
             } catch (error) {
-                console.error('Failed to load tutorial state:', error);
+                console.error('Failed to check tutorial status:', error);
             }
         };
-        loadTutorialState();
+
+        checkTutorialStatus();
     }, []);
 
-    const showScreenTutorial = useCallback((screen: TutorialScreen) => {
-        setActiveScreen(screen);
+    // 튜토리얼 시작
+    const startTutorial = useCallback(() => {
+        console.log('[Tutorial] Starting tutorial');
+        setIsTutorialActive(true);
+        setCurrentStep('INTRO');
+        setCurrentSubStepIndex(0);
+        setTutorialFriendAdded(false);
+        setTutorialRequestSent(false);
     }, []);
 
-    const hideScreenTutorial = useCallback(() => {
-        setActiveScreen(null);
-    }, []);
-
-    const markTutorialComplete = useCallback(async (screen: TutorialScreen) => {
-        const newCompleted = new Set(completedTutorials);
-        newCompleted.add(screen);
-        setCompletedTutorials(newCompleted);
-        setActiveScreen(null);
-
+    // 튜토리얼 건너뛰기
+    const skipTutorial = useCallback(async () => {
+        console.log('[Tutorial] Skipping tutorial');
+        setIsTutorialActive(false);
+        setIsCompleted(true);
         try {
-            await AsyncStorage.setItem('completedTutorials', JSON.stringify([...newCompleted]));
-
-            if (newCompleted.size >= 4) {
-                await AsyncStorage.removeItem('isNewUser');
-                setIsNewUser(false);
-            }
+            await AsyncStorage.setItem(TUTORIAL_SKIPPED_KEY, 'true');
         } catch (error) {
-            console.error('Failed to save tutorial completion:', error);
+            console.error('Failed to save skip status:', error);
         }
-    }, [completedTutorials]);
+    }, []);
 
-    const checkAndShowTutorial = useCallback(async (screen: TutorialScreen): Promise<boolean> => {
+    // 다음 세부 단계로 이동
+    const nextSubStep = useCallback(() => {
+        if (!currentStepData) return;
+
+        const nextIndex = currentSubStepIndex + 1;
+
+        if (nextIndex < currentStepData.subSteps.length) {
+            // 같은 단계 내에서 다음 세부 단계로
+            setCurrentSubStepIndex(nextIndex);
+        } else {
+            // 다음 메인 단계로
+            const currentStepIdx = TUTORIAL_STEPS.findIndex(s => s.step === currentStep);
+
+            if (currentStepIdx < TUTORIAL_STEPS.length - 1) {
+                const nextStep = TUTORIAL_STEPS[currentStepIdx + 1];
+                setCurrentStep(nextStep.step);
+                setCurrentSubStepIndex(0);
+            } else {
+                // 마지막 단계 완료
+                completeTutorial();
+            }
+        }
+    }, [currentStep, currentSubStepIndex, currentStepData]);
+
+    // 이전 세부 단계로 이동
+    const prevSubStep = useCallback(() => {
+        if (currentSubStepIndex > 0) {
+            setCurrentSubStepIndex(currentSubStepIndex - 1);
+        } else {
+            // 이전 메인 단계로
+            const currentStepIdx = TUTORIAL_STEPS.findIndex(s => s.step === currentStep);
+
+            if (currentStepIdx > 0) {
+                const prevStep = TUTORIAL_STEPS[currentStepIdx - 1];
+                setCurrentStep(prevStep.step);
+                setCurrentSubStepIndex(prevStep.subSteps.length - 1);
+            }
+        }
+    }, [currentStep, currentSubStepIndex]);
+
+    // 특정 단계로 이동
+    const goToStep = useCallback((step: TutorialStep) => {
+        setCurrentStep(step);
+        setCurrentSubStepIndex(0);
+    }, []);
+
+    // 튜토리얼 완료
+    const completeTutorial = useCallback(async () => {
+        console.log('[Tutorial] Completing tutorial');
+        setIsTutorialActive(false);
+        setIsCompleted(true);
         try {
-            console.log(`[Tutorial] Checking ${screen}: context.isNewUser=${isNewUser}`);
+            await AsyncStorage.setItem(TUTORIAL_COMPLETED_KEY, 'true');
 
-            // Context state priority check (for immediate updates after register)
-            if (!isNewUser) {
-                // Double check storage just in case state wasn't synced yet (fallback)
-                const persistedFlag = await AsyncStorage.getItem('isNewUser');
-                if (persistedFlag !== 'true') {
-                    console.log(`[Tutorial] ${screen} skipped: Not a new user`);
-                    return false;
+            // 튜토리얼 가이드 친구 삭제
+            const token = await AsyncStorage.getItem('accessToken');
+            if (token) {
+                try {
+                    const response = await fetch(`${getBackendUrl()}/friends/tutorial_guide_001`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                        },
+                    });
+                    if (response.ok) {
+                        console.log('[Tutorial] Tutorial guide friend deleted successfully');
+                    } else {
+                        console.log('[Tutorial] Failed to delete tutorial guide friend:', response.status);
+                    }
+                } catch (deleteError) {
+                    console.log('[Tutorial] Error deleting tutorial guide friend:', deleteError);
                 }
             }
-
-            // Check State first (Source of Truth for active session)
-            if (!completedTutorials.has(screen)) {
-                console.log(`[Tutorial] Triggering ${screen} tutorial`);
-                setTimeout(() => {
-                    showScreenTutorial(screen);
-                }, 600);
-                return true;
-            } else {
-                console.log(`[Tutorial] ${screen} skipped: Already completed in state`);
-            }
-            return false;
         } catch (error) {
-            console.error('Failed to check tutorial status:', error);
-            return false;
-        }
-    }, [showScreenTutorial, isNewUser, completedTutorials]);
-
-    const resetTutorialState = useCallback(async () => {
-        console.log('[Tutorial] Resetting all tutorial state for new user');
-        setIsNewUser(true);
-        setCompletedTutorials(new Set());
-        setActiveScreen(null);
-        try {
-            await AsyncStorage.setItem('isNewUser', 'true');
-            await AsyncStorage.removeItem('completedTutorials');
-        } catch (error) {
-            console.error('Failed to reset tutorial state:', error);
+            console.error('Failed to save completion status:', error);
         }
     }, []);
 
+    // 튜토리얼 초기화 (다시 보기용)
+    const resetTutorial = useCallback(async () => {
+        console.log('[Tutorial] Resetting tutorial');
+        try {
+            await AsyncStorage.removeItem(TUTORIAL_COMPLETED_KEY);
+            await AsyncStorage.removeItem(TUTORIAL_SKIPPED_KEY);
+            setIsCompleted(false);
+            setTutorialFriendAdded(false);
+            setTutorialRequestSent(false);
+            startTutorial();
+        } catch (error) {
+            console.error('Failed to reset tutorial:', error);
+        }
+    }, [startTutorial]);
+
+    // 튜토리얼 친구 추가 완료 표시
+    const markTutorialFriendAdded = useCallback(() => {
+        console.log('[Tutorial] Tutorial friend added');
+        setTutorialFriendAdded(true);
+    }, []);
+
+    // 튜토리얼 요청 전송 완료 표시
+    const markTutorialRequestSent = useCallback(() => {
+        console.log('[Tutorial] Tutorial request sent');
+        setTutorialRequestSent(true);
+    }, []);
+
+    // 특정 요소가 현재 하이라이트 대상인지 확인
+    const isHighlighted = useCallback((targetId: string): boolean => {
+        if (!isTutorialActive || !currentSubStep) return false;
+        return currentSubStep.targetId === targetId;
+    }, [isTutorialActive, currentSubStep]);
+
+    // 자동 입력 값 반환
+    const shouldAutoFill = useCallback((targetId: string): string | null => {
+        if (!isTutorialActive || !currentSubStep) return null;
+        if (currentSubStep.targetId === targetId && currentSubStep.autoFill) {
+            return currentSubStep.autoFill;
+        }
+        return null;
+    }, [isTutorialActive, currentSubStep]);
+
+    // 타겟 등록 함수
+    const registerTarget = useCallback((id: string, ref: any) => {
+        if (ref) {
+            targetRefs.current[id] = ref;
+        }
+    }, []);
+
+    const unregisterTarget = useCallback((id: string) => {
+        delete targetRefs.current[id];
+    }, []);
+
+    const value: TutorialContextType = {
+        // 상태
+        isTutorialActive,
+        currentStep,
+        currentSubStepIndex,
+        currentStepData,
+        currentSubStep,
+        isCompleted,
+
+        // 튜토리얼용 데이터
+        ghostFriend: TUTORIAL_GUIDE,
+        fakeFriendRequest: FAKE_FRIEND_REQUEST,
+        fakeRequest: FAKE_A2A_REQUEST,
+        fakeSchedule: FAKE_CONFIRMED_SCHEDULE,
+        tutorialFriendAdded,
+        tutorialRequestSent,
+
+        // 액션
+        startTutorial,
+        skipTutorial,
+        nextSubStep,
+        prevSubStep,
+        goToStep,
+        completeTutorial,
+        resetTutorial,
+        markTutorialFriendAdded,
+        markTutorialRequestSent,
+
+        // 유틸리티
+        isHighlighted,
+        shouldAutoFill,
+        targetRefs,
+        registerTarget,
+        unregisterTarget,
+    };
+
     return (
-        <TutorialContext.Provider
-            value={{
-                activeScreen,
-                showScreenTutorial,
-                hideScreenTutorial,
-                checkAndShowTutorial,
-                markTutorialComplete,
-                isNewUser,
-                setIsNewUser,
-                resetTutorialState,
-            }}
-        >
+        <TutorialContext.Provider value={value}>
             {children}
         </TutorialContext.Provider>
     );
+};
+
+// Hook
+export const useTutorial = (): TutorialContextType => {
+    const context = useContext(TutorialContext);
+    if (!context) {
+        throw new Error('useTutorial must be used within a TutorialProvider');
+    }
+    return context;
 };
 
 export default TutorialContext;
