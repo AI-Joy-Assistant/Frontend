@@ -41,6 +41,7 @@ export interface A2ALog {
     location: string;
     process: { step: string; description: string }[];
     participants?: string[];
+    attendees?: any[]; // [NEW] 참석자 목록 (상세 정보 포함)
     thread_id?: string;
     rescheduleRequestedBy?: string;
   };

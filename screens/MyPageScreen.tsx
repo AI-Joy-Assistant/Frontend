@@ -9,9 +9,10 @@ import BottomNav from '../components/BottomNav';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE } from '../constants/config';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Bot, Settings, LogOut, Trash2, ChevronRight, User as UserIcon, Calendar as CalendarIcon, Check, AlertCircle, Info } from 'lucide-react-native';
+import { Bot, Settings, LogOut, Trash2, ChevronRight, User as UserIcon, Calendar as CalendarIcon, Check, AlertCircle, Info, BookOpen } from 'lucide-react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { getBackendUrl } from '../utils/environment';
+import { useTutorial } from '../store/TutorialContext';
 import { useFocusEffect } from '@react-navigation/native';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -41,6 +42,7 @@ const COLORS = {
 
 const MyPageScreen = () => {
   const navigation = useNavigation<NavigationProp>();
+  const { resetTutorial } = useTutorial();
   const [userInfo, setUserInfo] = useState<{
     id: string;
     name: string;
@@ -394,6 +396,8 @@ const MyPageScreen = () => {
             <SettingItem icon={PenSquareIcon} label="닉네임 설정" onPress={() => setNicknameModalVisible(true)} />
             <Divider />
             <SettingItem icon={SettingsIcon} label="앱 설정" onPress={() => Alert.alert('알림', '준비 중인 기능입니다.')} />
+            <Divider />
+            <SettingItem icon={BookOpen} label="튜토리얼 다시보기" onPress={resetTutorial} />
             <Divider />
             <SettingItem icon={LogOut} label="로그아웃" isDanger onPress={handleLogout} />
             <Divider />
