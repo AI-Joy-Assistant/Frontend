@@ -1256,30 +1256,7 @@ export default function HomeScreen() {
             </View>
             <Text style={styles.logoText}>JOYNER</Text>
           </View>
-          <View style={styles.profileButton}>
-            {currentUserId ? (
-              <View style={styles.profilePlaceholder}>
-                <ExpoImage
-                  source={{ uri: `${API_BASE}/auth/profile-image/${currentUserId}` }}
-                  style={styles.profileImage}
-                  cachePolicy="memory-disk"
-                  transition={200}
-                />
-                {/* Fallback Icon underneath (will show if image is transparent or fails, 
-                    but better to use conditional rendering with state if we want true fallback. 
-                    However, simplify by showing UserIcon if no image could clearly be loaded is tricky with just CSS. 
-                    Let's use a background color container with the icon, and the image on top.
-                */}
-                <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', zIndex: -1 }]}>
-                  <UserIcon size={24} color={COLORS.primaryDark} />
-                </View>
-              </View>
-            ) : (
-              <View style={styles.profilePlaceholder}>
-                <UserIcon size={24} color={COLORS.primaryDark} />
-              </View>
-            )}
-          </View>
+
         </View>
 
         <ScrollView
@@ -1338,10 +1315,10 @@ export default function HomeScreen() {
                     setPickerMode('YEAR');
                     setDatePickerVisible(true);
                   }}
-                  style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 8 }}
+                  style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 2 }}
                 >
                   <Text style={styles.calendarTitle}>{getDisplayDateHeader()}</Text>
-                  <ChevronDown size={20} color={COLORS.neutralSlate} style={{ marginLeft: 4 }} />
+                  <ChevronDown size={20} color={COLORS.neutralSlate} style={{ marginLeft: 0 }} />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={handleNextClick} style={styles.iconButton}>
                   <ChevronRight size={24} color={COLORS.neutral400} />
@@ -2780,12 +2757,13 @@ const styles = StyleSheet.create({
   calendarHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginLeft: -12, // Shift left as requested
   },
   calendarTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.neutral900,
-    marginHorizontal: 10,
+    marginHorizontal: 4,
   },
   calendarHeaderRight: {
     flexDirection: 'row',

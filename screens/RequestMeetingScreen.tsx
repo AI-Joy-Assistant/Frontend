@@ -983,22 +983,24 @@ const RequestMeetingScreen = () => {
                 </View>
 
                 {/* Send Button */}
-                <View style={styles.sendButtonContainer}>
-                    <TouchableOpacity
-                        onPress={handleSend}
-                        disabled={selectedFriends.length === 0 || !hasAnalyzed || isSending}
-                        style={[styles.sendButton, (selectedFriends.length === 0 || !hasAnalyzed || isSending) && styles.sendButtonDisabled]}
-                    >
-                        {isSending ? (
-                            <>
-                                <ActivityIndicator size="small" color={COLORS.white} style={{ marginRight: 8 }} />
-                                <Text style={styles.sendButtonText}>요청을 보내는 중...</Text>
-                            </>
-                        ) : (
-                            <Text style={styles.sendButtonText}>{hasAnalyzed ? `${selectedFriends.length}명에게 요청 보내기` : '일정을 분석해주세요'}</Text>
-                        )}
-                    </TouchableOpacity>
-                </View>
+                {hasAnalyzed && (
+                    <View style={styles.sendButtonContainer}>
+                        <TouchableOpacity
+                            onPress={handleSend}
+                            disabled={selectedFriends.length === 0 || isSending}
+                            style={[styles.sendButton, (selectedFriends.length === 0 || isSending) && styles.sendButtonDisabled]}
+                        >
+                            {isSending ? (
+                                <>
+                                    <ActivityIndicator size="small" color={COLORS.white} style={{ marginRight: 8 }} />
+                                    <Text style={styles.sendButtonText}>요청을 보내는 중...</Text>
+                                </>
+                            ) : (
+                                <Text style={styles.sendButtonText}>{`${selectedFriends.length}명에게 요청 보내기`}</Text>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                )}
             </ScrollView>
 
             {/* Time Picker Modal */}
