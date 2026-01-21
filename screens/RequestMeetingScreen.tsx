@@ -35,6 +35,7 @@ import {
     Plane,
     Minus,
     RotateCw,
+    User,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -312,7 +313,11 @@ const RequestMeetingScreen = () => {
                     const state = JSON.parse(savedState);
                     if (state.title) setTitle(state.title);
                     if (state.location) setLocation(state.location);
-                    if (state.selectedFriends) setSelectedFriends(state.selectedFriends);
+                    if (state.selectedFriends) {
+                        // 튜토리얼 가이드 제거 후 복원
+                        const filtered = state.selectedFriends.filter((id: string) => id !== 'tutorial_guide_joyner');
+                        setSelectedFriends(filtered);
+                    }
                     if (state.startDate) setStartDate(state.startDate);
                     if (state.endDate) setEndDate(state.endDate);
                     if (state.startTime) setStartTime(state.startTime);
@@ -338,6 +343,9 @@ const RequestMeetingScreen = () => {
                 // 단, 무한 루프 주의. selectedFriends가 비어있지 않을 때만.
                 setSelectedFriends(prev => prev.length > 0 ? [] : prev);
             }
+        } else if (!isTutorialActive) {
+            // 튜토리얼이 아닐 때 가이드 계정이 선택되어 있다면 제거
+            setSelectedFriends(prev => prev.filter(id => id !== 'tutorial_guide_joyner'));
         }
     }, [isTutorialActive, currentStep, currentSubStep?.id]);
 
@@ -405,7 +413,7 @@ const RequestMeetingScreen = () => {
                     id: f.friend.id,
                     name: f.friend.name,
                     email: f.friend.email,
-                    avatar: f.friend.picture || `https://picsum.photos/seed/${f.friend.id}/150`,
+                    avatar: f.friend.picture || '',
                 }));
                 setFriends(friendsList);
             }
@@ -741,7 +749,13 @@ const RequestMeetingScreen = () => {
                             if (!friend) return null;
                             return (
                                 <View key={id} style={styles.participantChip}>
-                                    <Image source={{ uri: friend.avatar }} style={styles.participantAvatar} />
+                                    {friend.avatar ? (
+                                        <Image source={{ uri: friend.avatar }} style={styles.participantAvatar} />
+                                    ) : (
+                                        <View style={[styles.participantAvatar, { backgroundColor: COLORS.neutral100, alignItems: 'center', justifyContent: 'center' }]}>
+                                            <User size={16} color={COLORS.neutralGray} />
+                                        </View>
+                                    )}
                                     <Text style={styles.participantName}>{friend.name}</Text>
                                     <TouchableOpacity onPress={() => toggleFriendSelection(id)} style={styles.participantRemove}>
                                         <X size={14} color={COLORS.neutralGray} />
@@ -953,7 +967,7 @@ const RequestMeetingScreen = () => {
                         ref={(r) => { if (r) registerTarget('section_time', r); }}
                     >
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                            <Text style={styles.settingsLabel}>선호 시간대 (WINDOW)</Text>
+                            <Text style={styles.settingsLabel}>선호 시간대</Text>
                             {durationNights > 0 && (
                                 <Text style={{ fontSize: 11, color: COLORS.primaryMain, fontWeight: 'bold' }}>여행 모드는 종일 설정됨</Text>
                             )}
@@ -984,7 +998,7 @@ const RequestMeetingScreen = () => {
                         ref={(r) => { if (r) registerTarget('section_duration', r); }}
                     >
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                            <Text style={styles.settingsLabel}>미팅 소요 시간 (DURATION)</Text>
+                            <Text style={styles.settingsLabel}>미팅 소요 시간</Text>
                             {durationNights > 0 && (
                                 <Text style={{ fontSize: 11, color: COLORS.primaryMain, fontWeight: 'bold' }}>기간으로 자동 설정됨</Text>
                             )}
@@ -1391,7 +1405,7 @@ const RequestMeetingScreen = () => {
                                     <FlatList
                                         data={displayedFriends.filter(f => f.name.includes(searchTerm) || f.email.includes(searchTerm))}
                                         keyExtractor={item => item.id}
-                                        contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24 }}
+                                        contentContainerStyle={{ paddingBottom: 24 }}
                                         renderItem={({ item }) => {
                                             const isSelected = selectedFriends.includes(item.id);
                                             return (
@@ -1401,7 +1415,13 @@ const RequestMeetingScreen = () => {
                                                     testID={item.id === ghostFriend.id ? 'checkbox_friend_select' : undefined}
                                                 >
                                                     <View style={styles.friendItemLeft}>
-                                                        <Image source={{ uri: item.avatar }} style={styles.friendItemAvatar} />
+                                                        {item.avatar ? (
+                                                            <Image source={{ uri: item.avatar }} style={styles.friendItemAvatar} />
+                                                        ) : (
+                                                            <View style={[styles.friendItemAvatar, { backgroundColor: COLORS.neutral100, alignItems: 'center', justifyContent: 'center' }]}>
+                                                                <User size={20} color={COLORS.neutralGray} />
+                                                            </View>
+                                                        )}
                                                         <View>
                                                             <Text style={[styles.friendItemName, isSelected && { color: COLORS.primaryMain }]}>{item.name}</Text>
                                                             <Text style={styles.friendItemEmail}>{item.email}</Text>
@@ -1506,7 +1526,7 @@ const styles = StyleSheet.create({
     sectionCount: { color: COLORS.primaryMain },
     participantsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
     participantChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, borderWidth: 1, borderColor: 'rgba(148, 163, 184, 0.3)', borderRadius: 16, paddingLeft: 6, paddingRight: 12, paddingVertical: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
-    participantAvatar: { width: 32, height: 32, borderRadius: 12, marginRight: 8 },
+    participantAvatar: { width: 32, height: 32, borderRadius: 16, marginRight: 8 },
     participantName: { fontSize: 12, fontWeight: 'bold', color: COLORS.neutralSlate },
     participantRemove: { marginLeft: 8 },
     addParticipantButton: { width: 44, height: 44, borderRadius: 16, borderWidth: 2, borderStyle: 'dashed', borderColor: COLORS.neutralGray, justifyContent: 'center', alignItems: 'center' },
@@ -1569,12 +1589,12 @@ const styles = StyleSheet.create({
     emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
     emptyText: { fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 8 },
     emptySubtext: { fontSize: 12, color: COLORS.neutralGray },
-    friendItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, marginHorizontal: 24, marginBottom: 4, borderRadius: 16, borderWidth: 2, borderColor: 'transparent', backgroundColor: COLORS.white },
-    friendItemSelected: { backgroundColor: COLORS.primaryBg, borderColor: COLORS.primaryMain },
-    friendItemLeft: { flexDirection: 'row', alignItems: 'center' },
-    friendItemAvatar: { width: 48, height: 48, borderRadius: 16, marginRight: 16, borderWidth: 2, borderColor: COLORS.white },
-    friendItemName: { fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate },
-    friendItemEmail: { fontSize: 12, color: COLORS.neutralGray },
+    friendItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, marginHorizontal: 0, marginBottom: 0, borderRadius: 0, borderWidth: 0, borderBottomWidth: 1, borderBottomColor: COLORS.neutral100, borderColor: 'transparent', backgroundColor: COLORS.white },
+    friendItemSelected: { backgroundColor: 'transparent' },
+    friendItemLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+    friendItemAvatar: { width: 44, height: 44, borderRadius: 22, marginRight: 12 },
+    friendItemName: { fontSize: 15, fontWeight: '600', color: COLORS.neutralSlate },
+    friendItemEmail: { fontSize: 12, color: COLORS.neutralGray, marginTop: 2 },
     checkbox: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: 'rgba(148, 163, 184, 0.4)', justifyContent: 'center', alignItems: 'center' },
     checkboxSelected: { backgroundColor: COLORS.primaryMain, borderColor: COLORS.primaryMain },
     selectCompleteContainer: { padding: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 24, backgroundColor: COLORS.white },
@@ -1663,7 +1683,7 @@ const styles = StyleSheet.create({
     successTitle: { fontSize: 24, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 12 },
     successSubtitle: { fontSize: 14, color: 'rgba(51, 65, 85, 0.6)', textAlign: 'center', fontWeight: '500', lineHeight: 22 },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-    modalSubtitle: { fontSize: 12, color: COLORS.neutralGray, marginTop: 4, fontWeight: '500' },
+    modalSubtitle: { fontSize: 14, color: COLORS.neutralGray, marginTop: 4 },
     timeSlotsContainer: { maxHeight: 280 },
     timeSlot: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, marginBottom: 8, backgroundColor: COLORS.neutralLight },
     timeSlotActive: { backgroundColor: COLORS.primaryBg, borderWidth: 2, borderColor: COLORS.primaryLight },
@@ -1673,8 +1693,8 @@ const styles = StyleSheet.create({
     bottomModalContent: { backgroundColor: COLORS.white, borderTopLeftRadius: 48, borderTopRightRadius: 48, maxHeight: '85%' },
     modalHandleContainer: { width: '100%', alignItems: 'center', paddingTop: 16, paddingBottom: 8 },
     modalHandle: { width: 48, height: 6, backgroundColor: 'rgba(148, 163, 184, 0.3)', borderRadius: 3 },
-    bottomModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: 24, paddingBottom: 8 },
-    searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.neutralLight, borderRadius: 16, marginHorizontal: 24, marginBottom: 16, paddingHorizontal: 16, paddingVertical: 12, borderWidth: 2, borderColor: 'transparent' },
+    bottomModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: COLORS.neutral100 },
+    searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.neutralLight, marginHorizontal: 16, marginVertical: 12, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12 },
     searchInput: { flex: 1, marginLeft: 12, fontSize: 14, color: COLORS.neutralSlate },
     loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
     loadingText: { marginTop: 12, fontSize: 14, color: COLORS.neutralGray },

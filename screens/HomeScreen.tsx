@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
 import {
   View,
   Text,
@@ -65,6 +65,9 @@ import NotificationPanel from '../components/NotificationPanel';
 import { badgeStore } from '../store/badgeStore';
 import { useTutorial } from '../store/TutorialContext';
 import { FAKE_CONFIRMED_SCHEDULE } from '../constants/tutorialData';
+import { dataCache, CACHE_KEYS } from '../utils/dataCache';
+import { homeStore } from '../store/homeStore';
+import { friendsStore } from '../store/friendsStore';
 
 // Pending 요청 타입 정의
 interface PendingRequest {
@@ -110,26 +113,30 @@ export default function HomeScreen() {
     nextSubStep
   } = useTutorial();
 
+  // homeStore에서 전역 상태 구독
+  const homeState = useSyncExternalStore(
+    homeStore.subscribe,
+    homeStore.getSnapshot
+  );
+  const pendingRequests = homeState.pendingRequests;
+  const notifications = homeState.notifications;
+
+  // friendsStore에서 친구 데이터 구독
+  const friendsState = useSyncExternalStore(
+    friendsStore.subscribe,
+    friendsStore.getSnapshot
+  );
+
   // 현재 사용자 ID와 프로필 사진
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [userPicture, setUserPicture] = useState<string | null>(null);
   const [authProvider, setAuthProvider] = useState<string | null>(null);
 
-  // Pending 요청 카드 State
-  const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
+  // Dismissed/Viewed State (UI 상태로 로컬 유지)
   const [dismissedRequestIds, setDismissedRequestIds] = useState<string[]>([]);
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState<string[]>([]);
   const [viewedRequestIds, setViewedRequestIds] = useState<string[]>([]);
   const [viewedNotificationIds, setViewedNotificationIds] = useState<string[]>([]);
-  const [notifications, setNotifications] = useState<{
-    id: string;
-    type: 'schedule_rejected' | 'friend_request' | 'friend_accepted' | 'general';
-    title: string;
-    message: string;
-    created_at: string;
-    read: boolean;
-    metadata?: Record<string, unknown>;
-  }[]>([]);
 
   // Load dismissed request IDs and viewed count from AsyncStorage on mount
   useEffect(() => {
@@ -206,62 +213,9 @@ export default function HomeScreen() {
     }
   };
 
-  // Pending 요청 API 호출
-  const fetchPendingRequests = async () => {
-    try {
-      const token = await AsyncStorage.getItem('accessToken');
-      console.log('📋 Pending 요청 조회 시작, token:', token ? '있음' : '없음');
-      console.log('pending request 조회 시작...');
-      if (!token) return;
 
-      const response = await fetch(`${API_BASE}/a2a/pending-requests`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        }
-      });
 
-      console.log('📋 API 응답 상태:', response.status);
 
-      if (response.ok) {
-        const data = await response.json();
-        console.log('📋 Pending 요청 데이터:', data);
-        setPendingRequests(data.requests || []);
-      } else {
-        const errorText = await response.text();
-        console.error('📋 API 에러:', errorText);
-      }
-    } catch (error) {
-      console.error('Pending 요청 조회 실패:', error);
-    }
-  };
-
-  // 알림 조회 API 호출
-  const fetchNotifications = async () => {
-    try {
-      const token = await AsyncStorage.getItem('accessToken');
-      console.log('알림 조회 시작...');
-      if (!token) return;
-
-      const response = await fetch(`${API_BASE}/chat/notifications`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setNotifications(data.notifications || []);
-      }
-    } catch (error) {
-      console.error('알림 조회 실패:', error);
-    }
-  };
 
   // 캘린더 연동 상태 확인
   const checkCalendarLinkStatus = async () => {
@@ -296,12 +250,30 @@ export default function HomeScreen() {
   };
 
   // 현재 사용자 정보 조회
-  const fetchCurrentUser = async () => {
+  const fetchCurrentUser = async (useCache = true) => {
+    const cacheKey = CACHE_KEYS.USER_ME;
+
     try {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) return;
 
-      // AsyncStorage에서 프로필 사진 가져오기
+      // 캐시 먼저 확인
+      if (useCache) {
+        const cached = dataCache.get<any>(cacheKey);
+        if (cached.exists && cached.data) {
+          setCurrentUserId(cached.data.id);
+          if (cached.data.picture) setUserPicture(cached.data.picture);
+
+          if (!cached.isStale) return;
+          if (dataCache.isPending(cacheKey)) return;
+        }
+      }
+
+      // 중복 요청 방지
+      if (dataCache.isPending(cacheKey)) return;
+      dataCache.markPending(cacheKey);
+
+      // AsyncStorage에서 프로필 사진 가져오기 (백업)
       const storedPicture = await AsyncStorage.getItem('userPicture');
       if (storedPicture) {
         setUserPicture(storedPicture);
@@ -309,42 +281,41 @@ export default function HomeScreen() {
 
       // AsyncStorage에서 auth provider 가져오기
       const storedAuthProvider = await AsyncStorage.getItem('authProvider');
-      console.log('[DEBUG] storedAuthProvider:', storedAuthProvider);
       if (storedAuthProvider) {
         setAuthProvider(storedAuthProvider);
-        // Apple 로그인 유저면 바로 캘린더 연동 상태 체크 (타이밍 이슈 해결)
         if (storedAuthProvider === 'apple') {
-          console.log('[DEBUG] Apple 유저 감지 - checkCalendarLinkStatus 호출');
           checkCalendarLinkStatus();
         }
-      } else {
-        console.log('[DEBUG] authProvider가 AsyncStorage에 없음!');
       }
 
       const response = await fetch(`${API_BASE}/auth/me`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Cache-Control': 'no-cache'
+        }
       });
 
       if (response.ok) {
         const data = await response.json();
         setCurrentUserId(data.id);
-        // 서버에서 받은 사진 정보가 있으면 업데이트
         if (data.picture) {
           setUserPicture(data.picture);
         }
+        dataCache.set(cacheKey, data, 5 * 60 * 1000); // 5분 캐시
       }
     } catch (error) {
       console.error('사용자 정보 조회 실패:', error);
+      dataCache.invalidate(cacheKey);
     }
   };
 
-  // 화면에 포커스될 때마다 요청 및 알림 새로고침
+  // 화면에 포커스될 때마다 요청 및 알림 새로고침 (캐시 기반)
   useFocusEffect(
     useCallback(() => {
-
+      // 캐시 기반 데이터 로딩
+      homeStore.fetchAll();
+      friendsStore.fetchAll();
       fetchCurrentUser();
-      fetchPendingRequests();
-      fetchNotifications();
 
       // Apple 로그인 사용자만 캘린더 연동 상태 확인
       if (authProvider === 'apple') {
@@ -371,16 +342,12 @@ export default function HomeScreen() {
       ['a2a_request', 'friend_request', 'friend_accepted', 'notification', 'a2a_status_changed'],
       (data) => {
         console.log("[WS:Home] WS Event:", data.type);
-        fetchPendingRequests();
-        fetchNotifications();
-        fetchFriends();
 
-        // 데이터 일관성을 위한 지연 갱신
-        setTimeout(() => {
-          fetchPendingRequests();
-          fetchNotifications();
-          fetchFriends();
-        }, 500);
+        // WebSocket 이벤트 시 캐시 무효화 후 새로고침
+        homeStore.invalidate();
+        homeStore.refresh();
+        friendsStore.invalidate();
+        friendsStore.refresh();
       }
     );
 
@@ -424,7 +391,8 @@ export default function HomeScreen() {
   const [isAllDay, setIsAllDay] = useState(false);
 
   // Participant & Location State (A2A Integration)
-  const [friends, setFriends] = useState<Friend[]>([]);
+  // friends 데이터는 friendsState.friends에서 가져옴
+  const friends = friendsState.friends;
   const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [friendSearchQuery, setFriendSearchQuery] = useState('');
@@ -924,24 +892,7 @@ export default function HomeScreen() {
     }
   };
 
-  // 친구 목록 불러오기
-  const fetchFriends = async () => {
-    try {
-      const token = await AsyncStorage.getItem('accessToken');
-      if (!token) return;
-
-      const response = await fetch(`${API_BASE}/friends/list`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setFriends(data.friends || []);
-      }
-    } catch (error) {
-      console.error('Error fetching friends:', error);
-    }
-  };
+  // [REMOVED] fetchFriends - friendsStore.fetchAll()로 대체됨
 
   // 친구 선택 토글
   const toggleFriendSelection = (friendUserId: string) => {
@@ -978,8 +929,8 @@ export default function HomeScreen() {
     setSelectedFriendIds([]);
     setFormLocation('');
     setFriendSearchQuery('');
-    // 친구 목록 새로고침
-    fetchFriends();
+    // 친구 목록 새로고침 (캐시 기반)
+    friendsStore.fetchAll();
     setShowScheduleModal(true);
 
     // [NEW] 튜토리얼: 홈 추가 버튼 클릭 처리 (모달 열리는 시간 고려)
@@ -2309,10 +2260,14 @@ export default function HomeScreen() {
       >
         <View style={styles.friendPickerOverlay}>
           <View style={styles.friendPickerContainer}>
+            <View style={styles.friendPickerHandle} />
             <View style={styles.friendPickerHeader}>
-              <Text style={styles.friendPickerTitle}>참여자 선택</Text>
+              <View>
+                <Text style={styles.friendPickerTitle}>참여자 선택</Text>
+                <Text style={styles.friendPickerSubtitle}>일정에 초대할 친구를 선택해주세요</Text>
+              </View>
               <TouchableOpacity onPress={() => setShowFriendPicker(false)}>
-                <X size={24} color={COLORS.neutral400} />
+                <X size={24} color={COLORS.neutralGray} />
               </TouchableOpacity>
             </View>
 
@@ -2322,7 +2277,7 @@ export default function HomeScreen() {
                 style={styles.friendSearchInput}
                 value={friendSearchQuery}
                 onChangeText={setFriendSearchQuery}
-                placeholder="친구 검색..."
+                placeholder="이름 또는 이메일로 검색"
                 placeholderTextColor={COLORS.neutral400}
               />
             </View>
@@ -2344,8 +2299,8 @@ export default function HomeScreen() {
                         style={styles.friendItemAvatarImage}
                       />
                     ) : (
-                      <View style={[styles.friendItemAvatar, { backgroundColor: index % 2 === 0 ? COLORS.primaryLight : COLORS.primaryMain }]}>
-                        <Text style={styles.friendItemAvatarText}>{item.friend.name[0]}</Text>
+                      <View style={[styles.friendItemAvatar, { backgroundColor: COLORS.neutral100, alignItems: 'center', justifyContent: 'center' }]}>
+                        <UserIcon size={20} color={COLORS.neutral400} />
                       </View>
                     )}
                     <View style={styles.friendItemInfo}>
@@ -2377,7 +2332,7 @@ export default function HomeScreen() {
                 onPress={() => setShowFriendPicker(false)}
               >
                 <Text style={styles.friendPickerButtonText}>
-                  완료 {selectedFriendIds.length > 0 ? `(${selectedFriendIds.length}명 선택)` : ''}
+                  선택 완료 ({selectedFriendIds.length}명)
                 </Text>
               </TouchableOpacity>
             </View>
@@ -3467,18 +3422,26 @@ const styles = StyleSheet.create({
   a2aSaveButton: {
     backgroundColor: COLORS.primaryDark,
   },
-  // Friend Picker Modal Styles
+  // Friend Picker Modal Styles (exact copy from RequestMeetingScreen)
   friendPickerOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
   friendPickerContainer: {
-    backgroundColor: 'white',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '70%',
-    paddingBottom: 24,
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 48,
+    borderTopRightRadius: 48,
+    maxHeight: '85%',
+  },
+  friendPickerHandle: {
+    width: 48,
+    height: 6,
+    backgroundColor: 'rgba(148, 163, 184, 0.3)',
+    borderRadius: 3,
+    alignSelf: 'center',
+    marginTop: 16,
+    marginBottom: 8,
   },
   friendPickerHeader: {
     flexDirection: 'row',
@@ -3491,31 +3454,37 @@ const styles = StyleSheet.create({
   friendPickerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.neutral900,
+    color: COLORS.neutralSlate,
+  },
+  friendPickerSubtitle: {
+    fontSize: 14,
+    color: COLORS.neutralGray,
+    marginTop: 4,
   },
   friendSearchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.neutral50,
+    backgroundColor: COLORS.neutralLight,
     marginHorizontal: 16,
     marginVertical: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 12,
-    gap: 8,
   },
   friendSearchInput: {
     flex: 1,
+    marginLeft: 12,
     fontSize: 14,
-    color: COLORS.neutral900,
+    color: COLORS.neutralSlate,
   },
   friendList: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 0,
   },
   friendItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.neutral100,
   },
@@ -3560,18 +3529,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   friendPickerFooter: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
+    padding: 24,
+    paddingBottom: 40,
+    backgroundColor: COLORS.white,
   },
   friendPickerButton: {
-    backgroundColor: COLORS.primaryMain,
-    paddingVertical: 14,
-    borderRadius: 12,
+    backgroundColor: '#3730A3',
+    paddingVertical: 16,
+    borderRadius: 24,
     alignItems: 'center',
+    shadowColor: '#3730A3',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
   },
   friendPickerButtonText: {
     color: 'white',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   emptyFriendsText: {
