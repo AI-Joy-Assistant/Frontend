@@ -62,8 +62,35 @@ const MyPageScreen = () => {
   const [resultModalType, setResultModalType] = useState<'success' | 'error' | 'info'>('success');
   const [resultModalMessage, setResultModalMessage] = useState('');
   const [isCalendarLinked, setIsCalendarLinked] = useState<boolean | null>(null);
+  const [cachedProfilePicture, setCachedProfilePicture] = useState<string | null>(null);
 
-  // 사용자 정보 불러오기
+  // 컴포넌트 마운트 즉시 캐시 데이터 병렬 로드 (가장 빠른 표시를 위해)
+  useEffect(() => {
+    const loadCachedData = async () => {
+      try {
+        const [cachedUserInfo, userPicture, cachedStatus, storedAuthProvider] = await Promise.all([
+          AsyncStorage.getItem('cachedUserInfo'),
+          AsyncStorage.getItem('userPicture'),
+          AsyncStorage.getItem('cachedCalendarLinked'),
+          AsyncStorage.getItem('authProvider'),
+        ]);
+
+        if (userPicture) setCachedProfilePicture(userPicture);
+        if (cachedUserInfo) {
+          const parsed = JSON.parse(cachedUserInfo);
+          setUserInfo(parsed);
+          setNickname(parsed.name || '');
+        }
+        if (cachedStatus !== null) setIsCalendarLinked(cachedStatus === 'true');
+        if (storedAuthProvider) setAuthProvider(storedAuthProvider);
+      } catch (error) {
+        console.error('캐시 로드 오류:', error);
+      }
+    };
+    loadCachedData();
+  }, []);
+
+  // 사용자 정보 불러오기 (API에서 최신 데이터 가져오기)
   const fetchUserInfo = async () => {
     try {
       const token = await AsyncStorage.getItem('accessToken');
@@ -71,12 +98,6 @@ const MyPageScreen = () => {
         Alert.alert('오류', '로그인이 필요합니다.');
         navigation.navigate('Login');
         return;
-      }
-
-      // AsyncStorage에서 auth provider 가져오기
-      const storedAuthProvider = await AsyncStorage.getItem('authProvider');
-      if (storedAuthProvider) {
-        setAuthProvider(storedAuthProvider);
       }
 
       // 백엔드에서 사용자 정보 가져오기
@@ -91,12 +112,16 @@ const MyPageScreen = () => {
         const userData = await response.json();
         setUserInfo(userData);
         setNickname(userData.name || '');
-      } else {
+        // 캐시에 저장
+        await AsyncStorage.setItem('cachedUserInfo', JSON.stringify(userData));
+      } else if (!userInfo) {
         Alert.alert('오류', '사용자 정보를 불러오지 못했습니다.');
       }
     } catch (error) {
       console.error('사용자 정보 조회 오류:', error);
-      Alert.alert('오류', '사용자 정보를 불러오지 못했습니다.');
+      if (!userInfo) {
+        Alert.alert('오류', '사용자 정보를 불러오지 못했습니다.');
+      }
     }
   };
 
@@ -153,7 +178,7 @@ const MyPageScreen = () => {
     }
   };
 
-  // 캘린더 연동 상태 확인
+  // 캘린더 연동 상태 확인 (API에서 최신 데이터 가져오기)
   const checkCalendarLinkStatus = async () => {
     try {
       const token = await AsyncStorage.getItem('accessToken');
@@ -169,6 +194,7 @@ const MyPageScreen = () => {
       if (response.ok) {
         const data = await response.json();
         setIsCalendarLinked(data.is_linked);
+        await AsyncStorage.setItem('cachedCalendarLinked', data.is_linked ? 'true' : 'false');
       }
     } catch (error) {
       console.error('캘린더 상태 확인 오류:', error);
@@ -352,9 +378,13 @@ const MyPageScreen = () => {
         >
           <View style={styles.headerOverlay} />
           <View style={styles.avatarContainer}>
-            {userInfo.profile_image ? (
+            {(userInfo.profile_image || cachedProfilePicture) ? (
               <Image
-                source={{ uri: `${API_BASE}/auth/profile-image/${userInfo.id}?t=${Date.now()}` }}
+                source={{
+                  uri: userInfo.profile_image
+                    ? `${API_BASE}/auth/profile-image/${userInfo.id}`
+                    : cachedProfilePicture!
+                }}
                 style={styles.avatarImage}
               />
             ) : (
