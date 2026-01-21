@@ -135,7 +135,7 @@ export default function ChatScreen() {
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [friendSearchQuery, setFriendSearchQuery] = useState("");
-  const [userName, setUserName] = useState("User");
+  const [userName, setUserName] = useState("");
 
   const isAtBottom = useRef(true);
   const messagesEndRef = useRef<FlatList>(null);
@@ -174,6 +174,12 @@ export default function ChatScreen() {
 
   const fetchUserProfile = async () => {
     try {
+      // 캐시된 이름 먼저 로드 (빠른 표시를 위해)
+      const cachedName = await AsyncStorage.getItem("cachedUserName");
+      if (cachedName && !userName) {
+        setUserName(cachedName);
+      }
+
       const token = await AsyncStorage.getItem("accessToken");
       if (!token) return;
 
@@ -182,8 +188,11 @@ export default function ChatScreen() {
       });
       if (res.ok) {
         const data = await res.json();
-        setUserName(data.name || data.nickname || "User");
+        const name = data.name || data.nickname || "User";
+        setUserName(name);
         setUserId(data.id); // WebSocket 연결에 필요
+        // 이름 캐시에 저장
+        await AsyncStorage.setItem("cachedUserName", name);
       }
     } catch (e) {
       console.error("Failed to fetch user profile", e);
@@ -1501,7 +1510,7 @@ export default function ChatScreen() {
       {/* 3. Messages Area */}
       <KeyboardAvoidingView
         style={styles.chatContainer}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         {loading && currentMessages.length === 0 ? (
           <View style={styles.loadingContainer}>
@@ -1557,9 +1566,9 @@ export default function ChatScreen() {
             {
               paddingBottom: isKeyboardVisible
                 ? 10
-                : Platform.OS === "ios"
-                  ? 90
-                  : 80,
+                : Platform.OS === "web"
+                  ? 100
+                  : Math.max(insets.bottom, 20) + 60,
             },
           ]}
         >
@@ -1650,7 +1659,7 @@ export default function ChatScreen() {
         </View>
       </KeyboardAvoidingView>
 
-      <BottomNav activeTab={Tab.CHAT} />
+      {!isKeyboardVisible && <BottomNav activeTab={Tab.CHAT} />}
 
       {/* Friend Selection Modal */}
       <Modal
