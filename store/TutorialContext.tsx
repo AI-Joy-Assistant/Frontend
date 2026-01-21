@@ -173,14 +173,17 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
         console.log('[Tutorial] Completing tutorial');
         setIsTutorialActive(false);
         setIsCompleted(true);
+        setTutorialFriendAdded(false);  // 가상 친구 상태 초기화
+
         try {
             await AsyncStorage.setItem(TUTORIAL_COMPLETED_KEY, 'true');
 
-            // 튜토리얼 가이드 친구 삭제
+            // 튜토리얼 가이드 친구 삭제 시도 (실제 DB에 있는 경우)
             const token = await AsyncStorage.getItem('accessToken');
             if (token) {
                 try {
-                    const response = await fetch(`${getBackendUrl()}/friends/tutorial_guide_001`, {
+                    // 먼저 실제 유저인지 확인하고 삭제 시도
+                    const response = await fetch(`${getBackendUrl()}/friends/${TUTORIAL_GUIDE.id}`, {
                         method: 'DELETE',
                         headers: {
                             'Authorization': `Bearer ${token}`,
@@ -189,12 +192,16 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
                     if (response.ok) {
                         console.log('[Tutorial] Tutorial guide friend deleted successfully');
                     } else {
-                        console.log('[Tutorial] Failed to delete tutorial guide friend:', response.status);
+                        // 가상 친구인 경우 404 에러는 정상
+                        console.log('[Tutorial] Tutorial guide was virtual (not in DB)');
                     }
                 } catch (deleteError) {
                     console.log('[Tutorial] Error deleting tutorial guide friend:', deleteError);
                 }
             }
+
+            // friendsStore 캐시 무효화하여 가상 친구가 표시되지 않도록 함
+            // (tutorialFriendAdded = false가 되면 displayedFriends에서 가상 친구가 제외됨)
         } catch (error) {
             console.error('Failed to save completion status:', error);
         }

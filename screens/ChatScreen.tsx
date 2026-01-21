@@ -28,6 +28,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "../constants/config";
 import WebSocketService from "../services/WebSocketService";
 import { badgeStore } from "../store/badgeStore";
+import { dataCache, CACHE_KEYS } from "../utils/dataCache";
 
 import { LinearGradient } from "expo-linear-gradient";
 import {
@@ -42,6 +43,7 @@ import {
   Trash2,
   Plus,
   MessageSquare,
+  User,
 } from "lucide-react-native";
 import { COLORS } from "../constants/Colors";
 import { BlurView } from "expo-blur";
@@ -133,7 +135,7 @@ export default function ChatScreen() {
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [friendSearchQuery, setFriendSearchQuery] = useState("");
-  const [userName, setUserName] = useState("User");
+  const [userName, setUserName] = useState("");
 
   const isAtBottom = useRef(true);
   const messagesEndRef = useRef<FlatList>(null);
@@ -172,6 +174,12 @@ export default function ChatScreen() {
 
   const fetchUserProfile = async () => {
     try {
+      // 캐시된 이름 먼저 로드 (빠른 표시를 위해)
+      const cachedName = await AsyncStorage.getItem("cachedUserName");
+      if (cachedName && !userName) {
+        setUserName(cachedName);
+      }
+
       const token = await AsyncStorage.getItem("accessToken");
       if (!token) return;
 
@@ -180,8 +188,11 @@ export default function ChatScreen() {
       });
       if (res.ok) {
         const data = await res.json();
-        setUserName(data.name || data.nickname || "User");
+        const name = data.name || data.nickname || "User";
+        setUserName(name);
         setUserId(data.id); // WebSocket 연결에 필요
+        // 이름 캐시에 저장
+        await AsyncStorage.setItem("cachedUserName", name);
       }
     } catch (e) {
       console.error("Failed to fetch user profile", e);
@@ -189,10 +200,19 @@ export default function ChatScreen() {
   };
 
   // 기본 채팅 세션 조회/생성
-  const fetchDefaultSession = async () => {
+  const fetchDefaultSession = async (useCache = true) => {
+    const cacheKey = 'chat:default-session';
     try {
       const token = await AsyncStorage.getItem("accessToken");
       if (!token) return null;
+
+      // 캐시 확인
+      if (useCache) {
+        const cached = dataCache.get<any>(cacheKey);
+        if (cached.exists && cached.data) {
+          if (!cached.isStale) return cached.data;
+        }
+      }
 
       const res = await fetch(`${API_BASE}/chat/default-session`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -200,6 +220,7 @@ export default function ChatScreen() {
 
       if (res.ok) {
         const data = await res.json();
+        dataCache.set(cacheKey, data, 5 * 60 * 1000);
         return data; // { id, title, is_new }
       }
       return null;
@@ -212,11 +233,41 @@ export default function ChatScreen() {
   // 기본 세션 초기화 여부 추적
   const defaultSessionInitialized = useRef(false);
 
-  // 채팅 세션 목록 불러오기
-  const fetchSessions = async (forceDefaultCheck = false) => {
+  // 채팅 세션 목록 불러오기 - 캐싱 + 중복 요청 방지
+  const fetchSessions = async (forceDefaultCheck = false, useCache = true) => {
+    const cacheKey = CACHE_KEYS.CHAT_SESSIONS;
+
     try {
       const token = await AsyncStorage.getItem("accessToken");
       if (!token) return;
+
+      // 캐시 먼저 확인 (즉시 표시)
+      if (useCache) {
+        const cached = dataCache.get<ChatSession[]>(cacheKey);
+        if (cached.exists && cached.data) {
+          setSessions(cached.data);
+          if (!currentSessionId && cached.data.length > 0) {
+            const defaultSession = cached.data.find(s => s.title === "기본 채팅");
+            setCurrentSessionId(defaultSession?.id || cached.data[0].id);
+          }
+          setLoading(false);
+
+          // 신선한 캐시면 바로 종료
+          if (!cached.isStale) {
+            return;
+          }
+          // stale 캐시면 이미 요청 중인지 확인 후 백그라운드 갱신
+          if (dataCache.isPending(cacheKey)) {
+            return; // 이미 요청 중이면 중복 요청 방지
+          }
+        }
+      }
+
+      // 중복 요청 방지
+      if (dataCache.isPending(cacheKey)) {
+        return;
+      }
+      dataCache.markPending(cacheKey);
 
       // 기본 세션 확인/생성은 최초 1회만 수행
       if (!defaultSessionInitialized.current || forceDefaultCheck) {
@@ -233,23 +284,21 @@ export default function ChatScreen() {
         const backendSessions = data.sessions || [];
 
         if (backendSessions.length > 0) {
-          // 백엔드 세션을 로컬 형식으로 변환
           const loadedSessions: ChatSession[] = backendSessions.map((s: any) => ({
             id: s.id,
             title: s.title || "새 채팅",
             updatedAt: s.updated_at ? new Date(s.updated_at) : new Date(),
-            messages: [], // 메시지는 별도로 로드
-            isDefault: s.is_default || false, // 기본 채팅 여부
+            messages: [],
+            isDefault: s.is_default || false,
           }));
 
           setSessions(loadedSessions);
+          dataCache.set(cacheKey, loadedSessions, 2 * 60 * 1000); // 2분 캐시
 
-          // 현재 세션이 없으면 기본 채팅 또는 첫 번째 세션 선택
           if (!currentSessionId) {
             const lastActiveId = await AsyncStorage.getItem('lastActiveSessionId');
             const defaultSession = loadedSessions.find(s => s.title === "기본 채팅");
 
-            // 저장된 마지막 세션이 있고 실제 목록에도 존재하면 해당 세션 복구
             if (lastActiveId && loadedSessions.some(s => s.id === lastActiveId)) {
               setCurrentSessionId(lastActiveId);
             } else {
@@ -260,6 +309,9 @@ export default function ChatScreen() {
       }
     } catch (e) {
       console.error("Failed to fetch sessions", e);
+      dataCache.invalidate(cacheKey); // 에러 시 pending 상태 해제
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -344,7 +396,7 @@ export default function ChatScreen() {
   useEffect(() => {
     fetchFriends();
     fetchUserProfile();
-    fetchSessions();
+    // fetchSessions는 useFocusEffect에서만 호출 (중복 방지)
   }, []);
 
   // Fixed formatTime (Korean Standard Time)
@@ -1458,7 +1510,7 @@ export default function ChatScreen() {
       {/* 3. Messages Area */}
       <KeyboardAvoidingView
         style={styles.chatContainer}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         {loading && currentMessages.length === 0 ? (
           <View style={styles.loadingContainer}>
@@ -1514,9 +1566,9 @@ export default function ChatScreen() {
             {
               paddingBottom: isKeyboardVisible
                 ? 10
-                : Platform.OS === "ios"
-                  ? 90
-                  : 80,
+                : Platform.OS === "web"
+                  ? 100
+                  : Math.max(insets.bottom, 20) + 60,
             },
           ]}
         >
@@ -1607,7 +1659,7 @@ export default function ChatScreen() {
         </View>
       </KeyboardAvoidingView>
 
-      <BottomNav activeTab={Tab.CHAT} />
+      {!isKeyboardVisible && <BottomNav activeTab={Tab.CHAT} />}
 
       {/* Friend Selection Modal */}
       <Modal
@@ -1626,32 +1678,19 @@ export default function ChatScreen() {
 
                 <View style={styles.modalHeader}>
                   <View>
-                    <Text style={styles.modalTitle}>
-                      친구 선택
-                    </Text>
-                    <Text style={styles.modalSubtitle}>
-                      일정을 잡을 친구를 선택하세요
-                    </Text>
+                    <Text style={styles.modalTitle}>친구 선택</Text>
+                    <Text style={styles.modalSubtitle}>일정을 잡을 친구를 선택하세요</Text>
                   </View>
-                  <TouchableOpacity
-                    onPress={() => setShowFriendModal(false)}
-                  >
-                    <X
-                      size={24}
-                      color={COLORS.neutral400}
-                    />
+                  <TouchableOpacity onPress={() => setShowFriendModal(false)}>
+                    <X size={24} color={COLORS.neutralGray} />
                   </TouchableOpacity>
                 </View>
 
                 <View style={styles.modalSearch}>
-                  <Search
-                    size={18}
-                    color={COLORS.neutral400}
-                    style={styles.modalSearchIcon}
-                  />
+                  <Search size={18} color={COLORS.neutralGray} style={styles.modalSearchIcon} />
                   <TextInput
-                    placeholder="친구 검색"
-                    placeholderTextColor={COLORS.neutral400}
+                    placeholder="이름 또는 이메일로 검색"
+                    placeholderTextColor={COLORS.neutralGray}
                     style={styles.modalSearchInput}
                     value={friendSearchQuery}
                     onChangeText={setFriendSearchQuery}
@@ -1695,14 +1734,27 @@ export default function ChatScreen() {
                               styles.friendListAvatarContainer
                             }
                           >
-                            <Image
-                              source={{
-                                uri:
-                                  item.friend.picture ||
-                                  "https://picsum.photos/150",
-                              }}
-                              style={styles.friendListAvatar}
-                            />
+                            {item.friend.picture ? (
+                              <Image
+                                source={{
+                                  uri: item.friend.picture,
+                                }}
+                                style={styles.friendListAvatar}
+                              />
+                            ) : (
+                              <View
+                                style={[
+                                  styles.friendListAvatar,
+                                  {
+                                    justifyContent: "center",
+                                    alignItems: "center",
+                                    backgroundColor: COLORS.neutral200,
+                                  },
+                                ]}
+                              >
+                                <User size={20} color={COLORS.neutral400} />
+                              </View>
+                            )}
                           </View>
                           <View>
                             <Text
@@ -1744,9 +1796,7 @@ export default function ChatScreen() {
                     style={styles.modalDoneButton}
                   >
                     <Text style={styles.modalDoneButtonText}>
-                      완료{" "}
-                      {selectedFriends.length > 0 &&
-                        `(${selectedFriends.length})`}
+                      선택 완료 ({selectedFriends.length}명)
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -2439,47 +2489,47 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   modalContent: {
-    backgroundColor: "white",
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    paddingBottom: 40,
-    maxHeight: "80%",
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 48,
+    borderTopRightRadius: 48,
+    maxHeight: "85%",
   },
   modalHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: COLORS.neutral200,
-    borderRadius: 2,
+    width: 48,
+    height: 6,
+    backgroundColor: "rgba(148, 163, 184, 0.3)",
+    borderRadius: 3,
     alignSelf: "center",
-    marginTop: 12,
-    marginBottom: 20,
+    marginTop: 16,
+    marginBottom: 8,
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 24,
-    marginBottom: 24,
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.neutral100,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "bold",
     color: COLORS.neutralSlate,
-    marginBottom: 4,
   },
   modalSubtitle: {
     fontSize: 14,
-    color: COLORS.neutral400,
+    color: COLORS.neutralGray,
+    marginTop: 4,
   },
   modalSearch: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: COLORS.neutralLight,
-    marginHorizontal: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 16,
-    marginBottom: 24,
+    marginHorizontal: 16,
+    marginVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
   },
   modalSearchIcon: {
     marginRight: 12,
@@ -2490,7 +2540,7 @@ const styles = StyleSheet.create({
     color: COLORS.neutralSlate,
   },
   friendList: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 0,
     maxHeight: 300,
   },
   friendListItem: {
@@ -2500,13 +2550,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.neutral100,
+    paddingHorizontal: 16,
+    marginHorizontal: 0,
+    backgroundColor: COLORS.white,
   },
   friendListItemSelected: {
-    backgroundColor: COLORS.primaryBg,
-    marginHorizontal: -12,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderBottomWidth: 0,
+    backgroundColor: "transparent",
   },
   friendListInfo: {
     flexDirection: "row",
@@ -2561,24 +2610,24 @@ const styles = StyleSheet.create({
   },
   modalFooter: {
     padding: 24,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.neutral100,
+    paddingBottom: 40,
+    backgroundColor: COLORS.white,
   },
   modalDoneButton: {
-    backgroundColor: COLORS.primaryMain,
+    backgroundColor: '#3730A3',
+    borderRadius: 24,
     paddingVertical: 16,
-    borderRadius: 16,
     alignItems: "center",
-    shadowColor: COLORS.primaryMain,
-    shadowOffset: { width: 0, height: 4 },
+    shadowColor: '#3730A3',
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowRadius: 16,
+    elevation: 8,
   },
   modalDoneButtonText: {
-    color: "white",
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "bold",
+    color: COLORS.white,
   },
   // 충돌 선택지 스타일
   conflictChoiceContainer: {
