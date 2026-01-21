@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Image as ExpoImage } from 'expo-image';
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, Modal, TextInput, Alert, ScrollView, Platform, TouchableWithoutFeedback
 } from 'react-native';
@@ -353,9 +354,11 @@ const MyPageScreen = () => {
           <View style={styles.headerOverlay} />
           <View style={styles.avatarContainer}>
             {userInfo.profile_image ? (
-              <Image
+              <ExpoImage
                 source={{ uri: `${API_BASE}/auth/profile-image/${userInfo.id}?t=${Date.now()}` }}
                 style={styles.avatarImage}
+                contentFit="cover"
+                transition={200}
               />
             ) : (
               <UserIcon size={48} color={COLORS.primaryMain} />

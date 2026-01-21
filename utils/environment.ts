@@ -22,7 +22,7 @@ export const getBackendUrl = (): string => {
 
     // 3. 웹 개발 환경 (로컬 서버 사용)
     if (Platform.OS === 'web') {
-        return 'https://api.joyner.co.kr';
+        return 'https://apijoyner.co.kr'
     }
     return PRODUCTION_URL;
 };

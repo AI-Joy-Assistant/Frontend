@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 import {
     View,
     Text,
@@ -79,6 +79,7 @@ const COLORS = {
 
 import { useTutorial } from '../store/TutorialContext';
 import { FAKE_A2A_REQUEST, FAKE_RECEIVED_REQUEST } from '../constants/tutorialData';
+import { a2aStore } from '../store/a2aStore';
 
 const A2AScreen = () => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
