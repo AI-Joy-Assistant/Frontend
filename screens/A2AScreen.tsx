@@ -79,7 +79,7 @@ const COLORS = {
 
 import { useTutorial } from '../store/TutorialContext';
 import { FAKE_A2A_REQUEST, FAKE_RECEIVED_REQUEST } from '../constants/tutorialData';
-import { a2aStore } from '../store/a2aStore';
+import { dataCache, CACHE_KEYS } from '../utils/dataCache';
 
 const A2AScreen = () => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -812,19 +812,39 @@ const A2AScreen = () => {
         }
     };
 
-    const fetchCurrentUser = async () => {
+    const fetchCurrentUser = async (useCache = true) => {
+        const cacheKey = CACHE_KEYS.USER_ME;
         try {
             const token = await AsyncStorage.getItem('accessToken');
-            if (!token) return;
-            const res = await fetch(`${API_BASE}/auth/me`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setCurrentUserId(data.id);
+            if (token) {
+                // 캐시 확인
+                if (useCache) {
+                    const cached = dataCache.get<any>(cacheKey);
+                    if (cached.exists && cached.data) {
+                        setCurrentUserId(cached.data.id);
+                        if (!cached.isStale) return;
+                        if (dataCache.isPending(cacheKey)) return;
+                    }
+                }
+
+                if (dataCache.isPending(cacheKey)) return;
+                dataCache.markPending(cacheKey);
+
+                const res = await fetch(`${API_BASE}/auth/me`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Cache-Control': 'no-cache'
+                    }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    setCurrentUserId(data.id);
+                    dataCache.set(cacheKey, data, 5 * 60 * 1000);
+                }
             }
         } catch (e) {
             console.error("Failed to fetch current user", e);
+            dataCache.invalidate(cacheKey);
         }
     };
 
@@ -840,7 +860,8 @@ const A2AScreen = () => {
     } = useTutorial();
 
     // Fetch logs (GET /a2a/sessions)
-    const fetchA2ALogs = useCallback(async (showLoading = true) => {
+    const fetchA2ALogs = useCallback(async (showLoading = true, useCache = true) => {
+        const cacheKey = 'a2a:sessions';
         if (showLoading) setLoading(true);
         try {
             // 튜토리얼 모드일 경우 가짜 데이터 주입
@@ -934,14 +955,28 @@ const A2AScreen = () => {
             }
 
 
-            const token = await AsyncStorage.getItem('accessToken');
+            if (useCache) {
+                const cached = dataCache.get<A2ALog[]>(cacheKey);
+                if (cached.exists && cached.data) {
+                    setLogs(cached.data);
+                    if (showLoading) setLoading(false);
 
-            // ... (기존 API 호출 코드)
+                    if (!cached.isStale) return; // 신선하면 종료
+                    if (dataCache.isPending(cacheKey)) return; // 이미 요청 중
+                }
+            }
+
+            // 중복 요청 방지
+            if (dataCache.isPending(cacheKey)) return;
+            dataCache.markPending(cacheKey);
+
+            const token = await AsyncStorage.getItem('accessToken');
 
             const response = await fetch(`${API_BASE}/a2a/sessions`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache', // 서버 캐시 무시
                 },
             });
 
@@ -1046,12 +1081,13 @@ const A2AScreen = () => {
                         initiator_user_id: session.initiator_user_id
                     }));
                 setLogs(mappedLogs);
-
+                dataCache.set(cacheKey, mappedLogs, 5 * 60 * 1000); // 5분 캐시
             } else {
                 console.error("Failed to fetch sessions:", response.status);
             }
         } catch (error) {
             console.error("Error fetching A2A logs:", error);
+            dataCache.invalidate(cacheKey); // 에러 시 pending 해제
         } finally {
             if (showLoading) setLoading(false);
         }
@@ -1064,9 +1100,12 @@ const A2AScreen = () => {
         }
     }, [isTutorialActive, currentStep, fetchA2ALogs]);
 
-    useEffect(() => {
-        fetchCurrentUser();
-    }, []);
+    useFocusEffect(
+        useCallback(() => {
+            fetchCurrentUser();
+            fetchA2ALogs();
+        }, [fetchA2ALogs])
+    );
 
     // currentUserId가 설정된 후에 로그 불러오기 (필터링에 필요)
     // currentUserId가 설정된 후에 로그 불러오기 (필터링에 필요)

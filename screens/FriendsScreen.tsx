@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { UserPlus, Check, X, Info } from 'lucide-react-native';
+import { UserPlus, Check, X, Info, User } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -27,6 +27,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
 import { getBackendUrl } from '../utils/environment';
+import { dataCache, CACHE_KEYS } from '../utils/dataCache';
 import WebSocketService from '../services/WebSocketService';
 import { useTutorial } from '../store/TutorialContext';
 import { friendsStore } from '../store/friendsStore';
@@ -166,7 +167,46 @@ const FriendsScreen = () => {
 
   // [REMOVED] fetchUserInfo - friendsStore.fetchAll()로 대체됨
 
-  // [REMOVED] fetchFriendRequests - friendsStore.fetchAll()로 대체됨
+  const fetchFriendRequests = async (useCache = true) => {
+    const cacheKey = CACHE_KEYS.FRIEND_REQUESTS;
+
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) return;
+
+      // 캐시 먼저 확인 (즉시 표시)
+      if (useCache) {
+        const cached = dataCache.get<FriendRequest[]>(cacheKey);
+        if (cached.exists && cached.data) {
+          setFriendRequests(cached.data);
+          setLoading(false);
+          if (!cached.isStale) return; // 신선한 캐시면 종료
+          if (dataCache.isPending(cacheKey)) return; // 이미 요청 중
+        }
+      }
+
+      // 중복 요청 방지
+      if (dataCache.isPending(cacheKey)) return;
+      dataCache.markPending(cacheKey);
+
+      const response = await fetch(`${getBackendUrl()}/friends/requests`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Cache-Control': 'no-cache',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const requests = data.requests || [];
+        setFriendRequests(requests);
+        dataCache.set(cacheKey, requests, 2 * 60 * 1000);
+      }
+    } catch (error) {
+      console.error('Error fetching friend requests:', error);
+      dataCache.invalidate(cacheKey);
+    }
+  };
 
   // 튜토리얼 모드일 때 가짜 요청 주입
   const displayedRequests = React.useMemo(() => {
@@ -197,7 +237,45 @@ const FriendsScreen = () => {
     return friends;
   }, [tutorialFriendAdded, isTutorialActive, currentStep, friends, ghostFriend]);
 
-  // [REMOVED] fetchFriends - friendsStore.fetchAll()로 대체됨
+  const fetchFriends = async (useCache = true) => {
+    const cacheKey = CACHE_KEYS.FRIENDS_LIST;
+
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      if (!token) return;
+
+      // 캐시 먼저 확인 (즉시 표시)
+      if (useCache) {
+        const cached = dataCache.get<Friend[]>(cacheKey);
+        if (cached.exists && cached.data) {
+          setFriends(cached.data);
+          setLoading(false);
+          if (!cached.isStale) return; // 신선한 캐시면 종료
+          if (dataCache.isPending(cacheKey)) return; // 이미 요청 중
+        }
+      }
+
+      // 중복 요청 방지
+      if (dataCache.isPending(cacheKey)) return;
+      dataCache.markPending(cacheKey);
+
+      const response = await fetch(`${getBackendUrl()}/friends/list`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const friendsList = data.friends || [];
+        setFriends(friendsList);
+        dataCache.set(cacheKey, friendsList, 2 * 60 * 1000);
+      }
+    } catch (error) {
+      console.error('Error fetching friends:', error);
+      dataCache.invalidate(cacheKey);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // 캐시 기반 데이터 로딩 (캐시 유효하면 API 스킵)
   useFocusEffect(
@@ -694,11 +772,15 @@ const FriendsScreen = () => {
               <View style={styles.friendItem}>
                 <View style={styles.friendInfo}>
                   <View style={styles.avatarContainer}>
-                    <View style={styles.avatarRing}>
-                      <Image
-                        source={{ uri: item.friend.picture || 'https://picsum.photos/150' }}
-                        style={styles.avatarImage}
-                      />
+                    <View style={[styles.avatarRing, !item.friend.picture && { backgroundColor: COLORS.neutral100 }]}>
+                      {item.friend.picture ? (
+                        <Image
+                          source={{ uri: item.friend.picture }}
+                          style={styles.avatarImage}
+                        />
+                      ) : (
+                        <User size={24} color={COLORS.neutral400} />
+                      )}
                     </View>
                   </View>
                   <View>
@@ -728,11 +810,15 @@ const FriendsScreen = () => {
               <View style={styles.requestItem}>
                 <View style={styles.friendInfo}>
                   <View style={styles.avatarContainer}>
-                    <View style={styles.avatarRing}>
-                      <Image
-                        source={{ uri: item.from_user.picture || 'https://picsum.photos/150' }}
-                        style={styles.avatarImage}
-                      />
+                    <View style={[styles.avatarRing, !item.from_user.picture && { backgroundColor: COLORS.neutral100 }]}>
+                      {item.from_user.picture ? (
+                        <Image
+                          source={{ uri: item.from_user.picture }}
+                          style={styles.avatarImage}
+                        />
+                      ) : (
+                        <User size={24} color={COLORS.neutral400} />
+                      )}
                     </View>
                   </View>
                   <View style={{ flex: 1 }}>

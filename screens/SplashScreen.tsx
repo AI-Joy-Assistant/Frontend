@@ -16,6 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../constants/Colors';
 import { fontAssets } from '../constants/Fonts';
 import { getBackendUrl } from '../utils/environment';
+import { dataCache, CACHE_KEYS } from '../utils/dataCache';
 
 const SplashScreen = ({ navigation }: { navigation: any }) => {
 
@@ -46,6 +47,81 @@ const SplashScreen = ({ navigation }: { navigation: any }) => {
         );
     }, []);
 
+    // 🚀 프리페칭: 주요 API 데이터를 미리 불러와 캐시에 저장
+    const prefetchData = async (token: string, userData: any) => {
+        const BACKEND_URL = getBackendUrl();
+        const headers = {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        };
+
+        // 사용자 정보는 이미 받았으므로 바로 캐시 저장
+        dataCache.set(CACHE_KEYS.USER_ME, userData, 5 * 60 * 1000);
+
+        // 나머지 API 병렬 호출 (에러 무시)
+        const prefetchPromises = [
+            // 채팅 세션 목록 (Date 객체 변환 필요)
+            fetch(`${BACKEND_URL}/chat/sessions`, { headers })
+                .then(res => res.ok ? res.json() : null)
+                .then(data => {
+                    if (data?.sessions) {
+                        // 프론트엔드 모델에 맞게 변환
+                        const formattedSessions = data.sessions.map((s: any) => ({
+                            id: s.id,
+                            title: s.title || "새 채팅",
+                            updatedAt: s.updated_at ? new Date(s.updated_at) : new Date(),
+                            messages: [],
+                            isDefault: s.is_default || false,
+                        }));
+                        dataCache.set(CACHE_KEYS.CHAT_SESSIONS, formattedSessions, 2 * 60 * 1000);
+                    }
+                })
+                .catch(() => { }),
+
+            // 채팅 기본 세션 (채팅 탭 진입 시 즉시 표시)
+            fetch(`${BACKEND_URL}/chat/default-session`, { headers })
+                .then(res => res.ok ? res.json() : null)
+                .then(data => data && dataCache.set('chat:default-session', data, 5 * 60 * 1000))
+                .catch(() => { }),
+
+            // 친구 목록
+            fetch(`${BACKEND_URL}/friends/list`, { headers })
+                .then(res => res.ok ? res.json() : null)
+                .then(data => data?.friends && dataCache.set(CACHE_KEYS.FRIENDS_LIST, data.friends, 2 * 60 * 1000))
+                .catch(() => { }),
+
+            // 친구 요청 목록
+            fetch(`${BACKEND_URL}/friends/requests`, { headers })
+                .then(res => res.ok ? res.json() : null)
+                .then(data => data?.requests && dataCache.set(CACHE_KEYS.FRIEND_REQUESTS, data.requests, 2 * 60 * 1000))
+                .catch(() => { }),
+
+            // 캘린더 연동 상태
+            fetch(`${BACKEND_URL}/calendar/link-status`, { headers })
+                .then(res => res.ok ? res.json() : null)
+                .then(data => data && dataCache.set('calendar:link-status', data, 10 * 60 * 1000))
+                .catch(() => { }),
+
+            // 알림
+            fetch(`${BACKEND_URL}/chat/notifications`, { headers })
+                .then(res => res.ok ? res.json() : null)
+                .then(data => data?.notifications && dataCache.set(CACHE_KEYS.NOTIFICATIONS, data.notifications, 2 * 60 * 1000))
+                .catch(() => { }),
+
+            // 이벤트(A2A) 목록
+            fetch(`${BACKEND_URL}/a2a/sessions`, { headers })
+                .then(res => res.ok ? res.json() : null)
+                .then(data => data?.sessions && dataCache.set('a2a:sessions', data.sessions, 5 * 60 * 1000))
+                .catch(() => { }),
+        ];
+
+        // 모든 프리페칭 완료 대기 (최대 3초)
+        await Promise.race([
+            Promise.all(prefetchPromises),
+            new Promise(resolve => setTimeout(resolve, 3000))
+        ]);
+    };
+
     // 🔥 자동 로그인 로직 (폰트 로드 후)
     useEffect(() => {
         if (!fontsLoaded) return;
@@ -58,7 +134,7 @@ const SplashScreen = ({ navigation }: { navigation: any }) => {
 
         const checkLogin = async () => {
             try {
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                await new Promise(resolve => setTimeout(resolve, 1500)); // 애니메이션 시간 단축
                 const token = await AsyncStorage.getItem('accessToken');
 
                 if (token) {
@@ -73,6 +149,9 @@ const SplashScreen = ({ navigation }: { navigation: any }) => {
                         });
 
                         if (response.ok) {
+                            const userData = await response.json();
+                            // 🚀 프리페칭 실행 (홈 이동 전에 데이터 캐싱)
+                            await prefetchData(token, userData);
                             navigation.replace('Home');
                         } else {
                             await AsyncStorage.removeItem('accessToken');

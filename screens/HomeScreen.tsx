@@ -65,8 +65,7 @@ import NotificationPanel from '../components/NotificationPanel';
 import { badgeStore } from '../store/badgeStore';
 import { useTutorial } from '../store/TutorialContext';
 import { FAKE_CONFIRMED_SCHEDULE } from '../constants/tutorialData';
-import { homeStore } from '../store/homeStore';
-import { friendsStore } from '../store/friendsStore';
+import { dataCache, CACHE_KEYS } from '../utils/dataCache';
 
 // Pending 요청 타입 정의
 interface PendingRequest {
@@ -212,9 +211,99 @@ export default function HomeScreen() {
     }
   };
 
-  // [REMOVED] fetchPendingRequests - homeStore.fetchAll()로 대체됨
+  // Pending 요청 API 호출
+  const fetchPendingRequests = async (useCache = true) => {
+    const cacheKey = 'a2a:pending-requests';
 
-  // [REMOVED] fetchNotifications - homeStore.fetchAll()로 대체됨
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      console.log('📋 Pending 요청 조회 시작, token:', token ? '있음' : '없음');
+      if (!token) return;
+
+      // 캐시 먼저 확인
+      if (useCache) {
+        const cached = dataCache.get<PendingRequest[]>(cacheKey);
+        if (cached.exists && cached.data) {
+          setPendingRequests(cached.data);
+          if (!cached.isStale) return;
+          if (dataCache.isPending(cacheKey)) return;
+        }
+      }
+
+      // 중복 요청 방지
+      if (dataCache.isPending(cacheKey)) return;
+      dataCache.markPending(cacheKey);
+
+      const response = await fetch(`${API_BASE}/a2a/pending-requests`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
+
+      console.log('📋 API 응답 상태:', response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('📋 Pending 요청 데이터:', data);
+        const requests = data.requests || [];
+        setPendingRequests(requests);
+        dataCache.set(cacheKey, requests, 2 * 60 * 1000); // 2분 캐시
+      } else {
+        const errorText = await response.text();
+        console.error('📋 API 에러:', errorText);
+      }
+    } catch (error) {
+      console.error('Pending 요청 조회 실패:', error);
+      dataCache.invalidate(cacheKey);
+    }
+  };
+
+  // 알림 조회 API 호출
+  const fetchNotifications = async (useCache = true) => {
+    const cacheKey = CACHE_KEYS.NOTIFICATIONS;
+
+    try {
+      const token = await AsyncStorage.getItem('accessToken');
+      console.log('알림 조회 시작...');
+      if (!token) return;
+
+      // 캐시 먼저 확인
+      if (useCache) {
+        const cached = dataCache.get<any[]>(cacheKey);
+        if (cached.exists && cached.data) {
+          setNotifications(cached.data);
+          if (!cached.isStale) return;
+          if (dataCache.isPending(cacheKey)) return;
+        }
+      }
+
+      // 중복 요청 방지
+      if (dataCache.isPending(cacheKey)) return;
+      dataCache.markPending(cacheKey);
+
+      const response = await fetch(`${API_BASE}/chat/notifications`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const notificationList = data.notifications || [];
+        setNotifications(notificationList);
+        dataCache.set(cacheKey, notificationList, 2 * 60 * 1000); // 2분 캐시
+      }
+    } catch (error) {
+      console.error('알림 조회 실패:', error);
+      dataCache.invalidate(cacheKey);
+    }
+  };
 
   // 캘린더 연동 상태 확인
   const checkCalendarLinkStatus = async () => {
@@ -249,12 +338,30 @@ export default function HomeScreen() {
   };
 
   // 현재 사용자 정보 조회
-  const fetchCurrentUser = async () => {
+  const fetchCurrentUser = async (useCache = true) => {
+    const cacheKey = CACHE_KEYS.USER_ME;
+
     try {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) return;
 
-      // AsyncStorage에서 프로필 사진 가져오기
+      // 캐시 먼저 확인
+      if (useCache) {
+        const cached = dataCache.get<any>(cacheKey);
+        if (cached.exists && cached.data) {
+          setCurrentUserId(cached.data.id);
+          if (cached.data.picture) setUserPicture(cached.data.picture);
+
+          if (!cached.isStale) return;
+          if (dataCache.isPending(cacheKey)) return;
+        }
+      }
+
+      // 중복 요청 방지
+      if (dataCache.isPending(cacheKey)) return;
+      dataCache.markPending(cacheKey);
+
+      // AsyncStorage에서 프로필 사진 가져오기 (백업)
       const storedPicture = await AsyncStorage.getItem('userPicture');
       if (storedPicture) {
         setUserPicture(storedPicture);
@@ -262,32 +369,31 @@ export default function HomeScreen() {
 
       // AsyncStorage에서 auth provider 가져오기
       const storedAuthProvider = await AsyncStorage.getItem('authProvider');
-      console.log('[DEBUG] storedAuthProvider:', storedAuthProvider);
       if (storedAuthProvider) {
         setAuthProvider(storedAuthProvider);
-        // Apple 로그인 유저면 바로 캘린더 연동 상태 체크 (타이밍 이슈 해결)
         if (storedAuthProvider === 'apple') {
-          console.log('[DEBUG] Apple 유저 감지 - checkCalendarLinkStatus 호출');
           checkCalendarLinkStatus();
         }
-      } else {
-        console.log('[DEBUG] authProvider가 AsyncStorage에 없음!');
       }
 
       const response = await fetch(`${API_BASE}/auth/me`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Cache-Control': 'no-cache'
+        }
       });
 
       if (response.ok) {
         const data = await response.json();
         setCurrentUserId(data.id);
-        // 서버에서 받은 사진 정보가 있으면 업데이트
         if (data.picture) {
           setUserPicture(data.picture);
         }
+        dataCache.set(cacheKey, data, 5 * 60 * 1000); // 5분 캐시
       }
     } catch (error) {
       console.error('사용자 정보 조회 실패:', error);
+      dataCache.invalidate(cacheKey);
     }
   };
 
