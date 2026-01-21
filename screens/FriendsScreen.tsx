@@ -4,7 +4,7 @@ import { UserPlus, Check, X, Info, User } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useSyncExternalStore } from 'react';
 import {
   Alert,
   FlatList,
@@ -30,6 +30,8 @@ import { getBackendUrl } from '../utils/environment';
 import { dataCache, CACHE_KEYS } from '../utils/dataCache';
 import WebSocketService from '../services/WebSocketService';
 import { useTutorial } from '../store/TutorialContext';
+import { friendsStore } from '../store/friendsStore';
+import { SkeletonListItem } from '../components/Skeleton';
 
 // Colors
 const COLORS = {
@@ -128,11 +130,19 @@ const FriendsScreen = () => {
     }
   }, [isTutorialActive, currentStep, currentSubStep?.id]);
 
-  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
-  const [friends, setFriends] = useState<Friend[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
   const [emailInput, setEmailInput] = useState<string>('');
-  const [userInfo, setUserInfo] = useState<{ name: string; email: string; handle?: string } | null>(null);
+
+  // friendsStore에서 전역 상태 구독
+  const storeState = useSyncExternalStore(
+    friendsStore.subscribe,
+    friendsStore.getSnapshot
+  );
+  const friends = storeState.friends;
+  const friendRequests = storeState.friendRequests;
+  const userInfo = storeState.userInfo;
+  const loading = storeState.loading;
+  const loadingFriends = storeState.loadingFriends;
+  const loadingRequests = storeState.loadingRequests;
 
   // Delete Modal State
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
@@ -155,22 +165,7 @@ const FriendsScreen = () => {
     setCustomAlertVisible(true);
   };
 
-  // Fetch User Info for "My ID" card
-  const fetchUserInfo = async () => {
-    try {
-      const token = await AsyncStorage.getItem('accessToken');
-      if (!token) return;
-      const response = await fetch(`${getBackendUrl()}/auth/me`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setUserInfo(data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch user info', error);
-    }
-  };
+  // [REMOVED] fetchUserInfo - friendsStore.fetchAll()로 대체됨
 
   const fetchFriendRequests = async (useCache = true) => {
     const cacheKey = CACHE_KEYS.FRIEND_REQUESTS;
@@ -282,11 +277,10 @@ const FriendsScreen = () => {
     }
   };
 
+  // 캐시 기반 데이터 로딩 (캐시 유효하면 API 스킵)
   useFocusEffect(
     useCallback(() => {
-      fetchUserInfo();
-      fetchFriendRequests();
-      fetchFriends();
+      friendsStore.fetchAll();
     }, [])
   );
 
@@ -325,16 +319,9 @@ const FriendsScreen = () => {
       (data) => {
         console.log(`[WS:Friends] Event: ${data.type}`);
 
-        if (data.type === "friend_request") {
-          fetchFriendRequests();
-          // DB 반영 지연 가능성 고려하여 재시도
-          setTimeout(() => fetchFriendRequests(), 500);
-        } else if (data.type === "friend_accepted") {
-          fetchFriends();
-          fetchFriendRequests();
-        } else if (data.type === "friend_rejected") {
-          fetchFriends();
-        }
+        // WebSocket 이벤트 시 캐시 무효화 후 새로고침
+        friendsStore.invalidate();
+        friendsStore.refresh();
       }
     );
 
@@ -400,7 +387,7 @@ const FriendsScreen = () => {
       });
 
       if (response.ok) {
-        fetchFriends();
+        friendsStore.refresh();
         setDeleteModalVisible(false);
         setSelectedFriend(null);
       } else {
@@ -446,7 +433,7 @@ const FriendsScreen = () => {
     setProcessingRequestIds(prev => new Set(prev).add(requestId));
 
     // UI에서 즉시 제거 (낙관적 업데이트)
-    setFriendRequests(prev => prev.filter(req => req.id !== requestId));
+    friendsStore.removeRequest(requestId);
 
     try {
       const token = await AsyncStorage.getItem('accessToken');
@@ -459,15 +446,15 @@ const FriendsScreen = () => {
 
       if (response.ok) {
         showAlert('성공', '친구 요청을 수락했습니다.', 'success');
-        fetchFriends();
+        friendsStore.refresh();
       } else {
         // 실패 시 요청 목록 다시 불러오기
-        fetchFriendRequests();
+        friendsStore.refresh();
         showAlert('오류', '요청 수락에 실패했습니다.', 'error');
       }
     } catch (e) {
       // 오류 시 요청 목록 다시 불러오기
-      fetchFriendRequests();
+      friendsStore.refresh();
       showAlert('오류', '요청 처리 중 오류가 발생했습니다.', 'error');
     } finally {
       // 처리 완료 후 상태 정리
@@ -489,7 +476,7 @@ const FriendsScreen = () => {
     setProcessingRequestIds(prev => new Set(prev).add(requestId));
 
     // UI에서 즉시 제거 (낙관적 업데이트)
-    setFriendRequests(prev => prev.filter(req => req.id !== requestId));
+    friendsStore.removeRequest(requestId);
 
     try {
       const token = await AsyncStorage.getItem('accessToken');
@@ -504,12 +491,12 @@ const FriendsScreen = () => {
         showAlert('성공', '친구 요청을 거절했습니다.', 'success');
       } else {
         // 실패 시 요청 목록 다시 불러오기
-        fetchFriendRequests();
+        friendsStore.refresh();
         showAlert('오류', '요청 거절에 실패했습니다.', 'error');
       }
     } catch (e) {
       // 오류 시 요청 목록 다시 불러오기
-      fetchFriendRequests();
+      friendsStore.refresh();
       showAlert('오류', '요청 처리 중 오류가 발생했습니다.', 'error');
     } finally {
       // 처리 완료 후 상태 정리
@@ -756,8 +743,20 @@ const FriendsScreen = () => {
 
       {/* List */}
       <View style={styles.listContainer}>
-        {loading ? (
-          <ActivityIndicator size="large" color={COLORS.primaryMain} style={{ marginTop: 20 }} />
+        {loadingFriends && activeTab === 'friends' ? (
+          // Skeleton UI for friends list
+          <View style={{ paddingHorizontal: 16 }}>
+            {[1, 2, 3, 4, 5].map((i) => (
+              <SkeletonListItem key={i} style={{ marginBottom: 8 }} />
+            ))}
+          </View>
+        ) : loadingRequests && activeTab === 'requests' ? (
+          // Skeleton UI for requests list
+          <View style={{ paddingHorizontal: 16 }}>
+            {[1, 2, 3].map((i) => (
+              <SkeletonListItem key={i} style={{ marginBottom: 8 }} />
+            ))}
+          </View>
         ) : activeTab === 'friends' ? (
           <FlatList
             data={displayedFriends.filter(f =>

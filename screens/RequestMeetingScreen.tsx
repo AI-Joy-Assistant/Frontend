@@ -312,7 +312,11 @@ const RequestMeetingScreen = () => {
                     const state = JSON.parse(savedState);
                     if (state.title) setTitle(state.title);
                     if (state.location) setLocation(state.location);
-                    if (state.selectedFriends) setSelectedFriends(state.selectedFriends);
+                    if (state.selectedFriends) {
+                        // 튜토리얼 가이드 제거 후 복원
+                        const filtered = state.selectedFriends.filter((id: string) => id !== 'tutorial_guide_joyner');
+                        setSelectedFriends(filtered);
+                    }
                     if (state.startDate) setStartDate(state.startDate);
                     if (state.endDate) setEndDate(state.endDate);
                     if (state.startTime) setStartTime(state.startTime);
@@ -338,6 +342,9 @@ const RequestMeetingScreen = () => {
                 // 단, 무한 루프 주의. selectedFriends가 비어있지 않을 때만.
                 setSelectedFriends(prev => prev.length > 0 ? [] : prev);
             }
+        } else if (!isTutorialActive) {
+            // 튜토리얼이 아닐 때 가이드 계정이 선택되어 있다면 제거
+            setSelectedFriends(prev => prev.filter(id => id !== 'tutorial_guide_joyner'));
         }
     }, [isTutorialActive, currentStep, currentSubStep?.id]);
 
@@ -953,7 +960,7 @@ const RequestMeetingScreen = () => {
                         ref={(r) => { if (r) registerTarget('section_time', r); }}
                     >
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                            <Text style={styles.settingsLabel}>선호 시간대 (WINDOW)</Text>
+                            <Text style={styles.settingsLabel}>선호 시간대</Text>
                             {durationNights > 0 && (
                                 <Text style={{ fontSize: 11, color: COLORS.primaryMain, fontWeight: 'bold' }}>여행 모드는 종일 설정됨</Text>
                             )}
@@ -984,7 +991,7 @@ const RequestMeetingScreen = () => {
                         ref={(r) => { if (r) registerTarget('section_duration', r); }}
                     >
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                            <Text style={styles.settingsLabel}>미팅 소요 시간 (DURATION)</Text>
+                            <Text style={styles.settingsLabel}>미팅 소요 시간</Text>
                             {durationNights > 0 && (
                                 <Text style={{ fontSize: 11, color: COLORS.primaryMain, fontWeight: 'bold' }}>기간으로 자동 설정됨</Text>
                             )}

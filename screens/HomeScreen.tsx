@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
 import {
   View,
   Text,
@@ -111,26 +111,30 @@ export default function HomeScreen() {
     nextSubStep
   } = useTutorial();
 
+  // homeStore에서 전역 상태 구독
+  const homeState = useSyncExternalStore(
+    homeStore.subscribe,
+    homeStore.getSnapshot
+  );
+  const pendingRequests = homeState.pendingRequests;
+  const notifications = homeState.notifications;
+
+  // friendsStore에서 친구 데이터 구독
+  const friendsState = useSyncExternalStore(
+    friendsStore.subscribe,
+    friendsStore.getSnapshot
+  );
+
   // 현재 사용자 ID와 프로필 사진
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [userPicture, setUserPicture] = useState<string | null>(null);
   const [authProvider, setAuthProvider] = useState<string | null>(null);
 
-  // Pending 요청 카드 State
-  const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
+  // Dismissed/Viewed State (UI 상태로 로컬 유지)
   const [dismissedRequestIds, setDismissedRequestIds] = useState<string[]>([]);
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState<string[]>([]);
   const [viewedRequestIds, setViewedRequestIds] = useState<string[]>([]);
   const [viewedNotificationIds, setViewedNotificationIds] = useState<string[]>([]);
-  const [notifications, setNotifications] = useState<{
-    id: string;
-    type: 'schedule_rejected' | 'friend_request' | 'friend_accepted' | 'general';
-    title: string;
-    message: string;
-    created_at: string;
-    read: boolean;
-    metadata?: Record<string, unknown>;
-  }[]>([]);
 
   // Load dismissed request IDs and viewed count from AsyncStorage on mount
   useEffect(() => {
@@ -393,13 +397,13 @@ export default function HomeScreen() {
     }
   };
 
-  // 화면에 포커스될 때마다 요청 및 알림 새로고침
+  // 화면에 포커스될 때마다 요청 및 알림 새로고침 (캐시 기반)
   useFocusEffect(
     useCallback(() => {
-
+      // 캐시 기반 데이터 로딩
+      homeStore.fetchAll();
+      friendsStore.fetchAll();
       fetchCurrentUser();
-      fetchPendingRequests();
-      fetchNotifications();
 
       // Apple 로그인 사용자만 캘린더 연동 상태 확인
       if (authProvider === 'apple') {
@@ -426,16 +430,12 @@ export default function HomeScreen() {
       ['a2a_request', 'friend_request', 'friend_accepted', 'notification', 'a2a_status_changed'],
       (data) => {
         console.log("[WS:Home] WS Event:", data.type);
-        fetchPendingRequests();
-        fetchNotifications();
-        fetchFriends();
 
-        // 데이터 일관성을 위한 지연 갱신
-        setTimeout(() => {
-          fetchPendingRequests();
-          fetchNotifications();
-          fetchFriends();
-        }, 500);
+        // WebSocket 이벤트 시 캐시 무효화 후 새로고침
+        homeStore.invalidate();
+        homeStore.refresh();
+        friendsStore.invalidate();
+        friendsStore.refresh();
       }
     );
 
@@ -479,7 +479,8 @@ export default function HomeScreen() {
   const [isAllDay, setIsAllDay] = useState(false);
 
   // Participant & Location State (A2A Integration)
-  const [friends, setFriends] = useState<Friend[]>([]);
+  // friends 데이터는 friendsState.friends에서 가져옴
+  const friends = friendsState.friends;
   const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [friendSearchQuery, setFriendSearchQuery] = useState('');
@@ -979,24 +980,7 @@ export default function HomeScreen() {
     }
   };
 
-  // 친구 목록 불러오기
-  const fetchFriends = async () => {
-    try {
-      const token = await AsyncStorage.getItem('accessToken');
-      if (!token) return;
-
-      const response = await fetch(`${API_BASE}/friends/list`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setFriends(data.friends || []);
-      }
-    } catch (error) {
-      console.error('Error fetching friends:', error);
-    }
-  };
+  // [REMOVED] fetchFriends - friendsStore.fetchAll()로 대체됨
 
   // 친구 선택 토글
   const toggleFriendSelection = (friendUserId: string) => {
@@ -1033,8 +1017,8 @@ export default function HomeScreen() {
     setSelectedFriendIds([]);
     setFormLocation('');
     setFriendSearchQuery('');
-    // 친구 목록 새로고침
-    fetchFriends();
+    // 친구 목록 새로고침 (캐시 기반)
+    friendsStore.fetchAll();
     setShowScheduleModal(true);
 
     // [NEW] 튜토리얼: 홈 추가 버튼 클릭 처리 (모달 열리는 시간 고려)
