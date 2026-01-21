@@ -28,6 +28,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "../constants/config";
 import WebSocketService from "../services/WebSocketService";
 import { badgeStore } from "../store/badgeStore";
+import { dataCache, CACHE_KEYS } from "../utils/dataCache";
 
 import { LinearGradient } from "expo-linear-gradient";
 import {
@@ -189,10 +190,19 @@ export default function ChatScreen() {
   };
 
   // 기본 채팅 세션 조회/생성
-  const fetchDefaultSession = async () => {
+  const fetchDefaultSession = async (useCache = true) => {
+    const cacheKey = 'chat:default-session';
     try {
       const token = await AsyncStorage.getItem("accessToken");
       if (!token) return null;
+
+      // 캐시 확인
+      if (useCache) {
+        const cached = dataCache.get<any>(cacheKey);
+        if (cached.exists && cached.data) {
+          if (!cached.isStale) return cached.data;
+        }
+      }
 
       const res = await fetch(`${API_BASE}/chat/default-session`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -200,6 +210,7 @@ export default function ChatScreen() {
 
       if (res.ok) {
         const data = await res.json();
+        dataCache.set(cacheKey, data, 5 * 60 * 1000);
         return data; // { id, title, is_new }
       }
       return null;
@@ -212,11 +223,41 @@ export default function ChatScreen() {
   // 기본 세션 초기화 여부 추적
   const defaultSessionInitialized = useRef(false);
 
-  // 채팅 세션 목록 불러오기
-  const fetchSessions = async (forceDefaultCheck = false) => {
+  // 채팅 세션 목록 불러오기 - 캐싱 + 중복 요청 방지
+  const fetchSessions = async (forceDefaultCheck = false, useCache = true) => {
+    const cacheKey = CACHE_KEYS.CHAT_SESSIONS;
+
     try {
       const token = await AsyncStorage.getItem("accessToken");
       if (!token) return;
+
+      // 캐시 먼저 확인 (즉시 표시)
+      if (useCache) {
+        const cached = dataCache.get<ChatSession[]>(cacheKey);
+        if (cached.exists && cached.data) {
+          setSessions(cached.data);
+          if (!currentSessionId && cached.data.length > 0) {
+            const defaultSession = cached.data.find(s => s.title === "기본 채팅");
+            setCurrentSessionId(defaultSession?.id || cached.data[0].id);
+          }
+          setLoading(false);
+
+          // 신선한 캐시면 바로 종료
+          if (!cached.isStale) {
+            return;
+          }
+          // stale 캐시면 이미 요청 중인지 확인 후 백그라운드 갱신
+          if (dataCache.isPending(cacheKey)) {
+            return; // 이미 요청 중이면 중복 요청 방지
+          }
+        }
+      }
+
+      // 중복 요청 방지
+      if (dataCache.isPending(cacheKey)) {
+        return;
+      }
+      dataCache.markPending(cacheKey);
 
       // 기본 세션 확인/생성은 최초 1회만 수행
       if (!defaultSessionInitialized.current || forceDefaultCheck) {
@@ -233,23 +274,21 @@ export default function ChatScreen() {
         const backendSessions = data.sessions || [];
 
         if (backendSessions.length > 0) {
-          // 백엔드 세션을 로컬 형식으로 변환
           const loadedSessions: ChatSession[] = backendSessions.map((s: any) => ({
             id: s.id,
             title: s.title || "새 채팅",
             updatedAt: s.updated_at ? new Date(s.updated_at) : new Date(),
-            messages: [], // 메시지는 별도로 로드
-            isDefault: s.is_default || false, // 기본 채팅 여부
+            messages: [],
+            isDefault: s.is_default || false,
           }));
 
           setSessions(loadedSessions);
+          dataCache.set(cacheKey, loadedSessions, 2 * 60 * 1000); // 2분 캐시
 
-          // 현재 세션이 없으면 기본 채팅 또는 첫 번째 세션 선택
           if (!currentSessionId) {
             const lastActiveId = await AsyncStorage.getItem('lastActiveSessionId');
             const defaultSession = loadedSessions.find(s => s.title === "기본 채팅");
 
-            // 저장된 마지막 세션이 있고 실제 목록에도 존재하면 해당 세션 복구
             if (lastActiveId && loadedSessions.some(s => s.id === lastActiveId)) {
               setCurrentSessionId(lastActiveId);
             } else {
@@ -260,6 +299,9 @@ export default function ChatScreen() {
       }
     } catch (e) {
       console.error("Failed to fetch sessions", e);
+      dataCache.invalidate(cacheKey); // 에러 시 pending 상태 해제
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -344,7 +386,7 @@ export default function ChatScreen() {
   useEffect(() => {
     fetchFriends();
     fetchUserProfile();
-    fetchSessions();
+    // fetchSessions는 useFocusEffect에서만 호출 (중복 방지)
   }, []);
 
   // Fixed formatTime (Korean Standard Time)

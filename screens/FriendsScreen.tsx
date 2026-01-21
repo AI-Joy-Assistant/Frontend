@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { UserPlus, Check, X, Info } from 'lucide-react-native';
+import { UserPlus, Check, X, Info, User } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -27,6 +27,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
 import { getBackendUrl } from '../utils/environment';
+import { dataCache, CACHE_KEYS } from '../utils/dataCache';
 import WebSocketService from '../services/WebSocketService';
 import { useTutorial } from '../store/TutorialContext';
 
@@ -171,32 +172,44 @@ const FriendsScreen = () => {
     }
   };
 
-  const fetchFriendRequests = async () => {
+  const fetchFriendRequests = async (useCache = true) => {
+    const cacheKey = CACHE_KEYS.FRIEND_REQUESTS;
+
     try {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) return;
 
-      console.log('친구 요청 목록 조회 시작...');
+      // 캐시 먼저 확인 (즉시 표시)
+      if (useCache) {
+        const cached = dataCache.get<FriendRequest[]>(cacheKey);
+        if (cached.exists && cached.data) {
+          setFriendRequests(cached.data);
+          setLoading(false);
+          if (!cached.isStale) return; // 신선한 캐시면 종료
+          if (dataCache.isPending(cacheKey)) return; // 이미 요청 중
+        }
+      }
+
+      // 중복 요청 방지
+      if (dataCache.isPending(cacheKey)) return;
+      dataCache.markPending(cacheKey);
+
       const response = await fetch(`${getBackendUrl()}/friends/requests`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
         },
       });
 
-      console.log('친구 요청 응답 상태:', response.status);
-
       if (response.ok) {
         const data = await response.json();
-        console.log('친구 요청 데이터:', data);
-        setFriendRequests(data.requests || []);
-      } else {
-        const errorData = await response.json();
-        console.error('친구 요청 조회 실패:', errorData);
+        const requests = data.requests || [];
+        setFriendRequests(requests);
+        dataCache.set(cacheKey, requests, 2 * 60 * 1000);
       }
     } catch (error) {
       console.error('Error fetching friend requests:', error);
+      dataCache.invalidate(cacheKey);
     }
   };
 
@@ -229,10 +242,27 @@ const FriendsScreen = () => {
     return friends;
   }, [tutorialFriendAdded, isTutorialActive, currentStep, friends, ghostFriend]);
 
-  const fetchFriends = async () => {
+  const fetchFriends = async (useCache = true) => {
+    const cacheKey = CACHE_KEYS.FRIENDS_LIST;
+
     try {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) return;
+
+      // 캐시 먼저 확인 (즉시 표시)
+      if (useCache) {
+        const cached = dataCache.get<Friend[]>(cacheKey);
+        if (cached.exists && cached.data) {
+          setFriends(cached.data);
+          setLoading(false);
+          if (!cached.isStale) return; // 신선한 캐시면 종료
+          if (dataCache.isPending(cacheKey)) return; // 이미 요청 중
+        }
+      }
+
+      // 중복 요청 방지
+      if (dataCache.isPending(cacheKey)) return;
+      dataCache.markPending(cacheKey);
 
       const response = await fetch(`${getBackendUrl()}/friends/list`, {
         headers: { 'Authorization': `Bearer ${token}` },
@@ -240,11 +270,13 @@ const FriendsScreen = () => {
 
       if (response.ok) {
         const data = await response.json();
-        // Mocking status for UI as backend might not provide it yet
-        setFriends(data.friends || []);
+        const friendsList = data.friends || [];
+        setFriends(friendsList);
+        dataCache.set(cacheKey, friendsList, 2 * 60 * 1000);
       }
     } catch (error) {
       console.error('Error fetching friends:', error);
+      dataCache.invalidate(cacheKey);
     } finally {
       setLoading(false);
     }
@@ -741,11 +773,15 @@ const FriendsScreen = () => {
               <View style={styles.friendItem}>
                 <View style={styles.friendInfo}>
                   <View style={styles.avatarContainer}>
-                    <View style={styles.avatarRing}>
-                      <Image
-                        source={{ uri: item.friend.picture || 'https://picsum.photos/150' }}
-                        style={styles.avatarImage}
-                      />
+                    <View style={[styles.avatarRing, !item.friend.picture && { backgroundColor: COLORS.neutral100 }]}>
+                      {item.friend.picture ? (
+                        <Image
+                          source={{ uri: item.friend.picture }}
+                          style={styles.avatarImage}
+                        />
+                      ) : (
+                        <User size={24} color={COLORS.neutral400} />
+                      )}
                     </View>
                   </View>
                   <View>
@@ -775,11 +811,15 @@ const FriendsScreen = () => {
               <View style={styles.requestItem}>
                 <View style={styles.friendInfo}>
                   <View style={styles.avatarContainer}>
-                    <View style={styles.avatarRing}>
-                      <Image
-                        source={{ uri: item.from_user.picture || 'https://picsum.photos/150' }}
-                        style={styles.avatarImage}
-                      />
+                    <View style={[styles.avatarRing, !item.from_user.picture && { backgroundColor: COLORS.neutral100 }]}>
+                      {item.from_user.picture ? (
+                        <Image
+                          source={{ uri: item.from_user.picture }}
+                          style={styles.avatarImage}
+                        />
+                      ) : (
+                        <User size={24} color={COLORS.neutral400} />
+                      )}
                     </View>
                   </View>
                   <View style={{ flex: 1 }}>
