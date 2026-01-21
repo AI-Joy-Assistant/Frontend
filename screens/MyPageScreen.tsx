@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Image as ExpoImage } from 'expo-image';
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, Modal, TextInput, Alert, ScrollView, Platform, TouchableWithoutFeedback
 } from 'react-native';
@@ -12,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Bot, Settings, LogOut, Trash2, ChevronRight, User as UserIcon, Calendar as CalendarIcon, Check, AlertCircle, Info, BookOpen } from 'lucide-react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { getBackendUrl } from '../utils/environment';
+import { dataCache, CACHE_KEYS } from '../utils/dataCache';
 import { useTutorial } from '../store/TutorialContext';
 import { useFocusEffect } from '@react-navigation/native';
 
@@ -62,36 +64,12 @@ const MyPageScreen = () => {
   const [resultModalType, setResultModalType] = useState<'success' | 'error' | 'info'>('success');
   const [resultModalMessage, setResultModalMessage] = useState('');
   const [isCalendarLinked, setIsCalendarLinked] = useState<boolean | null>(null);
-  const [cachedProfilePicture, setCachedProfilePicture] = useState<string | null>(null);
 
-  // 컴포넌트 마운트 즉시 캐시 데이터 병렬 로드 (가장 빠른 표시를 위해)
-  useEffect(() => {
-    const loadCachedData = async () => {
-      try {
-        const [cachedUserInfo, userPicture, cachedStatus, storedAuthProvider] = await Promise.all([
-          AsyncStorage.getItem('cachedUserInfo'),
-          AsyncStorage.getItem('userPicture'),
-          AsyncStorage.getItem('cachedCalendarLinked'),
-          AsyncStorage.getItem('authProvider'),
-        ]);
+  // 사용자 정보 불러오기
+  // 사용자 정보 불러오기
+  const fetchUserInfo = async (useCache = true) => {
+    const cacheKey = CACHE_KEYS.USER_ME;
 
-        if (userPicture) setCachedProfilePicture(userPicture);
-        if (cachedUserInfo) {
-          const parsed = JSON.parse(cachedUserInfo);
-          setUserInfo(parsed);
-          setNickname(parsed.name || '');
-        }
-        if (cachedStatus !== null) setIsCalendarLinked(cachedStatus === 'true');
-        if (storedAuthProvider) setAuthProvider(storedAuthProvider);
-      } catch (error) {
-        console.error('캐시 로드 오류:', error);
-      }
-    };
-    loadCachedData();
-  }, []);
-
-  // 사용자 정보 불러오기 (API에서 최신 데이터 가져오기)
-  const fetchUserInfo = async () => {
     try {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) {
@@ -100,11 +78,36 @@ const MyPageScreen = () => {
         return;
       }
 
+      // 캐시 먼저 확인
+      if (useCache) {
+        const cached = dataCache.get<any>(cacheKey);
+        if (cached.exists && cached.data) {
+          setUserInfo(cached.data);
+          setNickname(cached.data.name || '');
+          const storedAuthProvider = await AsyncStorage.getItem('authProvider');
+          if (storedAuthProvider) setAuthProvider(storedAuthProvider);
+
+          if (!cached.isStale) return; // 신선한 캐시면 종료
+          if (dataCache.isPending(cacheKey)) return; // 이미 요청 중
+        }
+      }
+
+      // 중복 요청 방지
+      if (dataCache.isPending(cacheKey)) return;
+      dataCache.markPending(cacheKey);
+
+      // AsyncStorage에서 auth provider 가져오기
+      const storedAuthProvider = await AsyncStorage.getItem('authProvider');
+      if (storedAuthProvider) {
+        setAuthProvider(storedAuthProvider);
+      }
+
       // 백엔드에서 사용자 정보 가져오기
       const response = await fetch(`${API_BASE}/auth/me`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache', // 서버 캐시 무시, 항상 최신 데이터 요청
         },
       });
 
@@ -112,16 +115,16 @@ const MyPageScreen = () => {
         const userData = await response.json();
         setUserInfo(userData);
         setNickname(userData.name || '');
-        // 캐시에 저장
-        await AsyncStorage.setItem('cachedUserInfo', JSON.stringify(userData));
-      } else if (!userInfo) {
-        Alert.alert('오류', '사용자 정보를 불러오지 못했습니다.');
+        dataCache.set(cacheKey, userData, 5 * 60 * 1000); // 5분 캐시
+      } else {
+        // 토큰 만료 등의 이슈가 아니면 조용히 실패 (캐시된 데이터라도 유지)
+        if (response.status === 401) {
+          Alert.alert('오류', '사용자 정보를 불러오지 못했습니다.');
+        }
       }
     } catch (error) {
       console.error('사용자 정보 조회 오류:', error);
-      if (!userInfo) {
-        Alert.alert('오류', '사용자 정보를 불러오지 못했습니다.');
-      }
+      dataCache.invalidate(cacheKey);
     }
   };
 
@@ -157,6 +160,7 @@ const MyPageScreen = () => {
           setResultModalMessage('Google 캘린더가 연동되었습니다!');
           setResultModalVisible(true);
           setIsCalendarLinked(true); // 즉시 상태 업데이트
+          dataCache.set('calendar:link-status', { is_linked: true }, 10 * 60 * 1000);
         } else if (errorParam) {
           setResultModalType('error');
           setResultModalMessage(`캘린더 연동 실패: ${errorParam}`);
@@ -166,6 +170,7 @@ const MyPageScreen = () => {
           setResultModalMessage('연동이 완료되었습니다.');
           setResultModalVisible(true);
           setIsCalendarLinked(true); // 즉시 상태 업데이트
+          dataCache.set('calendar:link-status', { is_linked: true }, 10 * 60 * 1000);
         }
       }
     } catch (error) {
@@ -178,11 +183,26 @@ const MyPageScreen = () => {
     }
   };
 
-  // 캘린더 연동 상태 확인 (API에서 최신 데이터 가져오기)
-  const checkCalendarLinkStatus = async () => {
+  // 캘린더 연동 상태 확인
+  const checkCalendarLinkStatus = async (useCache = true) => {
+    const cacheKey = 'calendar:link-status';
     try {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) return;
+
+      // 캐시 먼저 확인
+      if (useCache) {
+        const cached = dataCache.get<{ is_linked: boolean }>(cacheKey);
+        if (cached.exists && cached.data) {
+          setIsCalendarLinked(cached.data.is_linked);
+          if (!cached.isStale) return;
+          if (dataCache.isPending(cacheKey)) return;
+        }
+      }
+
+      // 중복 요청 방지
+      if (dataCache.isPending(cacheKey)) return;
+      dataCache.markPending(cacheKey);
 
       const response = await fetch(`${API_BASE}/calendar/link-status`, {
         headers: {
@@ -194,10 +214,12 @@ const MyPageScreen = () => {
       if (response.ok) {
         const data = await response.json();
         setIsCalendarLinked(data.is_linked);
-        await AsyncStorage.setItem('cachedCalendarLinked', data.is_linked ? 'true' : 'false');
+        // 상태 변경이 드물므로 10분 캐시
+        dataCache.set(cacheKey, data, 10 * 60 * 1000);
       }
     } catch (error) {
       console.error('캘린더 상태 확인 오류:', error);
+      dataCache.invalidate(cacheKey);
     }
   };
 
@@ -378,14 +400,12 @@ const MyPageScreen = () => {
         >
           <View style={styles.headerOverlay} />
           <View style={styles.avatarContainer}>
-            {(userInfo.profile_image || cachedProfilePicture) ? (
-              <Image
-                source={{
-                  uri: userInfo.profile_image
-                    ? `${API_BASE}/auth/profile-image/${userInfo.id}`
-                    : cachedProfilePicture!
-                }}
+            {userInfo.profile_image ? (
+              <ExpoImage
+                source={{ uri: `${API_BASE}/auth/profile-image/${userInfo.id}?t=${Date.now()}` }}
                 style={styles.avatarImage}
+                contentFit="cover"
+                transition={200}
               />
             ) : (
               <UserIcon size={48} color={COLORS.primaryMain} />
