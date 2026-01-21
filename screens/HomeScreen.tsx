@@ -2260,10 +2260,14 @@ export default function HomeScreen() {
       >
         <View style={styles.friendPickerOverlay}>
           <View style={styles.friendPickerContainer}>
+            <View style={styles.friendPickerHandle} />
             <View style={styles.friendPickerHeader}>
-              <Text style={styles.friendPickerTitle}>참여자 선택</Text>
+              <View>
+                <Text style={styles.friendPickerTitle}>참여자 선택</Text>
+                <Text style={styles.friendPickerSubtitle}>일정에 초대할 친구를 선택해주세요</Text>
+              </View>
               <TouchableOpacity onPress={() => setShowFriendPicker(false)}>
-                <X size={24} color={COLORS.neutral400} />
+                <X size={24} color={COLORS.neutralGray} />
               </TouchableOpacity>
             </View>
 
@@ -2273,7 +2277,7 @@ export default function HomeScreen() {
                 style={styles.friendSearchInput}
                 value={friendSearchQuery}
                 onChangeText={setFriendSearchQuery}
-                placeholder="친구 검색..."
+                placeholder="이름 또는 이메일로 검색"
                 placeholderTextColor={COLORS.neutral400}
               />
             </View>
@@ -2295,8 +2299,8 @@ export default function HomeScreen() {
                         style={styles.friendItemAvatarImage}
                       />
                     ) : (
-                      <View style={[styles.friendItemAvatar, { backgroundColor: index % 2 === 0 ? COLORS.primaryLight : COLORS.primaryMain }]}>
-                        <Text style={styles.friendItemAvatarText}>{item.friend.name[0]}</Text>
+                      <View style={[styles.friendItemAvatar, { backgroundColor: COLORS.neutral100, alignItems: 'center', justifyContent: 'center' }]}>
+                        <UserIcon size={20} color={COLORS.neutral400} />
                       </View>
                     )}
                     <View style={styles.friendItemInfo}>
@@ -2328,7 +2332,7 @@ export default function HomeScreen() {
                 onPress={() => setShowFriendPicker(false)}
               >
                 <Text style={styles.friendPickerButtonText}>
-                  완료 {selectedFriendIds.length > 0 ? `(${selectedFriendIds.length}명 선택)` : ''}
+                  선택 완료 ({selectedFriendIds.length}명)
                 </Text>
               </TouchableOpacity>
             </View>
@@ -3418,18 +3422,26 @@ const styles = StyleSheet.create({
   a2aSaveButton: {
     backgroundColor: COLORS.primaryDark,
   },
-  // Friend Picker Modal Styles
+  // Friend Picker Modal Styles (exact copy from RequestMeetingScreen)
   friendPickerOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
   friendPickerContainer: {
-    backgroundColor: 'white',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '70%',
-    paddingBottom: 24,
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 48,
+    borderTopRightRadius: 48,
+    maxHeight: '85%',
+  },
+  friendPickerHandle: {
+    width: 48,
+    height: 6,
+    backgroundColor: 'rgba(148, 163, 184, 0.3)',
+    borderRadius: 3,
+    alignSelf: 'center',
+    marginTop: 16,
+    marginBottom: 8,
   },
   friendPickerHeader: {
     flexDirection: 'row',
@@ -3442,31 +3454,37 @@ const styles = StyleSheet.create({
   friendPickerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.neutral900,
+    color: COLORS.neutralSlate,
+  },
+  friendPickerSubtitle: {
+    fontSize: 14,
+    color: COLORS.neutralGray,
+    marginTop: 4,
   },
   friendSearchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.neutral50,
+    backgroundColor: COLORS.neutralLight,
     marginHorizontal: 16,
     marginVertical: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 12,
-    gap: 8,
   },
   friendSearchInput: {
     flex: 1,
+    marginLeft: 12,
     fontSize: 14,
-    color: COLORS.neutral900,
+    color: COLORS.neutralSlate,
   },
   friendList: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 0,
   },
   friendItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.neutral100,
   },
@@ -3511,18 +3529,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   friendPickerFooter: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
+    padding: 24,
+    paddingBottom: 40,
+    backgroundColor: COLORS.white,
   },
   friendPickerButton: {
-    backgroundColor: COLORS.primaryMain,
-    paddingVertical: 14,
-    borderRadius: 12,
+    backgroundColor: '#3730A3',
+    paddingVertical: 16,
+    borderRadius: 24,
     alignItems: 'center',
+    shadowColor: '#3730A3',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
   },
   friendPickerButtonText: {
     color: 'white',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   emptyFriendsText: {

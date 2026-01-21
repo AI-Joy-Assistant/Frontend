@@ -43,6 +43,7 @@ import {
   Trash2,
   Plus,
   MessageSquare,
+  User,
 } from "lucide-react-native";
 import { COLORS } from "../constants/Colors";
 import { BlurView } from "expo-blur";
@@ -1668,32 +1669,19 @@ export default function ChatScreen() {
 
                 <View style={styles.modalHeader}>
                   <View>
-                    <Text style={styles.modalTitle}>
-                      친구 선택
-                    </Text>
-                    <Text style={styles.modalSubtitle}>
-                      일정을 잡을 친구를 선택하세요
-                    </Text>
+                    <Text style={styles.modalTitle}>친구 선택</Text>
+                    <Text style={styles.modalSubtitle}>일정을 잡을 친구를 선택하세요</Text>
                   </View>
-                  <TouchableOpacity
-                    onPress={() => setShowFriendModal(false)}
-                  >
-                    <X
-                      size={24}
-                      color={COLORS.neutral400}
-                    />
+                  <TouchableOpacity onPress={() => setShowFriendModal(false)}>
+                    <X size={24} color={COLORS.neutralGray} />
                   </TouchableOpacity>
                 </View>
 
                 <View style={styles.modalSearch}>
-                  <Search
-                    size={18}
-                    color={COLORS.neutral400}
-                    style={styles.modalSearchIcon}
-                  />
+                  <Search size={18} color={COLORS.neutralGray} style={styles.modalSearchIcon} />
                   <TextInput
-                    placeholder="친구 검색"
-                    placeholderTextColor={COLORS.neutral400}
+                    placeholder="이름 또는 이메일로 검색"
+                    placeholderTextColor={COLORS.neutralGray}
                     style={styles.modalSearchInput}
                     value={friendSearchQuery}
                     onChangeText={setFriendSearchQuery}
@@ -1737,14 +1725,27 @@ export default function ChatScreen() {
                               styles.friendListAvatarContainer
                             }
                           >
-                            <Image
-                              source={{
-                                uri:
-                                  item.friend.picture ||
-                                  "https://picsum.photos/150",
-                              }}
-                              style={styles.friendListAvatar}
-                            />
+                            {item.friend.picture ? (
+                              <Image
+                                source={{
+                                  uri: item.friend.picture,
+                                }}
+                                style={styles.friendListAvatar}
+                              />
+                            ) : (
+                              <View
+                                style={[
+                                  styles.friendListAvatar,
+                                  {
+                                    justifyContent: "center",
+                                    alignItems: "center",
+                                    backgroundColor: COLORS.neutral200,
+                                  },
+                                ]}
+                              >
+                                <User size={20} color={COLORS.neutral400} />
+                              </View>
+                            )}
                           </View>
                           <View>
                             <Text
@@ -1786,9 +1787,7 @@ export default function ChatScreen() {
                     style={styles.modalDoneButton}
                   >
                     <Text style={styles.modalDoneButtonText}>
-                      완료{" "}
-                      {selectedFriends.length > 0 &&
-                        `(${selectedFriends.length})`}
+                      선택 완료 ({selectedFriends.length}명)
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -2481,47 +2480,47 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   modalContent: {
-    backgroundColor: "white",
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    paddingBottom: 40,
-    maxHeight: "80%",
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 48,
+    borderTopRightRadius: 48,
+    maxHeight: "85%",
   },
   modalHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: COLORS.neutral200,
-    borderRadius: 2,
+    width: 48,
+    height: 6,
+    backgroundColor: "rgba(148, 163, 184, 0.3)",
+    borderRadius: 3,
     alignSelf: "center",
-    marginTop: 12,
-    marginBottom: 20,
+    marginTop: 16,
+    marginBottom: 8,
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 24,
-    marginBottom: 24,
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.neutral100,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "bold",
     color: COLORS.neutralSlate,
-    marginBottom: 4,
   },
   modalSubtitle: {
     fontSize: 14,
-    color: COLORS.neutral400,
+    color: COLORS.neutralGray,
+    marginTop: 4,
   },
   modalSearch: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: COLORS.neutralLight,
-    marginHorizontal: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 16,
-    marginBottom: 24,
+    marginHorizontal: 16,
+    marginVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
   },
   modalSearchIcon: {
     marginRight: 12,
@@ -2532,7 +2531,7 @@ const styles = StyleSheet.create({
     color: COLORS.neutralSlate,
   },
   friendList: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 0,
     maxHeight: 300,
   },
   friendListItem: {
@@ -2542,13 +2541,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.neutral100,
+    paddingHorizontal: 16,
+    marginHorizontal: 0,
+    backgroundColor: COLORS.white,
   },
   friendListItemSelected: {
-    backgroundColor: COLORS.primaryBg,
-    marginHorizontal: -12,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderBottomWidth: 0,
+    backgroundColor: "transparent",
   },
   friendListInfo: {
     flexDirection: "row",
@@ -2603,24 +2601,24 @@ const styles = StyleSheet.create({
   },
   modalFooter: {
     padding: 24,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.neutral100,
+    paddingBottom: 40,
+    backgroundColor: COLORS.white,
   },
   modalDoneButton: {
-    backgroundColor: COLORS.primaryMain,
+    backgroundColor: '#3730A3',
+    borderRadius: 24,
     paddingVertical: 16,
-    borderRadius: 16,
     alignItems: "center",
-    shadowColor: COLORS.primaryMain,
-    shadowOffset: { width: 0, height: 4 },
+    shadowColor: '#3730A3',
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowRadius: 16,
+    elevation: 8,
   },
   modalDoneButtonText: {
-    color: "white",
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "bold",
+    color: COLORS.white,
   },
   // 충돌 선택지 스타일
   conflictChoiceContainer: {
