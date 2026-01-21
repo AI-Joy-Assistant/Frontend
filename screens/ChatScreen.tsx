@@ -1467,7 +1467,7 @@ export default function ChatScreen() {
       {/* 3. Messages Area */}
       <KeyboardAvoidingView
         style={styles.chatContainer}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         {loading && currentMessages.length === 0 ? (
           <View style={styles.loadingContainer}>
@@ -1523,9 +1523,9 @@ export default function ChatScreen() {
             {
               paddingBottom: isKeyboardVisible
                 ? 10
-                : Platform.OS === "ios"
-                  ? 110
-                  : 100,
+                : Platform.OS === "web"
+                  ? 100
+                  : Math.max(insets.bottom, 20) + 60,
             },
           ]}
         >
@@ -1616,7 +1616,7 @@ export default function ChatScreen() {
         </View>
       </KeyboardAvoidingView>
 
-      <BottomNav activeTab={Tab.CHAT} />
+      {!isKeyboardVisible && <BottomNav activeTab={Tab.CHAT} />}
 
       {/* Friend Selection Modal */}
       <Modal
@@ -2500,7 +2500,8 @@ const styles = StyleSheet.create({
   },
   friendList: {
     paddingHorizontal: 24,
-    maxHeight: 300,
+    minHeight: 100,
+    maxHeight: 250,
   },
   friendListItem: {
     flexDirection: "row",
