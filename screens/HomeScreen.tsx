@@ -66,6 +66,8 @@ import { badgeStore } from '../store/badgeStore';
 import { useTutorial } from '../store/TutorialContext';
 import { FAKE_CONFIRMED_SCHEDULE } from '../constants/tutorialData';
 import { dataCache, CACHE_KEYS } from '../utils/dataCache';
+import { homeStore } from '../store/homeStore';
+import { friendsStore } from '../store/friendsStore';
 
 // Pending 요청 타입 정의
 interface PendingRequest {
@@ -211,99 +213,9 @@ export default function HomeScreen() {
     }
   };
 
-  // Pending 요청 API 호출
-  const fetchPendingRequests = async (useCache = true) => {
-    const cacheKey = 'a2a:pending-requests';
 
-    try {
-      const token = await AsyncStorage.getItem('accessToken');
-      console.log('📋 Pending 요청 조회 시작, token:', token ? '있음' : '없음');
-      if (!token) return;
 
-      // 캐시 먼저 확인
-      if (useCache) {
-        const cached = dataCache.get<PendingRequest[]>(cacheKey);
-        if (cached.exists && cached.data) {
-          setPendingRequests(cached.data);
-          if (!cached.isStale) return;
-          if (dataCache.isPending(cacheKey)) return;
-        }
-      }
 
-      // 중복 요청 방지
-      if (dataCache.isPending(cacheKey)) return;
-      dataCache.markPending(cacheKey);
-
-      const response = await fetch(`${API_BASE}/a2a/pending-requests`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        }
-      });
-
-      console.log('📋 API 응답 상태:', response.status);
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('📋 Pending 요청 데이터:', data);
-        const requests = data.requests || [];
-        setPendingRequests(requests);
-        dataCache.set(cacheKey, requests, 2 * 60 * 1000); // 2분 캐시
-      } else {
-        const errorText = await response.text();
-        console.error('📋 API 에러:', errorText);
-      }
-    } catch (error) {
-      console.error('Pending 요청 조회 실패:', error);
-      dataCache.invalidate(cacheKey);
-    }
-  };
-
-  // 알림 조회 API 호출
-  const fetchNotifications = async (useCache = true) => {
-    const cacheKey = CACHE_KEYS.NOTIFICATIONS;
-
-    try {
-      const token = await AsyncStorage.getItem('accessToken');
-      console.log('알림 조회 시작...');
-      if (!token) return;
-
-      // 캐시 먼저 확인
-      if (useCache) {
-        const cached = dataCache.get<any[]>(cacheKey);
-        if (cached.exists && cached.data) {
-          setNotifications(cached.data);
-          if (!cached.isStale) return;
-          if (dataCache.isPending(cacheKey)) return;
-        }
-      }
-
-      // 중복 요청 방지
-      if (dataCache.isPending(cacheKey)) return;
-      dataCache.markPending(cacheKey);
-
-      const response = await fetch(`${API_BASE}/chat/notifications`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const notificationList = data.notifications || [];
-        setNotifications(notificationList);
-        dataCache.set(cacheKey, notificationList, 2 * 60 * 1000); // 2분 캐시
-      }
-    } catch (error) {
-      console.error('알림 조회 실패:', error);
-      dataCache.invalidate(cacheKey);
-    }
-  };
 
   // 캘린더 연동 상태 확인
   const checkCalendarLinkStatus = async () => {

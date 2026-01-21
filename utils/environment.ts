@@ -1,8 +1,8 @@
 import { Platform } from 'react-native';
 
 // 프로덕션 배포 URL (Cloud Run 직접 사용)
-const PRODUCTION_URL = 'https://api.joyner.co.kr';
-// const PRODUCTION_URL = 'http://127.0.0.1:8000'
+// const PRODUCTION_URL = 'https://api.joyner.co.kr';
+const PRODUCTION_URL = 'http://127.0.0.1:8000'
 
 /**
  * 현재 실행 환경에 맞는 백엔드 URL 반환
@@ -22,7 +22,8 @@ export const getBackendUrl = (): string => {
 
     // 3. 웹 개발 환경 (로컬 서버 사용)
     if (Platform.OS === 'web') {
-        return 'https://apijoyner.co.kr'
+        // return 'https://api.joyner.co.kr';
+        return 'http://localhost:8000';
     }
     return PRODUCTION_URL;
 };
