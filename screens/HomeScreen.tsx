@@ -2098,6 +2098,95 @@ export default function HomeScreen() {
                 </View>
               </View>
             </ScrollView>
+
+            {/* Friend Picker Modal - rendered inside Schedule Modal */}
+            <Modal
+              visible={showFriendPicker}
+              transparent={true}
+              animationType="slide"
+              onRequestClose={() => setShowFriendPicker(false)}
+            >
+              <View style={styles.friendPickerOverlay}>
+                <View style={styles.friendPickerContainer}>
+                  <View style={styles.friendPickerHandle} />
+                  <View style={styles.friendPickerHeader}>
+                    <View>
+                      <Text style={styles.friendPickerTitle}>참여자 선택</Text>
+                      <Text style={styles.friendPickerSubtitle}>일정에 초대할 친구를 선택해주세요</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => setShowFriendPicker(false)}>
+                      <X size={24} color={COLORS.neutralGray} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.friendSearchContainer}>
+                    <Search size={18} color={COLORS.neutral400} />
+                    <TextInput
+                      style={styles.friendSearchInput}
+                      value={friendSearchQuery}
+                      onChangeText={setFriendSearchQuery}
+                      placeholder="이름 또는 이메일로 검색"
+                      placeholderTextColor={COLORS.neutral400}
+                    />
+                  </View>
+
+                  <FlatList
+                    data={filteredFriends}
+                    keyExtractor={(item) => item.friend.id}
+                    style={styles.friendList}
+                    renderItem={({ item, index }) => {
+                      const isSelected = selectedFriendIds.includes(item.friend.id);
+                      return (
+                        <TouchableOpacity
+                          style={styles.friendItem}
+                          onPress={() => toggleFriendSelection(item.friend.id)}
+                        >
+                          {item.friend.picture ? (
+                            <Image
+                              source={{ uri: item.friend.picture }}
+                              style={styles.friendItemAvatarImage}
+                            />
+                          ) : (
+                            <View style={[styles.friendItemAvatar, { backgroundColor: COLORS.neutral100, alignItems: 'center', justifyContent: 'center' }]}>
+                              <UserIcon size={20} color={COLORS.neutral400} />
+                            </View>
+                          )}
+                          <View style={styles.friendItemInfo}>
+                            <Text style={styles.friendItemName}>{item.friend.name}</Text>
+                            <Text style={styles.friendItemEmail}>{item.friend.email}</Text>
+                          </View>
+                          <View style={[
+                            styles.friendItemCheckbox,
+                            {
+                              backgroundColor: isSelected ? COLORS.primaryMain : 'transparent',
+                              borderColor: isSelected ? COLORS.primaryMain : COLORS.neutral300
+                            }
+                          ]}>
+                            {isSelected && <Check size={14} color="white" />}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    }}
+                    ListEmptyComponent={
+                      <Text style={styles.emptyFriendsText}>
+                        {friends.length === 0 ? '친구가 없습니다. 먼저 친구를 추가하세요!' : '검색 결과가 없습니다.'}
+                      </Text>
+                    }
+                  />
+
+                  <View style={styles.friendPickerFooter}>
+                    <TouchableOpacity
+                      style={styles.friendPickerButton}
+                      onPress={() => setShowFriendPicker(false)}
+                    >
+                      <Text style={styles.friendPickerButtonText}>
+                        선택 완료 ({selectedFriendIds.length}명)
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            </Modal>
           </View>
         </View>
       </Modal>
@@ -2250,95 +2339,6 @@ export default function HomeScreen() {
         onDismissRequest={onDismissRequest}
         onDismissNotification={onDismissNotification}
       />
-
-      {/* Friend Picker Modal */}
-      <Modal
-        visible={showFriendPicker}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowFriendPicker(false)}
-      >
-        <View style={styles.friendPickerOverlay}>
-          <View style={styles.friendPickerContainer}>
-            <View style={styles.friendPickerHandle} />
-            <View style={styles.friendPickerHeader}>
-              <View>
-                <Text style={styles.friendPickerTitle}>참여자 선택</Text>
-                <Text style={styles.friendPickerSubtitle}>일정에 초대할 친구를 선택해주세요</Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowFriendPicker(false)}>
-                <X size={24} color={COLORS.neutralGray} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.friendSearchContainer}>
-              <Search size={18} color={COLORS.neutral400} />
-              <TextInput
-                style={styles.friendSearchInput}
-                value={friendSearchQuery}
-                onChangeText={setFriendSearchQuery}
-                placeholder="이름 또는 이메일로 검색"
-                placeholderTextColor={COLORS.neutral400}
-              />
-            </View>
-
-            <FlatList
-              data={filteredFriends}
-              keyExtractor={(item) => item.friend.id}
-              style={styles.friendList}
-              renderItem={({ item, index }) => {
-                const isSelected = selectedFriendIds.includes(item.friend.id);
-                return (
-                  <TouchableOpacity
-                    style={styles.friendItem}
-                    onPress={() => toggleFriendSelection(item.friend.id)}
-                  >
-                    {item.friend.picture ? (
-                      <Image
-                        source={{ uri: item.friend.picture }}
-                        style={styles.friendItemAvatarImage}
-                      />
-                    ) : (
-                      <View style={[styles.friendItemAvatar, { backgroundColor: COLORS.neutral100, alignItems: 'center', justifyContent: 'center' }]}>
-                        <UserIcon size={20} color={COLORS.neutral400} />
-                      </View>
-                    )}
-                    <View style={styles.friendItemInfo}>
-                      <Text style={styles.friendItemName}>{item.friend.name}</Text>
-                      <Text style={styles.friendItemEmail}>{item.friend.email}</Text>
-                    </View>
-                    <View style={[
-                      styles.friendItemCheckbox,
-                      {
-                        backgroundColor: isSelected ? COLORS.primaryMain : 'transparent',
-                        borderColor: isSelected ? COLORS.primaryMain : COLORS.neutral300
-                      }
-                    ]}>
-                      {isSelected && <Check size={14} color="white" />}
-                    </View>
-                  </TouchableOpacity>
-                );
-              }}
-              ListEmptyComponent={
-                <Text style={styles.emptyFriendsText}>
-                  {friends.length === 0 ? '친구가 없습니다. 먼저 친구를 추가하세요!' : '검색 결과가 없습니다.'}
-                </Text>
-              }
-            />
-
-            <View style={styles.friendPickerFooter}>
-              <TouchableOpacity
-                style={styles.friendPickerButton}
-                onPress={() => setShowFriendPicker(false)}
-              >
-                <Text style={styles.friendPickerButtonText}>
-                  선택 완료 ({selectedFriendIds.length}명)
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* 일정 삭제 확인 모달 */}
       <Modal
@@ -3433,6 +3433,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 48,
     borderTopRightRadius: 48,
     maxHeight: '85%',
+    flex: 1,
   },
   friendPickerHandle: {
     width: 48,
@@ -3479,6 +3480,7 @@ const styles = StyleSheet.create({
   },
   friendList: {
     paddingHorizontal: 0,
+    flex: 1,
   },
   friendItem: {
     flexDirection: 'row',
