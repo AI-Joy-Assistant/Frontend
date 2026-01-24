@@ -1595,14 +1595,16 @@ export default function ChatScreen() {
                 if (!friendData) return null;
                 return (
                   <View style={styles.selectedFriendChip}>
-                    <Image
-                      source={{
-                        uri:
-                          friendData.friend.picture ||
-                          "https://picsum.photos/150",
-                      }}
-                      style={styles.chipAvatar}
-                    />
+                    {friendData.friend.picture ? (
+                      <Image
+                        source={{ uri: friendData.friend.picture }}
+                        style={styles.chipAvatar}
+                      />
+                    ) : (
+                      <View style={[styles.chipAvatar, { backgroundColor: COLORS.neutral200, justifyContent: 'center', alignItems: 'center' }]}>
+                        <User size={14} color={COLORS.neutral400} />
+                      </View>
+                    )}
                     <Text style={styles.chipName}>
                       {friendData.friend.name}
                     </Text>
@@ -2493,6 +2495,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 48,
     borderTopRightRadius: 48,
     maxHeight: "85%",
+    flex: 1,
   },
   modalHandle: {
     width: 48,
@@ -2541,7 +2544,6 @@ const styles = StyleSheet.create({
   },
   friendList: {
     paddingHorizontal: 0,
-    maxHeight: 300,
   },
   friendListItem: {
     flexDirection: "row",
@@ -2566,9 +2568,9 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   friendListAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: COLORS.neutral200,
   },
   friendListStatus: {
@@ -2596,11 +2598,11 @@ const styles = StyleSheet.create({
     color: COLORS.neutral400,
   },
   checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     borderWidth: 2,
-    borderColor: COLORS.neutral200,
+    borderColor: 'rgba(148, 163, 184, 0.4)',
     justifyContent: "center",
     alignItems: "center",
   },

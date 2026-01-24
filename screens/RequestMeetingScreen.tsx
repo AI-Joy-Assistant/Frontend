@@ -1690,7 +1690,7 @@ const styles = StyleSheet.create({
     timeSlotText: { fontSize: 14, fontWeight: '600', color: COLORS.neutralSlate, textAlign: 'center' },
     timeSlotTextActive: { color: COLORS.primaryMain, fontWeight: 'bold' },
     bottomModalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'flex-end' },
-    bottomModalContent: { backgroundColor: COLORS.white, borderTopLeftRadius: 48, borderTopRightRadius: 48, maxHeight: '85%' },
+    bottomModalContent: { backgroundColor: COLORS.white, borderTopLeftRadius: 48, borderTopRightRadius: 48, maxHeight: '85%', flex: 1 },
     modalHandleContainer: { width: '100%', alignItems: 'center', paddingTop: 16, paddingBottom: 8 },
     modalHandle: { width: 48, height: 6, backgroundColor: 'rgba(148, 163, 184, 0.3)', borderRadius: 3 },
     bottomModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: COLORS.neutral100 },
