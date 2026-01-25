@@ -9,7 +9,9 @@
 }
 
 /* 전체 화면 높이 설정 - 모바일 브라우저 주소창 고려 */
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   min-height: 100%;
   min-height: -webkit-fill-available;
@@ -56,4 +58,22 @@ body {
 * {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* 모바일 웹에서 키보드가 올라올 때 bottom nav 숨기기 */
+/* visualViewport가 줄어들면 React에서 처리하지만, CSS fallback으로도 적용 */
+@media screen and (max-height: 450px) {
+
+  [data-testid="bottom-nav"],
+  .bottom-nav-hide-on-keyboard {
+    display: none !important;
+    visibility: hidden !important;
+  }
+}
+
+/* 모바일 웹에서 input 포커스 시 zoom 방지 (font-size 16px 이상) */
+input,
+textarea,
+select {
+  font-size: 16px !important;
 }

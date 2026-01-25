@@ -1605,7 +1605,7 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         paddingHorizontal: 16,
         paddingVertical: 12,
-        fontSize: 14,
+        fontSize: 16, // iOS Safari 자동 줌 방지를 위해 16px 이상 필요
         color: COLORS.neutralSlate,
         marginBottom: 8,
     },
@@ -1625,7 +1625,7 @@ const styles = StyleSheet.create({
         flex: 1,
         paddingVertical: 12,
         paddingHorizontal: 12,
-        fontSize: 14,
+        fontSize: 16, // iOS Safari 자동 줌 방지를 위해 16px 이상 필요
         color: COLORS.neutralSlate,
     },
     divider: {

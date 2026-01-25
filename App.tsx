@@ -48,11 +48,11 @@ export default function App() {
       // viewport meta 태그 업데이트 (Safe Area 지원)
       let viewportMeta = document.querySelector('meta[name="viewport"]') as HTMLMetaElement;
       if (viewportMeta) {
-        viewportMeta.content = 'width=device-width, initial-scale=1.0, viewport-fit=cover';
+        viewportMeta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
       } else {
         viewportMeta = document.createElement('meta');
         viewportMeta.name = 'viewport';
-        viewportMeta.content = 'width=device-width, initial-scale=1.0, viewport-fit=cover';
+        viewportMeta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
         document.head.appendChild(viewportMeta);
       }
 
@@ -95,7 +95,7 @@ export default function App() {
             },
           }}
         >
-          <Stack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false, animation: 'none' }}>
+          <Stack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false, animation: 'none', gestureEnabled: false }}>
             <Stack.Screen name="Splash" component={SplashScreen} />
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="TermsAgreement" component={TermsAgreementScreen} />
