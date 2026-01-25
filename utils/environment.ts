@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
-// 프로덕션 배포 URL (Cloud Run 직접 사용)
-const PRODUCTION_URL = 'https://api.joyner.co.kr';
+// 프로덕션 배포 URL (환경변수에서 읽어옴, fallback: 기본 URL)
+const PRODUCTION_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.joyner.co.kr';
 
 /**
  * 현재 실행 환경에 맞는 백엔드 URL 반환
