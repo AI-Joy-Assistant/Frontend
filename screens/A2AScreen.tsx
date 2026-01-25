@@ -85,6 +85,7 @@ const A2AScreen = () => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
     const route = useRoute<RouteProp<RootStackParamList, 'A2A'>>();
     const initialLogId = route.params?.initialLogId;
+    const forceRefresh = route.params?.forceRefresh;
 
     const [logs, setLogs] = useState<A2ALog[]>([]);
     const [loading, setLoading] = useState(true);
@@ -982,6 +983,23 @@ const A2AScreen = () => {
 
             if (response.ok) {
                 const data = await response.json();
+
+                // [DEBUG] 모든 세션의 날짜/시간 데이터 확인
+                console.log('[A2A DEBUG] 세션 수:', data.sessions?.length);
+                data.sessions?.forEach((session: any, index: number) => {
+                    const d = session.details || {};
+                    console.log(`[A2A DEBUG] 세션 ${index}:`, {
+                        id: session.id?.substring(0, 8),
+                        participant_names: session.participant_names,
+                        proposedDate: d.proposedDate,
+                        proposedTime: d.proposedTime,
+                        requestedDate: d.requestedDate,
+                        requestedTime: d.requestedTime,
+                        duration_nights: d.duration_nights,
+                        purpose: d.purpose,
+                    });
+                });
+
                 // 시간 형식 변환 함수 (MM월 DD일 오전/오후 HH시 → YYYY-MM-DD HH:MM)
                 const formatTimeRange = (date: string | undefined, time: string | undefined): string => {
                     if (!date && !time) return "미정";
@@ -1038,7 +1056,19 @@ const A2AScreen = () => {
                         timeRange: (() => {
                             const d = session.details || {};
                             const durationNights = d.duration_nights || 0;
-                            const date = d.proposedDate || d.requestedDate || d.date || '';
+                            // [FIX] 더 많은 날짜 소스 추가 (agreedDate 포함)
+                            const date = d.proposedDate || d.agreedDate || d.requestedDate || d.date || '';
+
+                            // [DEBUG] 날짜가 비어있으면 로그 출력
+                            if (!date) {
+                                console.log(`[A2A DEBUG] 세션 ${session.id?.substring(0, 8)} - 날짜 없음:`, {
+                                    proposedDate: d.proposedDate,
+                                    agreedDate: d.agreedDate,
+                                    requestedDate: d.requestedDate,
+                                    date: d.date,
+                                    duration_nights: durationNights
+                                });
+                            }
 
                             // 1박 이상이면 날짜 범위만 표시 (시간 제외)
                             if (durationNights >= 1 && date) {
@@ -1103,8 +1133,32 @@ const A2AScreen = () => {
     useFocusEffect(
         useCallback(() => {
             fetchCurrentUser();
-            fetchA2ALogs();
-        }, [fetchA2ALogs])
+
+            // [NEW] forceRefresh가 true면 캐시 무효화하고 즉시 새로고침
+            if (forceRefresh) {
+                console.log('[A2A] forceRefresh 감지 - 캐시 무효화하고 새로고침');
+                // 1. 캐시 완전 무효화
+                dataCache.invalidate('a2a:sessions');
+                // 2. 파라미터 리셋 (먼저 리셋하여 중복 방지)
+                navigation.setParams({ forceRefresh: undefined });
+                // 3. 약간의 딜레이 후 로드 (백엔드에서 데이터가 준비될 시간 확보)
+                setTimeout(() => {
+                    fetchA2ALogs(true, false); // 로딩 표시 O, 캐시 무시
+                }, 500);
+            } else {
+                fetchA2ALogs();
+            }
+
+            // [NEW] 폴링 백업: WebSocket이 불안정한 경우를 대비하여 15초마다 자동 새로고침
+            const pollingInterval = setInterval(() => {
+                console.log('[A2A] 폴링 새로고침');
+                fetchA2ALogs(false, false); // 로딩 표시 없이, 캐시 무시
+            }, 15000); // 15초마다
+
+            return () => {
+                clearInterval(pollingInterval);
+            };
+        }, [fetchA2ALogs, forceRefresh, navigation])
     );
 
     // currentUserId가 설정된 후에 로그 불러오기 (필터링에 필요)

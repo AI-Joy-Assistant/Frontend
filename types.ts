@@ -8,7 +8,7 @@ export type RootStackParamList = {
   Home: undefined;
   Chat: undefined;
   Friends: { initialTab?: 'friends' | 'requests' } | undefined;
-  A2A: { initialLogId?: string } | undefined;
+  A2A: { initialLogId?: string; forceRefresh?: boolean } | undefined;
   User: undefined;
   MyPage: undefined;
   Test: undefined;

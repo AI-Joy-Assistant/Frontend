@@ -303,35 +303,20 @@ const RequestMeetingScreen = () => {
         loadUserId();
     }, []);
 
-    // ✅ [NEW] 폼 상태 복원 (화면 진입 시)
+    // ✅ [FIX] 폼 상태 복원 비활성화 - 이전 저장된 상태가 문제를 일으켜서 제거
+    // 화면에 들어올 때마다 기본값(오늘 날짜)으로 시작
     useEffect(() => {
-        const restoreFormState = async () => {
-            if (isTutorialActive) return; // 튜토리얼 중에는 상태 복원 안 함
+        const clearOldFormState = async () => {
             try {
-                const savedState = await AsyncStorage.getItem('requestMeetingFormState');
-                if (savedState) {
-                    const state = JSON.parse(savedState);
-                    if (state.title) setTitle(state.title);
-                    if (state.location) setLocation(state.location);
-                    if (state.selectedFriends) {
-                        // 튜토리얼 가이드 제거 후 복원
-                        const filtered = state.selectedFriends.filter((id: string) => id !== 'tutorial_guide_joyner');
-                        setSelectedFriends(filtered);
-                    }
-                    if (state.startDate) setStartDate(state.startDate);
-                    if (state.endDate) setEndDate(state.endDate);
-                    if (state.startTime) setStartTime(state.startTime);
-                    if (state.endTime) setEndTime(state.endTime);
-                    if (state.durationHour !== undefined) setDurationHour(state.durationHour);
-                    if (state.durationMinute !== undefined) setDurationMinute(state.durationMinute);
-                    if (state.durationNights !== undefined) setDurationNights(state.durationNights);
-                }
+                // 이전에 저장된 폼 상태 삭제 (버그 방지)
+                await AsyncStorage.removeItem('requestMeetingFormState');
+                console.log('📋 [RequestMeeting] 이전 폼 상태 삭제 완료');
             } catch (error) {
-                console.error('폼 상태 복원 실패:', error);
+                console.error('폼 상태 삭제 실패:', error);
             }
         };
-        restoreFormState();
-    }, [isTutorialActive]); // 의존성 추가
+        clearOldFormState();
+    }, []); // 마운트 시 한 번만 실행
 
     // ✅ [NEW] 튜토리얼 초기화 (친구 선택 초기화 등)
     useEffect(() => {
@@ -603,6 +588,23 @@ const RequestMeetingScreen = () => {
                 scheduleDescription = `${formatDisplayDate(startDate)}부터 ${formatDisplayDate(endDate)}까지, ${startTime}~${endTime} 사이에 ${formatDuration()} 미팅`;
             }
 
+            // [DEBUG] 전송되는 값 확인
+            const requestBody = {
+                message: scheduleDescription,
+                session_id: null,  // Create new session
+                selected_friends: selectedFriends,
+                title: title,
+                location: location || null,
+                duration_nights: durationNights,  // 박 수 추가 (0이면 당일)
+                // 명시적 시간 정보 추가
+                start_date: startDate,
+                end_date: endDate,
+                start_time: startTime,
+                end_time: endTime,
+                duration_minutes: (durationHour * 60) + durationMinute,
+            };
+            console.log('🚀 [RequestMeeting] 전송 데이터:', JSON.stringify(requestBody, null, 2));
+
             // Call the chat API which handles A2A session creation
             const response = await fetch(`${getBackendUrl()}/chat/chat`, {
                 method: 'POST',
@@ -610,20 +612,7 @@ const RequestMeetingScreen = () => {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    message: scheduleDescription,
-                    session_id: null,  // Create new session
-                    selected_friends: selectedFriends,
-                    title: title,
-                    location: location || null,
-                    duration_nights: durationNights,  // 박 수 추가 (0이면 당일)
-                    // 명시적 시간 정보 추가
-                    start_date: startDate,
-                    end_date: endDate,
-                    start_time: startTime,
-                    end_time: endTime,
-                    duration_minutes: (durationHour * 60) + durationMinute,
-                }),
+                body: JSON.stringify(requestBody),
             });
 
             if (response.ok) {
@@ -1481,7 +1470,7 @@ const RequestMeetingScreen = () => {
             </Modal>
 
             {/* Success Modal */}
-            <Modal visible={isSent} transparent animationType="fade" onRequestClose={() => { setIsSent(false); navigation.navigate('A2A'); }}>
+            <Modal visible={isSent} transparent animationType="fade" onRequestClose={() => { setIsSent(false); navigation.navigate('A2A', { forceRefresh: true }); }}>
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={[styles.modalIconContainer, { backgroundColor: COLORS.indigo100 }]}>
@@ -1497,7 +1486,7 @@ const RequestMeetingScreen = () => {
                                 if (isTutorialActive) {
                                     nextSubStep();
                                 } else {
-                                    navigation.navigate('A2A');
+                                    navigation.navigate('A2A', { forceRefresh: true });
                                 }
                             }} style={[styles.deleteButton, { backgroundColor: COLORS.primaryMain }]} testID="btn_send_request_confirm">
                                 <Text style={styles.confirmButtonText}>확인</Text>

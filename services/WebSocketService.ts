@@ -118,14 +118,14 @@ class WebSocketService {
                     this.isConnecting = false;
                     this.connectionPromise = null;
 
-                    // 재연결 (10초 후)
+                    // 재연결 (5초 후) - 모바일 환경에서 더 빠른 복구
                     if (this.userId) {
                         this.reconnectTimeout = setTimeout(() => {
                             if (this.userId) {
                                 console.log('[WS:Global] 재연결 시도...');
                                 this.connect(this.userId);
                             }
-                        }, 10000);
+                        }, 5000);
                     }
                 };
 
