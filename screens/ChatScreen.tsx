@@ -1331,7 +1331,10 @@ export default function ChatScreen() {
   // Keyboard Visibility
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
 
+  // 네이티브 앱용 키보드 감지
   useEffect(() => {
+    if (Platform.OS === "web") return; // 웹에서는 별도 처리
+
     const keyboardShowEvent =
       Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const keyboardHideEvent =
@@ -1353,6 +1356,29 @@ export default function ChatScreen() {
     return () => {
       showSubscription.remove();
       hideSubscription.remove();
+    };
+  }, []);
+
+  // 웹용 키보드 감지 (visualViewport API 활용)
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+
+    const viewport = (window as any).visualViewport;
+    if (!viewport) return;
+
+    let initialHeight = viewport.height;
+
+    const handleResize = () => {
+      // 키보드가 올라오면 visualViewport.height가 줄어듦
+      // 초기 높이의 75% 미만이면 키보드가 올라온 것으로 판단
+      const keyboardVisible = viewport.height < initialHeight * 0.75;
+      setKeyboardVisible(keyboardVisible);
+    };
+
+    viewport.addEventListener("resize", handleResize);
+
+    return () => {
+      viewport.removeEventListener("resize", handleResize);
     };
   }, []);
 
@@ -2461,7 +2487,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    fontSize: 15,
+    fontSize: 16, // iOS Safari 자동 줌 방지를 위해 16px 이상 필요
     color: COLORS.neutralSlate,
     maxHeight: 100,
   },

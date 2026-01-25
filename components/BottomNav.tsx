@@ -63,7 +63,12 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
     };
 
     return (
-        <View style={styles.container}>
+        <View
+            style={styles.container}
+            testID="bottom-nav"
+            // @ts-ignore - 웹에서 CSS 선택자로 사용하기 위한 className
+            className="bottom-nav-hide-on-keyboard"
+        >
             <View style={styles.content}>
                 {navItems.map((item) => {
                     const isActive = activeTab === item.id;
