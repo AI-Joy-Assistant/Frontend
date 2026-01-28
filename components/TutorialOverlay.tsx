@@ -39,7 +39,7 @@ const TutorialOverlay: React.FC = () => {
         if (isTutorialActive && currentSubStep) {
             Animated.spring(slideAnim, {
                 toValue: 0,
-                useNativeDriver: true,
+                useNativeDriver: false, // glowAnim과 같은 View에서 사용하므로 JS driver 사용
                 tension: 50,
                 friction: 8,
             }).start();
@@ -50,12 +50,12 @@ const TutorialOverlay: React.FC = () => {
                     Animated.timing(pulseAnim, {
                         toValue: 1.05,
                         duration: 1000,
-                        useNativeDriver: true,
+                        useNativeDriver: false,
                     }),
                     Animated.timing(pulseAnim, {
                         toValue: 1,
                         duration: 1000,
-                        useNativeDriver: true,
+                        useNativeDriver: false,
                     }),
                 ])
             );

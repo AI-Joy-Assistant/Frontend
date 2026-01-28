@@ -1265,7 +1265,7 @@ export default function HomeScreen() {
         >
 
           {/* Google Calendar Link Button - Apple 로그인 사용자에게만 표시, 연동 완료 시 숨김 */}
-          {authProvider === 'apple' && isCalendarLinked === false && !isCalendarDismissed && (
+          {authProvider === 'apple' && isCalendarLinked !== true && !isCalendarDismissed && (
             <TouchableOpacity
               onPress={() => setShowCalendarIntegrationModal(true)}
               style={{

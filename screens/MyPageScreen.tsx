@@ -284,14 +284,16 @@ const MyPageScreen = () => {
       await AsyncStorage.removeItem('accessToken');
       await AsyncStorage.removeItem('authProvider');
       await AsyncStorage.removeItem('userPicture');
-      // calendarIntegrationDismissed는 로그아웃 시 유지 (기기 설정처럼 동작)
-      // 그 외 알림 관련 로컬 데이터도 삭제 여부 결정 필요하지만, 
-      // 사용자가 캘린더 버튼만 명시했으므로 캘린더 관련 키 삭제는 제거함.
-      // 다른 dismissed 데이터들도 사용자별 데이터라면 지우는게 맞지만, 
-      // 현재 요청은 "연동하지 않기" 상태 유지임.
+      // ✅ 캘린더 연동 "나중에" 버튼 상태도 삭제 (새 사용자에게 버튼 표시)
+      await AsyncStorage.removeItem('calendarIntegrationDismissed');
+      // ✅ 사용자별 데이터 삭제
+      await AsyncStorage.removeItem('dismissedRequestIds');
+      await AsyncStorage.removeItem('dismissedNotificationIds');
+      await AsyncStorage.removeItem('viewedRequestIds');
+      await AsyncStorage.removeItem('viewedNotificationIds');
 
-      // 사용자별 데이터인 dismissedRequestIds 등은 지우는게 맞을 수 있으나
-      // 일단 사용자가 지적한 캘린더 버튼 관련만 수정.
+      // ✅ 인메모리 캐시 전체 삭제 (이전 사용자 데이터 제거)
+      dataCache.clear();
 
       setLogoutModalVisible(false);
       navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
@@ -327,6 +329,9 @@ const MyPageScreen = () => {
         await AsyncStorage.removeItem('dismissedNotificationIds');
         await AsyncStorage.removeItem('viewedRequestIds');
         await AsyncStorage.removeItem('viewedNotificationIds');
+        // ✅ 튜토리얼 관련 상태 초기화 (재가입 시 튜토리얼 다시 표시)
+        await AsyncStorage.removeItem('tutorial_completed');
+        await AsyncStorage.removeItem('tutorial_skipped');
         Alert.alert('탈퇴 완료', '정상적으로 탈퇴되었습니다.');
         setWithdrawModalVisible(false);
         navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
