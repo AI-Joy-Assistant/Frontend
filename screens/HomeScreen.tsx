@@ -158,12 +158,33 @@ export default function HomeScreen() {
         if (storedViewedNotifications) {
           setViewedNotificationIds(JSON.parse(storedViewedNotifications));
         }
+        // authProvider도 즉시 로드 (배너 표시를 위해 필수)
+        const storedAuthProvider = await AsyncStorage.getItem('authProvider');
+        if (storedAuthProvider) {
+          setAuthProvider(storedAuthProvider);
+        }
+        // 캘린더 연동 상태 캐시 로드 (깜빡임 방지)
+        const cachedCalendarLinked = await AsyncStorage.getItem('isCalendarLinked');
+        if (cachedCalendarLinked !== null) {
+          setIsCalendarLinked(cachedCalendarLinked === 'true');
+        }
       } catch (error) {
         console.error('Failed to load stored data:', error);
       }
     };
     loadStoredData();
   }, []);
+
+  // Apple 로그인 사용자의 캘린더 연동 상태 체크 (authProvider 변경 시)
+  useEffect(() => {
+    if (authProvider === 'apple') {
+      checkCalendarLinkStatus();
+      // dismissed 상태도 복원
+      AsyncStorage.getItem('calendarIntegrationDismissed').then(val => {
+        if (val === 'true') setIsCalendarDismissed(true);
+      });
+    }
+  }, [authProvider]);
 
   const onNavigateToA2A = (id: string) => {
     navigation.navigate('A2A', { initialLogId: id });
@@ -236,11 +257,15 @@ export default function HomeScreen() {
       if (response.ok) {
         const data = await response.json();
         console.log('[DEBUG] link-status 데이터:', data);
-        setIsCalendarLinked(data.is_linked || false);
+        const linked = data.is_linked || false;
+        setIsCalendarLinked(linked);
+        // 캐시에 저장 (다음 화면 진입 시 깜빡임 방지)
+        await AsyncStorage.setItem('isCalendarLinked', linked ? 'true' : 'false');
       } else {
         // API 호출 실패 시 (연동 안 됨으로 처리)
         console.log('[DEBUG] API 실패 - isCalendarLinked = false');
         setIsCalendarLinked(false);
+        await AsyncStorage.setItem('isCalendarLinked', 'false');
       }
     } catch (error) {
       console.error('캘린더 연동 상태 확인 실패:', error);
@@ -316,17 +341,9 @@ export default function HomeScreen() {
       homeStore.fetchAll();
       friendsStore.fetchAll();
       fetchCurrentUser();
-
-      // Apple 로그인 사용자만 캘린더 연동 상태 확인
-      if (authProvider === 'apple') {
-        checkCalendarLinkStatus();
-        // dismissed 상태 복원
-        AsyncStorage.getItem('calendarIntegrationDismissed').then(val => {
-          if (val === 'true') setIsCalendarDismissed(true);
-        });
-      }
       // 배지 폴링은 BottomNav에서 처리하므로 여기서는 제거
-    }, [authProvider])
+      // Apple 캘린더 연동 상태 체크는 별도 useEffect에서 authProvider 변경 시 처리
+    }, [])
   );
 
   // WebSocket for real-time A2A notifications (using singleton service)
@@ -549,6 +566,9 @@ export default function HomeScreen() {
           setCustomAlertType('success');
           setCustomAlertVisible(true);
           setIsCalendarLinked(true);
+          // 캐시에도 저장 (MyPageScreen에서 바로 반영되도록)
+          await AsyncStorage.setItem('isCalendarLinked', 'true');
+          dataCache.set('calendar:link-status', { is_linked: true }, 10 * 60 * 1000);
           fetchSchedules();
         } else if (errorParam) {
           setCustomAlertTitle('오류');
@@ -562,6 +582,9 @@ export default function HomeScreen() {
           setCustomAlertType('success');
           setCustomAlertVisible(true);
           setIsCalendarLinked(true);
+          // 캐시에도 저장
+          await AsyncStorage.setItem('isCalendarLinked', 'true');
+          dataCache.set('calendar:link-status', { is_linked: true }, 10 * 60 * 1000);
           fetchSchedules();
         } else {
           setCustomAlertTitle('알림');
@@ -569,6 +592,9 @@ export default function HomeScreen() {
           setCustomAlertType('info');
           setCustomAlertVisible(true);
           setIsCalendarLinked(true);
+          // 캐시에도 저장
+          await AsyncStorage.setItem('isCalendarLinked', 'true');
+          dataCache.set('calendar:link-status', { is_linked: true }, 10 * 60 * 1000);
           fetchSchedules();
         }
       } else if (result.type === 'cancel') {

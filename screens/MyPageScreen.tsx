@@ -190,7 +190,13 @@ const MyPageScreen = () => {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) return;
 
-      // 캐시 먼저 확인
+      // AsyncStorage 캐시 먼저 확인 (HomeScreen에서 연동 후 바로 반영되도록)
+      const asyncStorageCached = await AsyncStorage.getItem('isCalendarLinked');
+      if (asyncStorageCached !== null) {
+        setIsCalendarLinked(asyncStorageCached === 'true');
+      }
+
+      // dataCache 확인
       if (useCache) {
         const cached = dataCache.get<{ is_linked: boolean }>(cacheKey);
         if (cached.exists && cached.data) {
@@ -216,6 +222,8 @@ const MyPageScreen = () => {
         setIsCalendarLinked(data.is_linked);
         // 상태 변경이 드물므로 10분 캐시
         dataCache.set(cacheKey, data, 10 * 60 * 1000);
+        // AsyncStorage에도 저장
+        await AsyncStorage.setItem('isCalendarLinked', data.is_linked ? 'true' : 'false');
       }
     } catch (error) {
       console.error('캘린더 상태 확인 오류:', error);
@@ -291,6 +299,8 @@ const MyPageScreen = () => {
       await AsyncStorage.removeItem('dismissedNotificationIds');
       await AsyncStorage.removeItem('viewedRequestIds');
       await AsyncStorage.removeItem('viewedNotificationIds');
+      // ✅ 캘린더 연동 상태 캐시 삭제 (재가입 시 이전 상태 남지 않도록)
+      await AsyncStorage.removeItem('isCalendarLinked');
 
       // ✅ 인메모리 캐시 전체 삭제 (이전 사용자 데이터 제거)
       dataCache.clear();
@@ -329,9 +339,12 @@ const MyPageScreen = () => {
         await AsyncStorage.removeItem('dismissedNotificationIds');
         await AsyncStorage.removeItem('viewedRequestIds');
         await AsyncStorage.removeItem('viewedNotificationIds');
-        // ✅ 튜토리얼 관련 상태 초기화 (재가입 시 튜토리얼 다시 표시)
         await AsyncStorage.removeItem('tutorial_completed');
         await AsyncStorage.removeItem('tutorial_skipped');
+        // ✅ 캘린더 연동 상태 캐시 삭제 (재가입 시 이전 상태 남지 않도록)
+        await AsyncStorage.removeItem('isCalendarLinked');
+        // ✅ 인메모리 캐시도 삭제
+        dataCache.clear();
         Alert.alert('탈퇴 완료', '정상적으로 탈퇴되었습니다.');
         setWithdrawModalVisible(false);
         navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
