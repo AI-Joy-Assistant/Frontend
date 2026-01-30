@@ -32,7 +32,7 @@ const TUTORIAL_TAB_MAP: Record<string, string> = {
 
 const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-    const { isTutorialActive, currentSubStep, nextSubStep } = useTutorial();
+    const { isTutorialActive, currentSubStep, nextSubStep, registerTarget } = useTutorial();
 
     const navItems = [
         { id: Tab.HOME, label: '홈', icon: 'home', route: 'Home' },
@@ -89,6 +89,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
                             ]}
                             activeOpacity={0.7}
                             testID={`tab_${item.id.toLowerCase()}`}
+                            ref={(r) => { if (r) registerTarget(`tab_${item.id.toLowerCase()}`, r); }}
                         >
                             <View style={styles.iconContainer}>
                                 <Ionicons

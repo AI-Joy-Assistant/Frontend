@@ -1322,10 +1322,13 @@ export default function HomeScreen() {
           )}
 
           {/* Calendar Section  */}
-          <View style={[
-            styles.calendarContainer,
-            styles.calendarContainerRounded
-          ]}>
+          <View
+            style={[
+              styles.calendarContainer,
+              styles.calendarContainerRounded
+            ]}
+            ref={(r) => { if (r) registerTarget('calendar_area', r); }}
+          >
 
             {/* Calendar Header */}
             <View style={styles.calendarHeader}>
@@ -1369,6 +1372,7 @@ export default function HomeScreen() {
                     markNotificationsAsViewed();
                   }}
                   style={styles.iconButton}
+                  ref={(r) => { if (r) registerTarget('btn_notification', r); }}
                 >
                   {(() => {
                     // 새 요청 수: viewed에 없는 요청들 (내가 보낸 것 제외)

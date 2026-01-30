@@ -181,9 +181,10 @@ const FriendsScreen = () => {
     return friendRequests;
   }, [isTutorialActive, currentStep, tutorialFriendAdded, friendRequests, fakeFriendRequest]);
 
-  // 튜토리얼 모드일 때 가짜 친구 주입
+  // 튜토리얼 모드일 때 가짜 친구 주입 (튜토리얼 활성 상태에서만)
   const displayedFriends = React.useMemo(() => {
-    if (tutorialFriendAdded || (isTutorialActive && currentStep !== 'INTRO' && currentStep !== 'ACCEPT_FRIEND')) {
+    // 튜토리얼이 활성화된 상태에서만 가상 친구 표시
+    if (isTutorialActive && (tutorialFriendAdded || (currentStep !== 'INTRO' && currentStep !== 'ACCEPT_FRIEND'))) {
       // 이미 실제 목록에 있는지 확인
       const exists = friends.some(f => f.friend.id === ghostFriend.id);
       if (!exists) {
@@ -642,6 +643,7 @@ const FriendsScreen = () => {
             style={styles.addUserButton}
             onPress={() => setIsAdding(true)}
             testID="btn_add_friend"
+            ref={(r) => { if (r) registerTarget('btn_add_friend', r); }}
           >
             <UserPlus size={25} color={COLORS.primaryMain} />
           </TouchableOpacity>
