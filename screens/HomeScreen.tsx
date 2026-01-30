@@ -1322,10 +1322,13 @@ export default function HomeScreen() {
           )}
 
           {/* Calendar Section  */}
-          <View style={[
-            styles.calendarContainer,
-            styles.calendarContainerRounded
-          ]}>
+          <View
+            style={[
+              styles.calendarContainer,
+              styles.calendarContainerRounded
+            ]}
+            ref={(r) => { if (r) registerTarget('calendar_area', r); }}
+          >
 
             {/* Calendar Header */}
             <View style={styles.calendarHeader}>
@@ -1369,6 +1372,7 @@ export default function HomeScreen() {
                     markNotificationsAsViewed();
                   }}
                   style={styles.iconButton}
+                  ref={(r) => { if (r) registerTarget('btn_notification', r); }}
                 >
                   {(() => {
                     // 새 요청 수: viewed에 없는 요청들 (내가 보낸 것 제외)
@@ -1981,23 +1985,12 @@ export default function HomeScreen() {
                       <CalendarIcon size={18} color={COLORS.neutral700} />
                       <Text style={styles.inputNoBorder}>{formStartDate || 'YYYY-MM-DD'}</Text>
                     </TouchableOpacity>
-                    {Platform.OS === 'web' ? (
-                      <DatePickerModal
-                        visible={showStartDatePicker}
-                        onClose={() => setShowStartDatePicker(false)}
-                        onSelect={(date) => onStartDateChange(null, date)}
-                        initialDate={parseDate(formStartDate)}
-                      />
-                    ) : (
-                      showStartDatePicker && (
-                        <DateTimePicker
-                          value={parseDate(formStartDate)}
-                          mode="date"
-                          display="default"
-                          onChange={onStartDateChange}
-                        />
-                      )
-                    )}
+                    <DatePickerModal
+                      visible={showStartDatePicker}
+                      onClose={() => setShowStartDatePicker(false)}
+                      onSelect={(date) => onStartDateChange(null, date)}
+                      initialDate={parseDate(formStartDate)}
+                    />
                   </View>
                   <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
                     <Text style={styles.label}>종료 날짜 (선택)</Text>
@@ -2008,23 +2001,12 @@ export default function HomeScreen() {
                       <CalendarIcon size={18} color={COLORS.neutral400} />
                       <Text style={styles.inputNoBorder}>{formEndDate || 'YYYY-MM-DD'}</Text>
                     </TouchableOpacity>
-                    {Platform.OS === 'web' ? (
-                      <DatePickerModal
-                        visible={showEndDatePicker}
-                        onClose={() => setShowEndDatePicker(false)}
-                        onSelect={(date) => onEndDateChange(null, date)}
-                        initialDate={parseDate(formEndDate)}
-                      />
-                    ) : (
-                      showEndDatePicker && (
-                        <DateTimePicker
-                          value={parseDate(formEndDate)}
-                          mode="date"
-                          display="default"
-                          onChange={onEndDateChange}
-                        />
-                      )
-                    )}
+                    <DatePickerModal
+                      visible={showEndDatePicker}
+                      onClose={() => setShowEndDatePicker(false)}
+                      onSelect={(date) => onEndDateChange(null, date)}
+                      initialDate={parseDate(formEndDate)}
+                    />
                   </View>
                 </View>
 
@@ -2050,24 +2032,12 @@ export default function HomeScreen() {
                         <Clock size={18} color={COLORS.neutral700} />
                         <Text style={styles.inputNoBorder}>{formStartTime || 'HH:MM'}</Text>
                       </TouchableOpacity>
-                      {Platform.OS === 'web' ? (
-                        <TimePickerModal
-                          visible={showStartTimePicker}
-                          onClose={() => setShowStartTimePicker(false)}
-                          onSelect={(date) => onStartTimeChange(null, date)}
-                          initialTime={parseTime(formStartTime)}
-                        />
-                      ) : (
-                        showStartTimePicker && (
-                          <DateTimePicker
-                            value={parseTime(formStartTime)}
-                            mode="time"
-                            display="default"
-                            onChange={onStartTimeChange}
-                            minuteInterval={1}
-                          />
-                        )
-                      )}
+                      <TimePickerModal
+                        visible={showStartTimePicker}
+                        onClose={() => setShowStartTimePicker(false)}
+                        onSelect={(date) => onStartTimeChange(null, date)}
+                        initialTime={parseTime(formStartTime)}
+                      />
                     </View>
                     <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
                       <Text style={styles.label}>종료 시간</Text>
@@ -2078,24 +2048,12 @@ export default function HomeScreen() {
                         <Clock size={18} color={COLORS.neutral700} />
                         <Text style={styles.inputNoBorder}>{formEndTime || 'HH:MM'}</Text>
                       </TouchableOpacity>
-                      {Platform.OS === 'web' ? (
-                        <TimePickerModal
-                          visible={showEndTimePicker}
-                          onClose={() => setShowEndTimePicker(false)}
-                          onSelect={(date) => onEndTimeChange(null, date)}
-                          initialTime={parseTime(formEndTime)}
-                        />
-                      ) : (
-                        showEndTimePicker && (
-                          <DateTimePicker
-                            value={parseTime(formEndTime)}
-                            mode="time"
-                            display="default"
-                            onChange={onEndTimeChange}
-                            minuteInterval={1}
-                          />
-                        )
-                      )}
+                      <TimePickerModal
+                        visible={showEndTimePicker}
+                        onClose={() => setShowEndTimePicker(false)}
+                        onSelect={(date) => onEndTimeChange(null, date)}
+                        initialTime={parseTime(formEndTime)}
+                      />
                     </View>
                   </View>
                 )}

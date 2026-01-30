@@ -731,12 +731,23 @@ const A2AScreen = () => {
     };
 
     const handleSubmitReschedule = async () => {
-        // [NEW] 튜토리얼 인터셉트
-        if (isTutorialActive && currentStep === 'RESPOND_TO_REQUEST' && currentSubStep?.id === 'select_reschedule_time') {
-            console.log('[Tutorial] Intercepting reschedule submit');
+        // [NEW] 튜토리얼 모드일 때는 API 호출 없이 UI만 처리
+        if (isTutorialActive && currentStep === 'RESPOND_TO_REQUEST') {
+            console.log('[Tutorial] Intercepting reschedule submit - no API call');
             setIsRescheduling(false); // Close reschedule view
+
+            // 하드코딩된 성공 처리
+            if (selectedLog) {
+                const updatedLog: A2ALog = {
+                    ...selectedLog,
+                    status: 'pending' as const,
+                    summary: `재조율 요청됨: ${startDate} ${startTime}`
+                };
+                setSelectedLog(updatedLog);
+            }
+
             setTimeout(() => {
-                nextSubStep(); // Advance to 'reschedule_completed'
+                nextSubStep();
             }, 500);
             return;
         }
@@ -804,7 +815,8 @@ const A2AScreen = () => {
 
                 fetchA2ALogs(false);
             } else {
-                console.error("Reschedule failed");
+                const errorText = await response.text();
+                console.error("Reschedule failed:", response.status, errorText);
             }
         } catch (error) {
             console.error("Error submitting reschedule:", error);
@@ -1583,14 +1595,23 @@ const A2AScreen = () => {
     };
 
     const renderLogItem = ({ item }: { item: A2ALog }) => {
-        const isTutorialTarget = item.id === 'tutorial_received_request';
-        const highlighted = isTutorialTarget && isHighlighted('log_card_tutorial_received_request');
+        const isTutorialReceivedTarget = item.id === 'tutorial_received_request';
+        const isTutorialSentTarget = item.id === 'tutorial_fake_request';  // FAKE_A2A_REQUEST.id와 일치
+        const highlighted = isTutorialReceivedTarget && isHighlighted('log_card_tutorial_received_request');
+        const highlightedSent = isTutorialSentTarget && isHighlighted('card_a2a_request');
+
+        // ref 등록 함수
+        const getRef = () => {
+            if (isTutorialReceivedTarget) return (r: any) => { if (r) registerTarget('log_card_tutorial_received_request', r); };
+            if (isTutorialSentTarget) return (r: any) => { if (r) registerTarget('card_a2a_request', r); };
+            return undefined;
+        };
 
         return (
             <TouchableOpacity
                 style={[
                     styles.logItem,
-                    highlighted && {
+                    (highlighted || highlightedSent) && {
                         borderColor: COLORS.primaryMain,
                         borderWidth: 2,
                         backgroundColor: '#F5F3FF',
@@ -1599,8 +1620,8 @@ const A2AScreen = () => {
                 ]}
                 onPress={() => handleLogClick(item)}
                 activeOpacity={0.7}
-                testID={isTutorialTarget ? 'log_card_tutorial_received_request' : undefined}
-                ref={isTutorialTarget ? (r) => { if (r) registerTarget('log_card_tutorial_received_request', r); } : undefined}
+                testID={isTutorialReceivedTarget ? 'log_card_tutorial_received_request' : (isTutorialSentTarget ? 'card_a2a_request' : undefined)}
+                ref={getRef()}
             >
                 <View style={styles.logHeader}>
                     <View style={{ flex: 1, marginRight: 8 }}>
@@ -2448,6 +2469,11 @@ const A2AScreen = () => {
                                                         const isNegotiationComplete = selectedLog?.status?.toLowerCase() === 'pending_approval';
 
                                                         const handleApproveWithCheck = () => {
+                                                            // 튜토리얼 모드에서는 협상 완료 체크 건너뛰기
+                                                            if (isTutorialActive && currentStep === 'RESPOND_TO_REQUEST') {
+                                                                handleApproveClick();
+                                                                return;
+                                                            }
                                                             if (!isNegotiationComplete) {
                                                                 setShowNegotiationIncompleteAlert(true);
                                                                 return;
