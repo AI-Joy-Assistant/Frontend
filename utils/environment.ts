@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
 // 프로덕션 배포 URL (환경변수에서 읽어옴, fallback: 기본 URL)
-const PRODUCTION_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.joyner.co.kr';
+const PRODUCTION_URL = process.env.EXPO_PUBLIC_API_URL;
 
 /**
  * 현재 실행 환경에 맞는 백엔드 URL 반환
@@ -21,8 +21,7 @@ export const getBackendUrl = (): string => {
 
     // 3. 웹 개발 환경 (로컬 서버 사용)
     if (Platform.OS === 'web') {
-        return 'https://api.joyner.co.kr';
-        // return 'http://localhost:8000';
+        return PRODUCTION_URL;
     }
     return PRODUCTION_URL;
 };

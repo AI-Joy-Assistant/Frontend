@@ -6,9 +6,10 @@ import {
     TouchableOpacity,
     Animated,
     Dimensions,
+    Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronRight, X } from 'lucide-react-native';
+import { ChevronRight, ChevronLeft, X } from 'lucide-react-native';
 import { useTutorial } from '../store/TutorialContext';
 import { COLORS } from '../constants/Colors';
 
@@ -21,10 +22,14 @@ const TutorialOverlay: React.FC = () => {
         currentStepData,
         currentSubStepIndex,
         nextSubStep,
+        prevSubStep,
         skipTutorial,
         completeTutorial,
         targetRefs,
     } = useTutorial();
+
+    // 스킵 확인 모달 상태
+    const [showSkipModal, setShowSkipModal] = useState(false);
 
     // 타겟 레이아웃 상태
     const [targetLayout, setTargetLayout] = useState<{ x: number, y: number, width: number, height: number } | null>(null);
@@ -39,7 +44,7 @@ const TutorialOverlay: React.FC = () => {
         if (isTutorialActive && currentSubStep) {
             Animated.spring(slideAnim, {
                 toValue: 0,
-                useNativeDriver: true,
+                useNativeDriver: false, // glowAnim과 같은 View에서 사용하므로 JS driver 사용
                 tension: 50,
                 friction: 8,
             }).start();
@@ -50,12 +55,12 @@ const TutorialOverlay: React.FC = () => {
                     Animated.timing(pulseAnim, {
                         toValue: 1.05,
                         duration: 1000,
-                        useNativeDriver: true,
+                        useNativeDriver: false,
                     }),
                     Animated.timing(pulseAnim, {
                         toValue: 1,
                         duration: 1000,
-                        useNativeDriver: true,
+                        useNativeDriver: false,
                     }),
                 ])
             );
@@ -85,22 +90,39 @@ const TutorialOverlay: React.FC = () => {
         }
     }, [isTutorialActive, currentSubStep, currentSubStepIndex]);
 
-    // 타겟 위치 측정
+    // 타겟 위치 측정 (스크롤 시 위치 업데이트를 위해 주기적으로 측정)
     useEffect(() => {
         if (isTutorialActive && currentSubStep?.targetId) {
-            const ref = targetRefs.current[currentSubStep.targetId];
-            if (ref) {
-                // 약간의 지연 후 측정 (UI 렌더링 완료 대기)
-                const timer = setTimeout(() => {
+            const measureTarget = () => {
+                const ref = targetRefs.current[currentSubStep.targetId!];
+                if (ref) {
                     ref.measureInWindow((x: number, y: number, width: number, height: number) => {
-                        console.log(`[Tutorial] Measured ${currentSubStep.targetId}:`, { x, y, width, height });
-                        setTargetLayout({ x, y, width, height });
+                        // 유효한 측정값인 경우에만 업데이트
+                        if (width > 0 && height > 0) {
+                            setTargetLayout(prev => {
+                                // 위치가 변경된 경우에만 상태 업데이트
+                                if (!prev || prev.x !== x || prev.y !== y) {
+                                    return { x, y, width, height };
+                                }
+                                return prev;
+                            });
+                        }
                     });
-                }, 100);
-                return () => clearTimeout(timer);
-            } else {
-                setTargetLayout(null);
-            }
+                } else {
+                    setTargetLayout(null);
+                }
+            };
+
+            // 초기 측정 (약간의 지연 후)
+            const initialTimer = setTimeout(measureTarget, 0.5);
+
+            // 스크롤 대응을 위해 주기적으로 위치 측정 (0.5ms 간격)
+            const interval = setInterval(measureTarget, 0.5);
+
+            return () => {
+                clearTimeout(initialTimer);
+                clearInterval(interval);
+            };
         } else {
             setTargetLayout(null);
         }
@@ -166,6 +188,24 @@ const TutorialOverlay: React.FC = () => {
 
     return (
         <View style={styles.overlay} pointerEvents="box-none">
+            {/* 타겟 요소 하이라이트 박스 - 특정 section만 표시 */}
+            {targetLayout && currentSubStep?.targetId &&
+                ['section_duration_nights', 'section_date', 'section_time', 'section_duration'].includes(currentSubStep.targetId) && (
+                    <View
+                        style={[
+                            styles.targetHighlight,
+                            {
+                                position: 'absolute',
+                                left: targetLayout.x - 10,
+                                top: targetLayout.y - 10,
+                                width: targetLayout.width + 20,
+                                height: targetLayout.height + 20,
+                            }
+                        ]}
+                        pointerEvents="none"
+                    />
+                )}
+
             {/* 컴팩트 메시지 바 */}
             <Animated.View
                 style={[
@@ -175,7 +215,7 @@ const TutorialOverlay: React.FC = () => {
                         borderWidth: 2,
                         borderColor: glowAnim.interpolate({
                             inputRange: [0, 1],
-                            outputRange: [COLORS.primaryLight || '#E0E7FF', COLORS.primaryMain]
+                            outputRange: [COLORS.primaryMain || '#E0E7FF', COLORS.primaryDark]
                         }),
                         shadowColor: COLORS.primaryMain,
                         shadowOpacity: glowAnim.interpolate({
@@ -190,17 +230,27 @@ const TutorialOverlay: React.FC = () => {
                 ]}
                 pointerEvents="auto"
             >
-                {/* 진행률 표시 */}
-                <View style={styles.progressDots}>
-                    {Array.from({ length: totalSubSteps }).map((_, i) => (
-                        <View
-                            key={i}
-                            style={[
-                                styles.dot,
-                                i <= currentSubStepIndex && styles.dotActive
-                            ]}
-                        />
-                    ))}
+                {/* 상단: 진행률 표시 + 닫기 버튼 */}
+                <View style={styles.topRow}>
+                    <View style={styles.progressDots}>
+                        {Array.from({ length: totalSubSteps }).map((_, i) => (
+                            <View
+                                key={i}
+                                style={[
+                                    styles.dot,
+                                    i <= currentSubStepIndex && styles.dotActive
+                                ]}
+                            />
+                        ))}
+                    </View>
+                    {!isCompleteStep && (
+                        <TouchableOpacity
+                            style={styles.skipBtn}
+                            onPress={() => setShowSkipModal(true)}
+                        >
+                            <X size={16} color={COLORS.neutral400 || '#94A3B8'} />
+                        </TouchableOpacity>
+                    )}
                 </View>
 
                 {/* 메시지 */}
@@ -208,8 +258,19 @@ const TutorialOverlay: React.FC = () => {
                     {currentSubStep.message}
                 </Text>
 
-                {/* 버튼들 */}
-                <View style={styles.buttonRow}>
+                {/* 하단: 버튼 */}
+                <View style={styles.bottomRow}>
+                    {/* 이전 버튼 */}
+                    {currentSubStepIndex > 0 && !isAutoComplete && (
+                        <TouchableOpacity
+                            style={styles.prevBtn}
+                            onPress={prevSubStep}
+                        >
+                            <ChevronLeft size={14} color={COLORS.primaryDark} />
+                            <Text style={styles.prevBtnText}>이전</Text>
+                        </TouchableOpacity>
+                    )}
+
                     {isAutoComplete ? (
                         <View style={styles.loadingIndicator}>
                             <Animated.View
@@ -227,17 +288,40 @@ const TutorialOverlay: React.FC = () => {
                             <ChevronRight size={14} color={COLORS.white} />
                         </TouchableOpacity>
                     )}
-
-                    {!isCompleteStep && (
-                        <TouchableOpacity
-                            style={styles.skipBtn}
-                            onPress={skipTutorial}
-                        >
-                            <X size={16} color={COLORS.neutral400 || '#94A3B8'} />
-                        </TouchableOpacity>
-                    )}
                 </View>
             </Animated.View>
+
+            {/* 스킵 확인 모달 */}
+            <Modal
+                visible={showSkipModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowSkipModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>튜토리얼을 건너뛰시겠습니까?</Text>
+                        <Text style={styles.modalMessage}>나중에 프로필 메뉴에서 다시 시작할 수 있습니다.</Text>
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                style={styles.modalCancelBtn}
+                                onPress={() => setShowSkipModal(false)}
+                            >
+                                <Text style={styles.modalCancelText}>계속하기</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.modalConfirmBtn}
+                                onPress={() => {
+                                    setShowSkipModal(false);
+                                    skipTutorial();
+                                }}
+                            >
+                                <Text style={styles.modalConfirmText}>건너뛰기</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 };
@@ -247,6 +331,17 @@ const styles = StyleSheet.create({
         ...StyleSheet.absoluteFillObject,
         zIndex: 9999,
     },
+    targetHighlight: {
+        borderWidth: 2,
+        borderColor: COLORS.primaryDark,
+        borderRadius: 12,
+        backgroundColor: 'transparent',
+        shadowColor: COLORS.primaryMain,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.4,
+        shadowRadius: 8,
+        elevation: 8,
+    },
     compactBar: {
         position: 'absolute',
         left: 12,
@@ -255,8 +350,7 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         paddingVertical: 12,
         paddingHorizontal: 16,
-        flexDirection: 'row',
-        alignItems: 'center',
+        flexDirection: 'column',  // 세로 레이아웃으로 변경
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.15,
@@ -264,48 +358,52 @@ const styles = StyleSheet.create({
         elevation: 8,
         zIndex: 10,
     },
+    topRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
     progressDots: {
         flexDirection: 'row',
-        marginRight: 12,
     },
     dot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
+        width: 5,
+        height: 5,
+        borderRadius: 2.5,
         backgroundColor: '#E2E8F0',
-        marginRight: 4,
+        marginRight: 3,
     },
     dotActive: {
-        backgroundColor: COLORS.primaryMain,
+        backgroundColor: COLORS.primaryDark,
     },
     compactMessage: {
-        flex: 1,
         fontSize: 14,
         fontWeight: '600',
         color: COLORS.neutralSlate || '#334155',
-        lineHeight: 20,
+        lineHeight: 22,
+        marginBottom: 12,
     },
-    buttonRow: {
+    bottomRow: {
         flexDirection: 'row',
+        justifyContent: 'flex-end',
         alignItems: 'center',
-        marginLeft: 8,
     },
     nextBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: COLORS.primaryMain,
-        paddingHorizontal: 12,
-        paddingVertical: 6,
+        backgroundColor: COLORS.primaryDark,
+        paddingHorizontal: 14,
+        paddingVertical: 8,
         borderRadius: 8,
     },
     nextBtnText: {
         color: COLORS.white,
-        fontSize: 12,
+        fontSize: 13,
         fontWeight: 'bold',
         marginRight: 2,
     },
     skipBtn: {
-        marginLeft: 8,
         padding: 4,
     },
     loadingIndicator: {
@@ -315,7 +413,76 @@ const styles = StyleSheet.create({
         width: 8,
         height: 8,
         borderRadius: 4,
-        backgroundColor: COLORS.primaryLight,
+        backgroundColor: COLORS.primaryDark,
+    },
+    prevBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: COLORS.white,
+        borderWidth: 1,
+        borderColor: COLORS.primaryDark,
+        paddingHorizontal: 12,
+        paddingVertical: 7,
+        borderRadius: 8,
+        marginRight: 8,
+    },
+    prevBtnText: {
+        color: COLORS.primaryDark,
+        fontSize: 12,
+        fontWeight: 'bold',
+        marginLeft: 2,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    modalContent: {
+        backgroundColor: COLORS.white,
+        borderRadius: 16,
+        padding: 24,
+        marginHorizontal: 32,
+        alignItems: 'center',
+    },
+    modalTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: COLORS.neutralSlate || '#334155',
+        marginBottom: 8,
+    },
+    modalMessage: {
+        fontSize: 14,
+        color: COLORS.neutral400 || '#94A3B8',
+        textAlign: 'center',
+        marginBottom: 20,
+        lineHeight: 20,
+    },
+    modalButtons: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    modalCancelBtn: {
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 8,
+        backgroundColor: COLORS.neutral100 || '#F1F5F9',
+    },
+    modalCancelText: {
+        color: COLORS.neutralSlate || '#334155',
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    modalConfirmBtn: {
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 8,
+        backgroundColor: COLORS.primaryDark,
+    },
+    modalConfirmText: {
+        color: COLORS.white,
+        fontSize: 14,
+        fontWeight: '600',
     },
 });
 

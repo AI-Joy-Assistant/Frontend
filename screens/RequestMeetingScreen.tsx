@@ -155,6 +155,11 @@ const RequestMeetingScreen = () => {
     // Duration Nights State
     const [durationNights, setDurationNights] = useState(0);
 
+    // ScrollView ref for auto-scroll during tutorial
+    const scrollViewRef = useRef<ScrollView>(null);
+    const analyzeButtonRef = useRef<View>(null);
+    const [analyzeButtonY, setAnalyzeButtonY] = useState(0);
+
     const handleDurationNightChange = (change: number) => {
         const newValue = Math.max(0, durationNights + change);
         setDurationNights(newValue);
@@ -228,6 +233,31 @@ const RequestMeetingScreen = () => {
         const [year, month, day] = dateStr.split('-');
         return `${parseInt(month)}월 ${parseInt(day)}일`;
     };
+
+    // Tutorial: 친구 성공적 추가 시 다음 단계로 이동
+    useEffect(() => {
+        if (isTutorialActive && currentStep === 'CREATE_REQUEST' && currentSubStep?.id === 'select_friend') {
+            // 친구가 선택되어 있으면 모달 닫고 다음 단계로
+            if (selectedFriends.includes(ghostFriend.id)) {
+                // 먼저 모달 닫기
+                setShowFriendModal(false);
+                // 모달 닫힌 후 충분한 딜레이 후에 다음 단계로
+                setTimeout(() => {
+                    nextSubStep();
+                }, 500);
+            }
+        }
+    }, [selectedFriends, isTutorialActive, currentStep, currentSubStep, ghostFriend.id, nextSubStep]);
+
+    // ✅ [NEW] 튜토리얼: explain_analyze 단계에서 분석 버튼으로 자동 스크롤
+    useEffect(() => {
+        if (isTutorialActive && currentStep === 'CREATE_REQUEST' && currentSubStep?.id === 'explain_analyze') {
+            // 약간의 딜레이 후 스크롤
+            setTimeout(() => {
+                scrollViewRef.current?.scrollToEnd({ animated: true });
+            }, 300);
+        }
+    }, [isTutorialActive, currentStep, currentSubStep]);
 
     const openTimePicker = (type: 'startTime' | 'endTime') => {
         // [NEW] 튜토리얼: 시간 선택 시 자동 설정
@@ -409,10 +439,11 @@ const RequestMeetingScreen = () => {
         }
     };
 
-    // 튜토리얼 친구 주입된 리스트
+    // 튜토리얼 친구 주입된 리스트 (튜토리얼 활성 상태에서만)
     const displayedFriends = React.useMemo(() => {
         let list = [...friends];
-        if (tutorialFriendAdded || (isTutorialActive && currentStep !== 'INTRO')) {
+        // 튜토리얼이 활성화된 상태에서만 가상 친구 표시
+        if (isTutorialActive && (tutorialFriendAdded || currentStep !== 'INTRO')) {
             // 이미 있는지 확인
             const exists = list.some(f => f.id === ghostFriend.id);
             if (!exists) {
@@ -723,7 +754,12 @@ const RequestMeetingScreen = () => {
 
     return (
         <SafeAreaView style={styles.container}>
-            <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                ref={scrollViewRef}
+                style={styles.scrollView}
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+            >
                 {/* Participants */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
