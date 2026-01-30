@@ -16,26 +16,30 @@ export default function DatePickerModal({ visible, onClose, onSelect, initialDat
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth();
 
-    const calendarData = useMemo(() => {
-        const firstDayOfMonth = new Date(year, month, 1).getDay();
-        const daysInMonth = new Date(year, month + 1, 0).getDate();
-        const daysInPrevMonth = new Date(year, month, 0).getDate();
+    // 오늘 날짜 문자열 (과거 날짜 비교용)
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-        const days = [];
-        // Prev Month
-        for (let i = firstDayOfMonth - 1; i >= 0; i--) {
-            days.push({ day: daysInPrevMonth - i, type: 'prev', date: new Date(year, month - 1, daysInPrevMonth - i) });
+    // 달력 데이터 (주 단위로 구성)
+    const weeks = useMemo(() => {
+        const firstDay = new Date(year, month, 1).getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+        const weeksArr: (number | null)[][] = [];
+        let currentWeek: (number | null)[] = Array(firstDay).fill(null);
+
+        for (let day = 1; day <= daysInMonth; day++) {
+            currentWeek.push(day);
+            if (currentWeek.length === 7) {
+                weeksArr.push(currentWeek);
+                currentWeek = [];
+            }
         }
-        // Current Month
-        for (let i = 1; i <= daysInMonth; i++) {
-            days.push({ day: i, type: 'current', date: new Date(year, month, i) });
+        if (currentWeek.length > 0) {
+            while (currentWeek.length < 7) currentWeek.push(null);
+            weeksArr.push(currentWeek);
         }
-        // Next Month
-        const remaining = 42 - days.length;
-        for (let i = 1; i <= remaining; i++) {
-            days.push({ day: i, type: 'next', date: new Date(year, month + 1, i) });
-        }
-        return days;
+        return weeksArr;
     }, [year, month]);
 
     const handlePrevMonth = () => {
@@ -46,9 +50,35 @@ export default function DatePickerModal({ visible, onClose, onSelect, initialDat
         setViewDate(new Date(year, month + 1, 1));
     };
 
-    const handleDateClick = (date: Date) => {
-        onSelect(date);
+    const handleDateClick = (day: number) => {
+        const selectedDate = new Date(year, month, day);
+        onSelect(selectedDate);
         onClose();
+    };
+
+    // 날짜 문자열 생성
+    const getDateStr = (day: number) => {
+        return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    };
+
+    // 선택된 날짜인지 확인
+    const isSelectedDate = (day: number) => {
+        if (!initialDate) return false;
+        const dateStr = getDateStr(day);
+        const initialStr = `${initialDate.getFullYear()}-${String(initialDate.getMonth() + 1).padStart(2, '0')}-${String(initialDate.getDate()).padStart(2, '0')}`;
+        return dateStr === initialStr;
+    };
+
+    // 과거 날짜인지 확인
+    const isPastDate = (day: number) => {
+        const dateStr = getDateStr(day);
+        return new Date(dateStr) < new Date(todayStr);
+    };
+
+    // 오늘인지 확인
+    const isTodayDate = (day: number) => {
+        const dateStr = getDateStr(day);
+        return dateStr === todayStr;
     };
 
     return (
@@ -64,43 +94,72 @@ export default function DatePickerModal({ visible, onClose, onSelect, initialDat
                                 </TouchableOpacity>
                             </View>
 
+                            {/* A2A 스타일 달력 헤더 */}
                             <View style={styles.calendarHeader}>
                                 <TouchableOpacity onPress={handlePrevMonth} style={styles.navButton}>
-                                    <ChevronLeft size={24} color={COLORS.neutral600} />
+                                    <ChevronLeft size={20} color={COLORS.neutral500} />
                                 </TouchableOpacity>
-                                <Text style={styles.monthText}>{year}년 {month + 1}월</Text>
+                                <Text style={styles.monthText}>
+                                    {year}.{String(month + 1).padStart(2, '0')}
+                                </Text>
                                 <TouchableOpacity onPress={handleNextMonth} style={styles.navButton}>
-                                    <ChevronRight size={24} color={COLORS.neutral600} />
+                                    <ChevronRight size={20} color={COLORS.neutral500} />
                                 </TouchableOpacity>
                             </View>
 
-                            <View style={styles.grid}>
-                                <View style={styles.weekRow}>
-                                    {['일', '월', '화', '수', '목', '금', '토'].map((d, i) => (
-                                        <Text key={i} style={[styles.weekDay, i === 0 && styles.sunday]}>{d}</Text>
-                                    ))}
-                                </View>
-                                <View style={styles.daysRow}>
-                                    {calendarData.map((item, index) => (
-                                        <TouchableOpacity
-                                            key={index}
-                                            style={styles.dayCell}
-                                            onPress={() => handleDateClick(item.date)}
-                                        >
-                                            <Text style={[
-                                                styles.dayText,
-                                                item.type !== 'current' && styles.grayText,
-                                                item.date.toDateString() === new Date().toDateString() && styles.todayText,
-                                                item.date.toDateString() === (initialDate || new Date()).toDateString() && styles.selectedText
-                                            ]}>
-                                                {item.day}
-                                            </Text>
-                                            {item.date.toDateString() === (initialDate || new Date()).toDateString() && (
-                                                <View style={styles.selectedCircle} />
-                                            )}
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
+                            {/* 요일 헤더 */}
+                            <View style={styles.weekRow}>
+                                {['일', '월', '화', '수', '목', '금', '토'].map((d, i) => (
+                                    <Text
+                                        key={i}
+                                        style={[
+                                            styles.weekDay,
+                                            i === 0 && styles.sundayText
+                                        ]}
+                                    >
+                                        {d}
+                                    </Text>
+                                ))}
+                            </View>
+
+                            {/* 날짜 그리드 - A2A 스타일 */}
+                            <View style={styles.daysGrid}>
+                                {weeks.map((week, wIdx) => (
+                                    <View key={wIdx} style={styles.weekRowDays}>
+                                        {week.map((day, dIdx) => {
+                                            if (!day) {
+                                                return <View key={dIdx} style={styles.emptyCell} />;
+                                            }
+
+                                            const isSelected = isSelectedDate(day);
+                                            const isToday = isTodayDate(day);
+                                            const isSunday = dIdx === 0;
+
+                                            return (
+                                                <TouchableOpacity
+                                                    key={dIdx}
+                                                    onPress={() => handleDateClick(day)}
+                                                    style={styles.dayCell}
+                                                >
+                                                    <View style={[
+                                                        styles.dayCircle,
+                                                        isSelected && styles.selectedCircle,
+                                                        isToday && !isSelected && styles.todayCircle
+                                                    ]}>
+                                                        <Text style={[
+                                                            styles.dayText,
+                                                            isSelected && styles.selectedDayText,
+                                                            isSunday && !isSelected && styles.sundayDayText,
+                                                            isToday && !isSelected && styles.todayDayText
+                                                        ]}>
+                                                            {day}
+                                                        </Text>
+                                                    </View>
+                                                </TouchableOpacity>
+                                            );
+                                        })}
+                                    </View>
+                                ))}
                             </View>
                         </View>
                     </TouchableWithoutFeedback>
@@ -134,7 +193,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 20,
+        marginBottom: 16,
     },
     title: {
         fontSize: 18,
@@ -153,10 +212,7 @@ const styles = StyleSheet.create({
     monthText: {
         fontSize: 16,
         fontWeight: '600',
-        color: COLORS.neutral900,
-    },
-    grid: {
-        width: '100%',
+        color: COLORS.neutralSlate || COLORS.neutral900,
     },
     weekRow: {
         flexDirection: 'row',
@@ -165,46 +221,61 @@ const styles = StyleSheet.create({
     weekDay: {
         flex: 1,
         textAlign: 'center',
-        fontSize: 13,
-        color: COLORS.neutral400,
+        fontSize: 12,
+        color: COLORS.neutral500,
         fontWeight: '500',
     },
-    sunday: {
-        color: '#F87171',
+    sundayText: {
+        color: '#EF4444',
     },
-    daysRow: {
+    daysGrid: {
+        width: '100%',
+    },
+    weekRowDays: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
+        marginBottom: 4,
+    },
+    emptyCell: {
+        flex: 1,
+        height: 40,
     },
     dayCell: {
-        width: '14.28%',
-        aspectRatio: 1,
+        flex: 1,
+        height: 40,
         justifyContent: 'center',
         alignItems: 'center',
-        position: 'relative',
     },
-    dayText: {
-        fontSize: 14,
-        color: COLORS.neutral900,
-        zIndex: 2,
-    },
-    grayText: {
-        color: COLORS.neutral300,
-    },
-    todayText: {
-        color: COLORS.primaryMain,
-        fontWeight: 'bold',
-    },
-    selectedText: {
-        color: 'white',
-        fontWeight: 'bold',
-    },
-    selectedCircle: {
-        position: 'absolute',
+    dayCircle: {
         width: 32,
         height: 32,
         borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'transparent',
+    },
+    selectedCircle: {
         backgroundColor: COLORS.primaryMain,
-        zIndex: 1,
+    },
+    todayCircle: {
+        backgroundColor: COLORS.primaryBg || '#F0F4FF',
+    },
+    dayText: {
+        fontSize: 14,
+        color: COLORS.neutralSlate || COLORS.neutral900,
+        fontWeight: '400',
+    },
+    selectedDayText: {
+        color: 'white',
+        fontWeight: 'bold',
+    },
+    pastDayText: {
+        color: COLORS.neutral300,
+    },
+    sundayDayText: {
+        color: '#EF4444',
+    },
+    todayDayText: {
+        fontWeight: '700',
+        color: COLORS.primaryMain,
     },
 });
