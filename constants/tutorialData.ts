@@ -58,7 +58,7 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
             },
             {
                 id: 'intro_feature_1',
-                message: '📅 JOYNER는 AI가 친구들의 캘린더를 분석해 모두가 가능한 최적의 시간을 찾아줍니다.',
+                message: 'JOYNER는 AI가 친구들의 캘린더를 분석해 모두가 가능한 최적의 시간을 찾아줍니다.',
                 position: 'center',
             },
             {
@@ -68,7 +68,7 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
             },
             {
                 id: 'intro_feature_2',
-                message: '🤝 복잡한 톡방 대화 없이, 버튼 한 번으로 일정을 조율하고 확정할 수 있어요.',
+                message: '복잡한 톡방 대화 없이, 버튼 한 번으로 일정을 조율하고 확정할 수 있어요.',
                 position: 'center',
             },
             {
@@ -91,7 +91,7 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
             },
             {
                 id: 'friends_page_intro',
-                message: '👥 여기는 친구 탭이에요!\n친구 목록을 확인하고, 새로운 친구를 추가하거나 친구 요청을 수락할 수 있어요.',
+                message: '여기는 친구 탭이에요!\n친구 목록을 확인하고, 새로운 친구를 추가하거나 친구 요청을 수락할 수 있어요.',
                 position: 'center'
             },
             {
@@ -129,7 +129,7 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
             },
             {
                 id: 'request_page_intro',
-                message: '📅 여기는 조율 탭이에요!\n친구들과 함께 일정을 잡을 때 사용해요.\nAI가 모두의 캘린더를 분석해 최적의 시간을 찾아줍니다!',
+                message: '여기는 조율 탭이에요!\n친구들과 함께 일정을 잡을 때 사용해요.\nAI가 모두의 캘린더를 분석해 최적의 시간을 찾아줍니다!',
                 position: 'center'
             },
             {
@@ -206,7 +206,7 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
             },
             {
                 id: 'view_events_intro',
-                message: '📋 여기는 이벤트 탭이에요!\n보낸 요청과 받은 요청을 모두 확인하고\n일정 상태를 관리할 수 있어요.',
+                message: '여기는 이벤트 탭이에요!\n보낸 요청과 받은 요청을 모두 확인하고\n일정 상태를 관리할 수 있어요.',
                 position: 'center'
             },
             {
@@ -286,14 +286,14 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
         subSteps: [
             {
                 id: 'home_calendar_intro',
-                message: '🏠 홈 화면에 오신 것을 환영합니다!\n여기서 일정을 한눈에 확인할 수 있어요.',
+                message: '홈 화면에 오신 것을 환영합니다!\n여기서 일정을 한눈에 확인할 수 있어요.',
                 position: 'center',
                 autoComplete: true,
                 delay: 2500
             },
             {
                 id: 'home_calendar_view',
-                message: '📅 캘린더에서 날짜를 탭하면 해당 날짜의 일정을 확인할 수 있어요.',
+                message: '캘린더에서 날짜를 탭하면 해당 날짜의 일정을 확인할 수 있어요.',
                 targetId: 'calendar_area',
                 position: 'bottom'
             },
@@ -358,7 +358,7 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
             },
             {
                 id: 'friends_requests_tab',
-                message: '📥 "받은 요청" 탭에서는 다른 사람이 보낸\n친구 요청을 확인하고 수락할 수 있어요.',
+                message: '"받은 요청" 탭에서는 다른 사람이 보낸\n친구 요청을 확인하고 수락할 수 있어요.',
                 targetId: 'tab_requests',
                 position: 'bottom'
             }
@@ -371,7 +371,7 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
         subSteps: [
             {
                 id: 'complete_message',
-                message: '🎉 축하합니다!\nJOYNER의 모든 기능을 배우셨어요.\n이제 친구들과 스마트하게 일정을 조율하세요!',
+                message: '축하합니다!\nJOYNER의 모든 기능을 배우셨어요.\n이제 친구들과 스마트하게 일정을 조율하세요!',
                 position: 'center',
                 autoComplete: true,
                 delay: 3000

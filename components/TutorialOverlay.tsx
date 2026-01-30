@@ -301,7 +301,7 @@ const TutorialOverlay: React.FC = () => {
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <Text style={styles.modalTitle}>튜토리얼을 건너뛰시겠습니까?</Text>
-                        <Text style={styles.modalMessage}>'나중에 프로필 메뉴에서 \n다시 시작할 수 있어요.'</Text>
+                        <Text style={styles.modalMessage}>나중에 프로필 메뉴에서 다시 시작할 수 있습니다.</Text>
                         <View style={styles.modalButtons}>
                             <TouchableOpacity
                                 style={styles.modalCancelBtn}
