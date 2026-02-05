@@ -166,7 +166,19 @@ export const badgeStore = {
     setCount: (count: number) => {
         unreadCount = count;
         emitChange();
-    }
+    },
+
+    // 전체 상태 초기화 (로그아웃 시 호출)
+    reset: async (): Promise<void> => {
+        console.log('[BadgeStore] 상태 초기화');
+        unreadCount = 0;
+        lastReadAt = null;
+        isReading = false;
+        lastMarkAsReadTime = 0;
+        initialized = false;
+        await AsyncStorage.removeItem(LAST_READ_KEY);
+        emitChange();
+    },
 };
 
 function emitChange() {

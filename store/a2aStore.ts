@@ -212,4 +212,16 @@ export const a2aStore = {
         if (!state.lastFetchedAt) return null;
         return Date.now() - state.lastFetchedAt;
     },
+
+    // 전체 상태 초기화 (로그아웃 시 호출)
+    reset: (): void => {
+        console.log('[A2AStore] 상태 초기화');
+        state = {
+            logs: [],
+            currentUserId: null,
+            loading: false,
+            lastFetchedAt: null,
+        };
+        emitChange();
+    },
 };
