@@ -16,6 +16,10 @@ import { getBackendUrl } from '../utils/environment';
 import { dataCache, CACHE_KEYS } from '../utils/dataCache';
 import { useTutorial } from '../store/TutorialContext';
 import { useFocusEffect } from '@react-navigation/native';
+import { friendsStore } from '../store/friendsStore';
+import { a2aStore } from '../store/a2aStore';
+import { homeStore } from '../store/homeStore';
+import { badgeStore } from '../store/badgeStore';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -305,6 +309,12 @@ const MyPageScreen = () => {
       // ✅ 인메모리 캐시 전체 삭제 (이전 사용자 데이터 제거)
       dataCache.clear();
 
+      // ✅ [FIX] 모든 store 상태 초기화 (이전 사용자 데이터 완전 제거)
+      friendsStore.reset();
+      a2aStore.reset();
+      homeStore.reset();
+      await badgeStore.reset();
+
       setLogoutModalVisible(false);
       navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
     } catch (error) {
@@ -345,6 +355,11 @@ const MyPageScreen = () => {
         await AsyncStorage.removeItem('isCalendarLinked');
         // ✅ 인메모리 캐시도 삭제
         dataCache.clear();
+        // ✅ [FIX] 모든 store 상태 초기화 (이전 사용자 데이터 완전 제거)
+        friendsStore.reset();
+        a2aStore.reset();
+        homeStore.reset();
+        await badgeStore.reset();
         Alert.alert('탈퇴 완료', '정상적으로 탈퇴되었습니다.');
         setWithdrawModalVisible(false);
         navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
