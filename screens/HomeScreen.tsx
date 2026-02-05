@@ -2283,7 +2283,13 @@ export default function HomeScreen() {
                   <TouchableOpacity
                     style={styles.deleteIconButton}
                     onPress={() => {
-                      if (!selectedDetailSchedule) return;
+                      console.log('[HomeScreen] 휴지통 버튼 클릭, selectedDetailSchedule:', selectedDetailSchedule);
+                      if (!selectedDetailSchedule) {
+                        console.log('[HomeScreen] selectedDetailSchedule이 null입니다!');
+                        return;
+                      }
+                      // 먼저 상세 모달 닫고 삭제 확인 모달 표시
+                      setShowDetailModal(false);
                       setScheduleToDelete(selectedDetailSchedule);
                       setShowDeleteConfirm(true);
                     }}
@@ -2354,14 +2360,18 @@ export default function HomeScreen() {
               <TouchableOpacity
                 style={styles.deleteModalConfirmButton}
                 onPress={async () => {
+                  console.log('[HomeScreen] 삭제 확인 버튼 클릭, scheduleToDelete:', scheduleToDelete);
                   if (scheduleToDelete) {
                     try {
+                      console.log('[HomeScreen] 삭제 시도 중... eventId:', scheduleToDelete.id);
                       await calendarService.deleteCalendarEvent(scheduleToDelete.id);
+                      console.log('[HomeScreen] 삭제 성공!');
                       setShowDetailModal(false);
                       setShowScheduleModal(false);
                       fetchSchedules();
                     } catch (error) {
-                      console.error('일정 삭제 실패:', error);
+                      console.error('[HomeScreen] 일정 삭제 실패:', error);
+                      Alert.alert('삭제 실패', '일정을 삭제할 수 없습니다. 다시 시도해주세요.');
                     }
                   }
                   setShowDeleteConfirm(false);
