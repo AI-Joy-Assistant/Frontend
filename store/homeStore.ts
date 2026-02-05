@@ -250,4 +250,20 @@ export const homeStore = {
         if (!state.lastFetchedAt) return null;
         return Date.now() - state.lastFetchedAt;
     },
+
+    // 전체 상태 초기화 (로그아웃 시 호출)
+    reset: (): void => {
+        console.log('[HomeStore] 상태 초기화');
+        state = {
+            pendingRequests: [],
+            notifications: [],
+            currentUser: null,
+            loading: false,
+            loadingPending: true,
+            loadingNotifications: true,
+            initialLoadDone: false,
+            lastFetchedAt: null,
+        };
+        emitChange();
+    },
 };

@@ -22,6 +22,49 @@ class CalendarService {
     }
   }
 
+  // Google Calendar 연동 여부 확인 (캐시 포함)
+  private googleCalendarLinked: boolean | null = null;
+
+  async isGoogleCalendarLinked(): Promise<boolean> {
+    // 이미 확인한 경우 캐시 반환
+    if (this.googleCalendarLinked !== null) {
+      return this.googleCalendarLinked;
+    }
+
+    try {
+      const jwtToken = await this.getStoredAccessToken();
+      if (!jwtToken) {
+        this.googleCalendarLinked = false;
+        return false;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/calendar/link-status`, {
+        headers: {
+          'Authorization': `Bearer ${jwtToken}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        this.googleCalendarLinked = data.is_linked === true;
+        console.log('[CalendarService] Google Calendar 연동 상태:', this.googleCalendarLinked);
+        return this.googleCalendarLinked;
+      }
+
+      this.googleCalendarLinked = false;
+      return false;
+    } catch (error) {
+      console.warn('[CalendarService] 연동 상태 확인 실패:', error);
+      this.googleCalendarLinked = false;
+      return false;
+    }
+  }
+
+  // 캐시 무효화 (로그인/로그아웃 시 호출)
+  clearLinkStatusCache(): void {
+    this.googleCalendarLinked = null;
+  }
+
   async getGoogleAuthUrl(): Promise<string> {
     try {
       const response = await fetch(`${API_BASE_URL}/calendar/auth-url`);
@@ -70,14 +113,43 @@ class CalendarService {
     calendarId: string = 'primary'
   ): Promise<CalendarEvent[]> {
     try {
-      const accessToken = await this.getStoredAccessToken();
-      if (!accessToken) {
-        // Apple 로그인 유저가 아직 Google Calendar 연동 안 했을 경우
-        // 에러 대신 빈 배열 반환 (조용히 처리)
-        console.log('[CalendarService] 액세스 토큰 없음 - Google Calendar 미연동 상태');
+      const jwtToken = await this.getStoredAccessToken();
+      if (!jwtToken) {
+        console.log('[CalendarService] 로그인 안됨 - 빈 배열 반환');
         return [];
       }
 
+      // Google Calendar 연동 여부 확인
+      const isLinked = await this.isGoogleCalendarLinked();
+
+      if (!isLinked) {
+        // 앱 자체 캘린더에서 조회
+        console.log('[CalendarService] Google Calendar 미연동 - 앱 자체 캘린더 조회');
+        const params = new URLSearchParams();
+        if (timeMin) {
+          params.append('time_min', timeMin.toISOString());
+        }
+        if (timeMax) {
+          params.append('time_max', timeMax.toISOString());
+        }
+
+        const response = await fetch(`${API_BASE_URL}/calendar/app-events?${params}`, {
+          headers: {
+            'Authorization': `Bearer ${jwtToken}`
+          }
+        });
+
+        if (!response.ok) {
+          console.warn('[CalendarService] 앱 자체 캘린더 조회 실패:', response.status);
+          return [];
+        }
+
+        const data = await response.json();
+        return data.events || [];
+      }
+
+      // Google Calendar API 사용
+      console.log('[CalendarService] Google Calendar 연동됨 - Google API 사용');
       const params = new URLSearchParams({
         calendar_id: calendarId,
       });
@@ -91,15 +163,16 @@ class CalendarService {
 
       const response = await fetch(`${API_BASE_URL}/calendar/events?${params}`, {
         headers: {
-          'Authorization': `Bearer ${accessToken}`
+          'Authorization': `Bearer ${jwtToken}`
         }
       });
 
       if (!response.ok) {
-        // 401/403 에러는 토큰 만료 또는 권한 없음 - 빈 배열 반환
+        // 401/403 에러는 토큰 만료 또는 권한 없음 - 앱 자체 캘린더로 폴백
         if (response.status === 401 || response.status === 403) {
-          console.log('[CalendarService] 캘린더 접근 권한 없음 - 빈 배열 반환');
-          return [];
+          console.log('[CalendarService] Google Calendar 접근 실패 - 앱 자체 캘린더로 폴백');
+          this.googleCalendarLinked = false;
+          return this.getCalendarEvents(timeMin, timeMax, calendarId);
         }
         throw new Error('캘린더 이벤트 조회 실패');
       }
@@ -107,7 +180,6 @@ class CalendarService {
       const data = await response.json();
       return data.events || [];
     } catch (error) {
-      // 네트워크 에러 등 예외 상황에서도 에러 throw 대신 빈 배열 반환
       console.warn('[CalendarService] 캘린더 이벤트 조회 실패 (무시됨):', error);
       return [];
     }
@@ -118,11 +190,36 @@ class CalendarService {
     calendarId: string = 'primary'
   ): Promise<CalendarEvent> {
     try {
-      const accessToken = await this.getStoredAccessToken();
-      if (!accessToken) {
-        throw new Error('액세스 토큰이 없습니다. Google 인증을 먼저 진행해주세요.');
+      const jwtToken = await this.getStoredAccessToken();
+      if (!jwtToken) {
+        throw new Error('로그인이 필요합니다.');
       }
 
+      // Google Calendar 연동 여부 확인
+      const isLinked = await this.isGoogleCalendarLinked();
+
+      if (!isLinked) {
+        // 앱 자체 캘린더 API 사용
+        console.log('[CalendarService] Google Calendar 미연동 - 앱 자체 캘린더에 저장');
+        const response = await fetch(`${API_BASE_URL}/calendar/app-events`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${jwtToken}`
+          },
+          body: JSON.stringify(eventData),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || '이벤트 생성 실패');
+        }
+
+        return await response.json();
+      }
+
+      // Google Calendar API 사용
+      console.log('[CalendarService] Google Calendar 연동됨 - Google API에 저장');
       const params = new URLSearchParams({
         calendar_id: calendarId,
       });
@@ -131,7 +228,7 @@ class CalendarService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
+          'Authorization': `Bearer ${jwtToken}`
         },
         body: JSON.stringify(eventData),
       });
@@ -152,11 +249,29 @@ class CalendarService {
     calendarId: string = 'primary'
   ): Promise<boolean> {
     try {
-      const accessToken = await this.getStoredAccessToken();
-      if (!accessToken) {
-        throw new Error('액세스 토큰이 없습니다. Google 인증을 먼저 진행해주세요.');
+      const jwtToken = await this.getStoredAccessToken();
+      if (!jwtToken) {
+        throw new Error('로그인이 필요합니다.');
       }
 
+      // Google Calendar 연동 여부 확인
+      const isLinked = await this.isGoogleCalendarLinked();
+
+      if (!isLinked) {
+        // 앱 자체 캘린더 API 사용
+        console.log('[CalendarService] Google Calendar 미연동 - 앱 자체 캘린더에서 삭제');
+        const response = await fetch(`${API_BASE_URL}/calendar/app-events/${eventId}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${jwtToken}`
+          }
+        });
+
+        return response.ok;
+      }
+
+      // Google Calendar API 사용
+      console.log('[CalendarService] Google Calendar 연동됨 - Google API에서 삭제');
       const params = new URLSearchParams({
         calendar_id: calendarId,
       });
@@ -164,7 +279,7 @@ class CalendarService {
       const response = await fetch(`${API_BASE_URL}/calendar/events/${eventId}?${params}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${accessToken}`
+          'Authorization': `Bearer ${jwtToken}`
         }
       });
 
@@ -183,6 +298,7 @@ class CalendarService {
   async logout(): Promise<void> {
     try {
       await AsyncStorage.removeItem('accessToken');
+      this.clearLinkStatusCache();
     } catch (error) {
       console.error('로그아웃 실패:', error);
     }

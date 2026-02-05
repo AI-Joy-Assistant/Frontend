@@ -255,6 +255,22 @@ export const friendsStore = {
         emitChange();
     },
 
+    // 전체 상태 초기화 (로그아웃 시 호출)
+    reset: (): void => {
+        console.log('[FriendsStore] 상태 초기화');
+        state = {
+            friends: [],
+            friendRequests: [],
+            userInfo: null,
+            loading: false,
+            loadingFriends: true,
+            loadingRequests: true,
+            initialLoadDone: false,
+            lastFetchedAt: null,
+        };
+        emitChange();
+    },
+
     // 로딩 상태
     isLoading: (): boolean => state.loading,
 
