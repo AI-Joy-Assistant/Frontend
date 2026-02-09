@@ -48,7 +48,7 @@ const COLORS = {
 
 const MyPageScreen = () => {
   const navigation = useNavigation<NavigationProp>();
-  const { resetTutorial } = useTutorial();
+  const { resetTutorial, deactivateTutorial } = useTutorial();
   const [userInfo, setUserInfo] = useState<{
     id: string;
     name: string;
@@ -293,6 +293,9 @@ const MyPageScreen = () => {
   // 실제 로그아웃 실행
   const confirmLogout = async () => {
     try {
+      // ✅ 튜토리얼 상태 초기화 (로그인 화면에서 튜토리얼 안보이도록)
+      await deactivateTutorial();
+
       await AsyncStorage.removeItem('accessToken');
       await AsyncStorage.removeItem('authProvider');
       await AsyncStorage.removeItem('userPicture');
@@ -341,6 +344,9 @@ const MyPageScreen = () => {
       });
 
       if (response.ok) {
+        // ✅ 튜토리얼 상태 초기화 (로그인 화면에서 튜토리얼 안보이도록)
+        await deactivateTutorial();
+
         await AsyncStorage.removeItem('accessToken');
         await AsyncStorage.removeItem('authProvider');
         await AsyncStorage.removeItem('userPicture');

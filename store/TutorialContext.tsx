@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getBackendUrl } from '../utils/environment';
 import {
@@ -15,6 +15,9 @@ import {
 // AsyncStorage 키
 const TUTORIAL_COMPLETED_KEY = 'tutorial_completed';
 const TUTORIAL_SKIPPED_KEY = 'tutorial_skipped';
+const TUTORIAL_ACTIVE_KEY = 'tutorial_active';
+const TUTORIAL_STEP_KEY = 'tutorial_current_step';
+const TUTORIAL_SUBSTEP_KEY = 'tutorial_current_substep';
 
 // Context 타입 정의
 interface TutorialContextType {
@@ -42,6 +45,7 @@ interface TutorialContextType {
     goToStep: (step: TutorialStep) => void;
     completeTutorial: () => void;
     resetTutorial: () => Promise<void>;
+    deactivateTutorial: () => Promise<void>;
 
     // 튜토리얼 친구 추가 완료 표시
     markTutorialFriendAdded: () => void;
@@ -55,6 +59,11 @@ interface TutorialContextType {
     registerTarget: (id: string, ref: any) => void;
     unregisterTarget: (id: string) => void;
     targetRefs: React.MutableRefObject<Record<string, any>>;
+
+    // 액션 콜백 등록 (다음 버튼 누를 때 자동 실행용)
+    registerActionCallback: (targetId: string, callback: () => void) => void;
+    unregisterActionCallback: (targetId: string) => void;
+    triggerCurrentAction: () => boolean; // 현재 타겟의 액션 실행, 성공 시 true
 }
 
 const TutorialContext = createContext<TutorialContextType | undefined>(undefined);
@@ -75,6 +84,9 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
     const [tutorialFriendAdded, setTutorialFriendAdded] = useState(false);
     const [tutorialRequestSent, setTutorialRequestSent] = useState(false);
 
+    // 액션 콜백 저장소
+    const actionCallbacks = useRef<Record<string, () => void>>({});
+
     // 타겟 Refs 저장소
     const targetRefs = React.useRef<Record<string, any>>({});
 
@@ -82,7 +94,7 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
     const currentStepData = TUTORIAL_STEPS.find(s => s.step === currentStep) || null;
     const currentSubStep = currentStepData?.subSteps[currentSubStepIndex] || null;
 
-    // 초기 로드 - 튜토리얼 완료 여부 확인
+    // 초기 로드 - 튜토리얼 완료 여부 및 진행 상태 확인
     useEffect(() => {
         const checkTutorialStatus = async () => {
             try {
@@ -91,6 +103,23 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
 
                 if (completed === 'true' || skipped === 'true') {
                     setIsCompleted(true);
+                    return;
+                }
+
+                // 튜토리얼이 진행 중이었는지 확인하고 복원
+                const wasActive = await AsyncStorage.getItem(TUTORIAL_ACTIVE_KEY);
+                if (wasActive === 'true') {
+                    const savedStep = await AsyncStorage.getItem(TUTORIAL_STEP_KEY);
+                    const savedSubStep = await AsyncStorage.getItem(TUTORIAL_SUBSTEP_KEY);
+
+                    setIsTutorialActive(true);
+                    if (savedStep) {
+                        setCurrentStep(savedStep as TutorialStep);
+                    }
+                    if (savedSubStep) {
+                        setCurrentSubStepIndex(parseInt(savedSubStep, 10));
+                    }
+                    console.log('[Tutorial] Restored tutorial state:', savedStep, savedSubStep);
                 }
             } catch (error) {
                 console.error('Failed to check tutorial status:', error);
@@ -101,13 +130,22 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
     }, []);
 
     // 튜토리얼 시작
-    const startTutorial = useCallback(() => {
+    const startTutorial = useCallback(async () => {
         console.log('[Tutorial] Starting tutorial');
         setIsTutorialActive(true);
         setCurrentStep('INTRO');
         setCurrentSubStepIndex(0);
         setTutorialFriendAdded(false);
         setTutorialRequestSent(false);
+
+        // 상태 저장
+        try {
+            await AsyncStorage.setItem(TUTORIAL_ACTIVE_KEY, 'true');
+            await AsyncStorage.setItem(TUTORIAL_STEP_KEY, 'INTRO');
+            await AsyncStorage.setItem(TUTORIAL_SUBSTEP_KEY, '0');
+        } catch (error) {
+            console.error('Failed to save tutorial start state:', error);
+        }
     }, []);
 
     // 튜토리얼 건너뛰기
@@ -117,13 +155,17 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
         setIsCompleted(true);
         try {
             await AsyncStorage.setItem(TUTORIAL_SKIPPED_KEY, 'true');
+            // 진행 상태 삭제
+            await AsyncStorage.removeItem(TUTORIAL_ACTIVE_KEY);
+            await AsyncStorage.removeItem(TUTORIAL_STEP_KEY);
+            await AsyncStorage.removeItem(TUTORIAL_SUBSTEP_KEY);
         } catch (error) {
             console.error('Failed to save skip status:', error);
         }
     }, []);
 
     // 다음 세부 단계로 이동
-    const nextSubStep = useCallback(() => {
+    const nextSubStep = useCallback(async () => {
         if (!currentStepData) return;
 
         const nextIndex = currentSubStepIndex + 1;
@@ -131,6 +173,12 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
         if (nextIndex < currentStepData.subSteps.length) {
             // 같은 단계 내에서 다음 세부 단계로
             setCurrentSubStepIndex(nextIndex);
+            // 상태 저장
+            try {
+                await AsyncStorage.setItem(TUTORIAL_SUBSTEP_KEY, nextIndex.toString());
+            } catch (error) {
+                console.error('Failed to save substep:', error);
+            }
         } else {
             // 다음 메인 단계로
             const currentStepIdx = TUTORIAL_STEPS.findIndex(s => s.step === currentStep);
@@ -139,6 +187,13 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
                 const nextStep = TUTORIAL_STEPS[currentStepIdx + 1];
                 setCurrentStep(nextStep.step);
                 setCurrentSubStepIndex(0);
+                // 상태 저장
+                try {
+                    await AsyncStorage.setItem(TUTORIAL_STEP_KEY, nextStep.step);
+                    await AsyncStorage.setItem(TUTORIAL_SUBSTEP_KEY, '0');
+                } catch (error) {
+                    console.error('Failed to save step:', error);
+                }
             } else {
                 // 마지막 단계 완료
                 completeTutorial();
@@ -147,25 +202,44 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
     }, [currentStep, currentSubStepIndex, currentStepData]);
 
     // 이전 세부 단계로 이동
-    const prevSubStep = useCallback(() => {
+    const prevSubStep = useCallback(async () => {
         if (currentSubStepIndex > 0) {
-            setCurrentSubStepIndex(currentSubStepIndex - 1);
+            const newIndex = currentSubStepIndex - 1;
+            setCurrentSubStepIndex(newIndex);
+            try {
+                await AsyncStorage.setItem(TUTORIAL_SUBSTEP_KEY, newIndex.toString());
+            } catch (error) {
+                console.error('Failed to save substep:', error);
+            }
         } else {
             // 이전 메인 단계로
             const currentStepIdx = TUTORIAL_STEPS.findIndex(s => s.step === currentStep);
 
             if (currentStepIdx > 0) {
                 const prevStep = TUTORIAL_STEPS[currentStepIdx - 1];
+                const newSubIndex = prevStep.subSteps.length - 1;
                 setCurrentStep(prevStep.step);
-                setCurrentSubStepIndex(prevStep.subSteps.length - 1);
+                setCurrentSubStepIndex(newSubIndex);
+                try {
+                    await AsyncStorage.setItem(TUTORIAL_STEP_KEY, prevStep.step);
+                    await AsyncStorage.setItem(TUTORIAL_SUBSTEP_KEY, newSubIndex.toString());
+                } catch (error) {
+                    console.error('Failed to save step:', error);
+                }
             }
         }
     }, [currentStep, currentSubStepIndex]);
 
     // 특정 단계로 이동
-    const goToStep = useCallback((step: TutorialStep) => {
+    const goToStep = useCallback(async (step: TutorialStep) => {
         setCurrentStep(step);
         setCurrentSubStepIndex(0);
+        try {
+            await AsyncStorage.setItem(TUTORIAL_STEP_KEY, step);
+            await AsyncStorage.setItem(TUTORIAL_SUBSTEP_KEY, '0');
+        } catch (error) {
+            console.error('Failed to save step:', error);
+        }
     }, []);
 
     // 튜토리얼 완료
@@ -177,6 +251,10 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
 
         try {
             await AsyncStorage.setItem(TUTORIAL_COMPLETED_KEY, 'true');
+            // 진행 상태 삭제
+            await AsyncStorage.removeItem(TUTORIAL_ACTIVE_KEY);
+            await AsyncStorage.removeItem(TUTORIAL_STEP_KEY);
+            await AsyncStorage.removeItem(TUTORIAL_SUBSTEP_KEY);
 
             // 튜토리얼 가이드 친구 삭제 시도 (실제 DB에 있는 경우)
             const token = await AsyncStorage.getItem('accessToken');
@@ -213,6 +291,9 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
         try {
             await AsyncStorage.removeItem(TUTORIAL_COMPLETED_KEY);
             await AsyncStorage.removeItem(TUTORIAL_SKIPPED_KEY);
+            await AsyncStorage.removeItem(TUTORIAL_ACTIVE_KEY);
+            await AsyncStorage.removeItem(TUTORIAL_STEP_KEY);
+            await AsyncStorage.removeItem(TUTORIAL_SUBSTEP_KEY);
             setIsCompleted(false);
             setTutorialFriendAdded(false);
             setTutorialRequestSent(false);
@@ -221,6 +302,26 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
             console.error('Failed to reset tutorial:', error);
         }
     }, [startTutorial]);
+
+    // 튜토리얼 비활성화 (로그아웃 시 사용)
+    const deactivateTutorial = useCallback(async () => {
+        console.log('[Tutorial] Deactivating tutorial for logout');
+        setIsTutorialActive(false);
+        setIsCompleted(false);
+        setCurrentStep('INTRO');
+        setCurrentSubStepIndex(0);
+        setTutorialFriendAdded(false);
+        setTutorialRequestSent(false);
+        try {
+            await AsyncStorage.removeItem(TUTORIAL_COMPLETED_KEY);
+            await AsyncStorage.removeItem(TUTORIAL_SKIPPED_KEY);
+            await AsyncStorage.removeItem(TUTORIAL_ACTIVE_KEY);
+            await AsyncStorage.removeItem(TUTORIAL_STEP_KEY);
+            await AsyncStorage.removeItem(TUTORIAL_SUBSTEP_KEY);
+        } catch (error) {
+            console.error('Failed to deactivate tutorial:', error);
+        }
+    }, []);
 
     // 튜토리얼 친구 추가 완료 표시
     const markTutorialFriendAdded = useCallback(() => {
@@ -260,6 +361,27 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
         delete targetRefs.current[id];
     }, []);
 
+    // 액션 콜백 등록/해제 함수
+    const registerActionCallback = useCallback((targetId: string, callback: () => void) => {
+        actionCallbacks.current[targetId] = callback;
+    }, []);
+
+    const unregisterActionCallback = useCallback((targetId: string) => {
+        delete actionCallbacks.current[targetId];
+    }, []);
+
+    // 현재 타겟의 액션 실행
+    const triggerCurrentAction = useCallback(() => {
+        if (currentSubStep?.targetId && currentSubStep?.action) {
+            const callback = actionCallbacks.current[currentSubStep.targetId];
+            if (callback) {
+                callback();
+                return true;
+            }
+        }
+        return false;
+    }, [currentSubStep]);
+
     const value: TutorialContextType = {
         // 상태
         isTutorialActive,
@@ -285,6 +407,7 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
         goToStep,
         completeTutorial,
         resetTutorial,
+        deactivateTutorial,
         markTutorialFriendAdded,
         markTutorialRequestSent,
 
@@ -294,6 +417,11 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
         targetRefs,
         registerTarget,
         unregisterTarget,
+
+        // 액션 콜백
+        registerActionCallback,
+        unregisterActionCallback,
+        triggerCurrentAction,
     };
 
     return (
