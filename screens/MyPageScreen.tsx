@@ -10,7 +10,7 @@ import BottomNav from '../components/BottomNav';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE } from '../constants/config';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Bot, Settings, LogOut, Trash2, ChevronRight, User as UserIcon, Calendar as CalendarIcon, Check, AlertCircle, Info, BookOpen } from 'lucide-react-native';
+import { Bot, Settings, LogOut, Trash2, ChevronRight, User as UserIcon, Calendar as CalendarIcon, Check, AlertCircle, Info, BookOpen, Users } from 'lucide-react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { getBackendUrl } from '../utils/environment';
 import { dataCache, CACHE_KEYS } from '../utils/dataCache';
@@ -48,7 +48,7 @@ const COLORS = {
 
 const MyPageScreen = () => {
   const navigation = useNavigation<NavigationProp>();
-  const { resetTutorial, deactivateTutorial } = useTutorial();
+  const { resetTutorial, deactivateTutorial, startTutorialFromStep } = useTutorial();
   const [userInfo, setUserInfo] = useState<{
     id: string;
     name: string;
@@ -68,6 +68,7 @@ const MyPageScreen = () => {
   const [resultModalType, setResultModalType] = useState<'success' | 'error' | 'info'>('success');
   const [resultModalMessage, setResultModalMessage] = useState('');
   const [isCalendarLinked, setIsCalendarLinked] = useState<boolean | null>(null);
+  const [tutorialSelectModalVisible, setTutorialSelectModalVisible] = useState(false);
 
   // 사용자 정보 불러오기
   // 사용자 정보 불러오기
@@ -486,7 +487,7 @@ const MyPageScreen = () => {
             <Divider />
             <SettingItem icon={SettingsIcon} label="앱 설정" onPress={() => Alert.alert('알림', '준비 중인 기능입니다.')} />
             <Divider />
-            <SettingItem icon={BookOpen} label="튜토리얼 다시보기" onPress={resetTutorial} />
+            <SettingItem icon={BookOpen} label="튜토리얼 다시보기" onPress={() => setTutorialSelectModalVisible(true)} />
             <Divider />
             <SettingItem icon={LogOut} label="로그아웃" isDanger onPress={handleLogout} />
             <Divider />
@@ -643,6 +644,144 @@ const MyPageScreen = () => {
                   onPress={() => setResultModalVisible(false)}
                 >
                   <Text style={styles.resultModalButtonText}>확인</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* 튜토리얼 선택 모달 */}
+      <Modal
+        visible={tutorialSelectModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setTutorialSelectModalVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setTutorialSelectModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={() => { }}>
+              <View style={styles.tutorialSelectModalContent}>
+                <Text style={styles.tutorialSelectTitle}>튜토리얼 선택</Text>
+                <Text style={styles.tutorialSelectSubtitle}>보고 싶은 튜토리얼을 선택하세요</Text>
+
+                <TouchableOpacity
+                  style={styles.tutorialSelectItem}
+                  onPress={() => {
+                    setTutorialSelectModalVisible(false);
+                    resetTutorial();
+                  }}
+                >
+                  <View style={styles.tutorialSelectItemIcon}>
+                    <BookOpen size={20} color={COLORS.primaryMain} />
+                  </View>
+                  <View style={styles.tutorialSelectItemText}>
+                    <Text style={styles.tutorialSelectItemTitle}>전체 튜토리얼</Text>
+                    <Text style={styles.tutorialSelectItemDesc}>처음부터 끝까지 전체 과정</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.tutorialSelectItem}
+                  onPress={() => {
+                    setTutorialSelectModalVisible(false);
+                    startTutorialFromStep('ACCEPT_FRIEND');
+                  }}
+                >
+                  <View style={styles.tutorialSelectItemIcon}>
+                    <Users size={20} color={COLORS.primaryMain} />
+                  </View>
+                  <View style={styles.tutorialSelectItemText}>
+                    <Text style={styles.tutorialSelectItemTitle}>친구 추가하기</Text>
+                    <Text style={styles.tutorialSelectItemDesc}>친구 요청 수락 방법</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.tutorialSelectItem}
+                  onPress={() => {
+                    setTutorialSelectModalVisible(false);
+                    startTutorialFromStep('CREATE_REQUEST');
+                  }}
+                >
+                  <View style={styles.tutorialSelectItemIcon}>
+                    <CalendarIcon size={20} color={COLORS.primaryMain} />
+                  </View>
+                  <View style={styles.tutorialSelectItemText}>
+                    <Text style={styles.tutorialSelectItemTitle}>AI로 일정 조율하기</Text>
+                    <Text style={styles.tutorialSelectItemDesc}>친구와 일정을 잡는 방법</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.tutorialSelectItem}
+                  onPress={() => {
+                    setTutorialSelectModalVisible(false);
+                    startTutorialFromStep('RESPOND_TO_REQUEST');
+                  }}
+                >
+                  <View style={styles.tutorialSelectItemIcon}>
+                    <Check size={20} color={COLORS.primaryMain} />
+                  </View>
+                  <View style={styles.tutorialSelectItemText}>
+                    <Text style={styles.tutorialSelectItemTitle}>요청 확인하기</Text>
+                    <Text style={styles.tutorialSelectItemDesc}>수락/거절/재조율 방법</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.tutorialSelectItem}
+                  onPress={() => {
+                    setTutorialSelectModalVisible(false);
+                    startTutorialFromStep('CHECK_HOME');
+                  }}
+                >
+                  <View style={styles.tutorialSelectItemIcon}>
+                    <UserIcon size={20} color={COLORS.primaryMain} />
+                  </View>
+                  <View style={styles.tutorialSelectItemText}>
+                    <Text style={styles.tutorialSelectItemTitle}>홈화면 둘러보기</Text>
+                    <Text style={styles.tutorialSelectItemDesc}>홈 화면 기능 소개</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.tutorialSelectItem}
+                  onPress={() => {
+                    setTutorialSelectModalVisible(false);
+                    startTutorialFromStep('EXPLORE_CHAT');
+                  }}
+                >
+                  <View style={styles.tutorialSelectItemIcon}>
+                    <Bot size={20} color={COLORS.primaryMain} />
+                  </View>
+                  <View style={styles.tutorialSelectItemText}>
+                    <Text style={styles.tutorialSelectItemTitle}>채팅 화면 둘러보기</Text>
+                    <Text style={styles.tutorialSelectItemDesc}>AI 채팅 기능 소개</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.tutorialSelectItem}
+                  onPress={() => {
+                    setTutorialSelectModalVisible(false);
+                    startTutorialFromStep('EXPLORE_FRIENDS');
+                  }}
+                >
+                  <View style={styles.tutorialSelectItemIcon}>
+                    <Users size={20} color={COLORS.primaryMain} />
+                  </View>
+                  <View style={styles.tutorialSelectItemText}>
+                    <Text style={styles.tutorialSelectItemTitle}>친구 화면 둘러보기</Text>
+                    <Text style={styles.tutorialSelectItemDesc}>친구 관리 기능 소개</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.tutorialSelectCancelButton}
+                  onPress={() => setTutorialSelectModalVisible(false)}
+                >
+                  <Text style={styles.tutorialSelectCancelText}>취소</Text>
                 </TouchableOpacity>
               </View>
             </TouchableWithoutFeedback>
@@ -1057,6 +1196,72 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: 'white',
+  },
+  // Tutorial Select Modal Styles
+  tutorialSelectModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 24,
+    width: '85%',
+    maxWidth: 340,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  tutorialSelectTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  tutorialSelectSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  tutorialSelectItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  tutorialSelectItemIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#EDE9FE',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  tutorialSelectItemText: {
+    flex: 1,
+  },
+  tutorialSelectItemTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 2,
+  },
+  tutorialSelectItemDesc: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  tutorialSelectCancelButton: {
+    marginTop: 10,
+    padding: 14,
+    alignItems: 'center',
+  },
+  tutorialSelectCancelText: {
+    fontSize: 15,
+    color: '#6B7280',
+    fontWeight: '500',
   },
 });
 

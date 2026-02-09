@@ -45,6 +45,7 @@ interface TutorialContextType {
     goToStep: (step: TutorialStep) => void;
     completeTutorial: () => void;
     resetTutorial: () => Promise<void>;
+    startTutorialFromStep: (step: TutorialStep) => Promise<void>;
     deactivateTutorial: () => Promise<void>;
 
     // 튜토리얼 친구 추가 완료 표시
@@ -303,6 +304,29 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
         }
     }, [startTutorial]);
 
+    // 특정 스텝부터 튜토리얼 시작 (다시보기 선택용)
+    const startTutorialFromStep = useCallback(async (step: TutorialStep) => {
+        console.log('[Tutorial] Starting tutorial from step:', step);
+        try {
+            await AsyncStorage.removeItem(TUTORIAL_COMPLETED_KEY);
+            await AsyncStorage.removeItem(TUTORIAL_SKIPPED_KEY);
+            setIsCompleted(false);
+            setTutorialFriendAdded(false);
+            setTutorialRequestSent(false);
+
+            // 특정 스텝으로 설정
+            setCurrentStep(step);
+            setCurrentSubStepIndex(0);
+            setIsTutorialActive(true);
+
+            await AsyncStorage.setItem(TUTORIAL_ACTIVE_KEY, 'true');
+            await AsyncStorage.setItem(TUTORIAL_STEP_KEY, step);
+            await AsyncStorage.setItem(TUTORIAL_SUBSTEP_KEY, '0');
+        } catch (error) {
+            console.error('Failed to start tutorial from step:', error);
+        }
+    }, []);
+
     // 튜토리얼 비활성화 (로그아웃 시 사용)
     const deactivateTutorial = useCallback(async () => {
         console.log('[Tutorial] Deactivating tutorial for logout');
@@ -407,6 +431,7 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
         goToStep,
         completeTutorial,
         resetTutorial,
+        startTutorialFromStep,
         deactivateTutorial,
         markTutorialFriendAdded,
         markTutorialRequestSent,

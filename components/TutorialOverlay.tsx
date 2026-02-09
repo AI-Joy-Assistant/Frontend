@@ -185,8 +185,8 @@ const TutorialOverlay: React.FC = () => {
     const getStepLabel = () => {
         if (currentStep === 'INTRO') return '시작';
         if (currentStep === 'COMPLETE') return '완료';
-        const stepIndex = TUTORIAL_STEPS.findIndex(s => s.step === currentStep);
-        return `${stepIndex + 1}/${TUTORIAL_STEPS.length - 2}`;
+        const stepData = TUTORIAL_STEPS.find(s => s.step === currentStep);
+        return stepData?.title || '';
     };
 
     return (
