@@ -190,13 +190,6 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
                 message: 'AI가 찾아낸 최적의 추천 일정입니다!\n일정을 클릭한 후 스크롤을 내려 "선택한 일정으로 요청 보내기" 버튼을 눌러주세요.',
                 position: 'screen_top'
             },
-            // {
-            //     id: 'click_send_button',
-            //     message: '선택한 일정으로 요청 보내기 버튼을 눌러주세요.',
-            //     targetId: 'btn_send_request',
-            //     position: 'top',
-            //     action: 'click'
-            // },
             {
                 id: 'request_sent',
                 message: '성공적으로 일정을 요청했습니다.',
@@ -252,7 +245,7 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
             },
             {
                 id: 'reschedule_completed',
-                message: ' 재조율 요청이 완료되었습니다.\n 이제 다시 돌아가서 "승인"을 해볼게요.',
+                message: '재조율 요청이 완료되었습니다.',
                 position: 'center'
             },
             {

@@ -2540,7 +2540,8 @@ const A2AScreen = () => {
                                                         const showButtons = !isRequester && !isApproved;
 
                                                         // 협상 완료 상태 여부 (pending_approval일 때만 버튼 활성화)
-                                                        const isNegotiationComplete = selectedLog?.status?.toLowerCase() === 'pending_approval';
+                                                        // 튜토리얼 모드에서는 항상 활성화
+                                                        const isNegotiationComplete = (isTutorialActive && currentStep === 'RESPOND_TO_REQUEST') || selectedLog?.status?.toLowerCase() === 'pending_approval';
 
                                                         const handleApproveWithCheck = () => {
                                                             // 튜토리얼 모드에서는 협상 완료 체크 건너뛰기
