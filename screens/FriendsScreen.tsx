@@ -239,7 +239,7 @@ const FriendsScreen = () => {
     // FriendsScreen에서 필요한 메시지 구독
     const unsubscribe = WebSocketService.subscribe(
       'FriendsScreen',
-      ['friend_request', 'friend_accepted', 'friend_rejected'],
+      ['friend_request', 'friend_accepted', 'friend_rejected', 'user_info_updated'],
       (data) => {
         console.log(`[WS:Friends] Event: ${data.type}`);
 
@@ -493,6 +493,7 @@ const FriendsScreen = () => {
             {/* Main Info */}
             <View style={styles.idCardMain}>
               <Text style={styles.idCardName}>{userInfo?.name || 'Loading...'}</Text>
+              <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.2)', marginTop: 4, marginBottom: 4 }} />
               <View style={styles.idCardHandleRow}>
                 <Text style={styles.idCardHandleSymbol}>@</Text>
                 <Text style={styles.idCardHandle}>{userInfo?.handle || ''}</Text>
@@ -503,12 +504,6 @@ const FriendsScreen = () => {
                   <Ionicons name="copy-outline" size={16} color="rgba(255,255,255,0.8)" />
                 </TouchableOpacity>
               </View>
-            </View>
-
-            {/* Email */}
-            <View style={styles.idCardEmailRow}>
-              <Ionicons name="mail" size={14} color="rgba(255,255,255,0.6)" />
-              <Text style={styles.idCardEmail}>{userInfo?.email || ''}</Text>
             </View>
           </LinearGradient>
         </View>
@@ -980,7 +975,9 @@ const styles = StyleSheet.create({
   },
   idCard: {
     borderRadius: 20,
-    padding: 20,
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
     shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,

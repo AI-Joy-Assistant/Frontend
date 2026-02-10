@@ -34,6 +34,7 @@ import {
     Trash2,
     AlertCircle,
     ChevronLeft,
+    User,
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import TimePickerModal from '../components/TimePickerModal';
@@ -2036,12 +2037,18 @@ const A2AScreen = () => {
                                                 <View style={[styles.attendeeStack, { marginTop: 4 }]}>
                                                     {/* 참여자 프로필 이미지 (최대 3개) */}
                                                     {/* 참여자 프로필 이미지 (최대 3개) */}
-                                                    {((selectedLog?.details as any)?.attendees?.map((a: any) => a.avatar) || (selectedLog?.details as any)?.participantImages || ['https://picsum.photos/150']).slice(0, 3).map((uri: string, idx: number) => (
-                                                        <Image
-                                                            key={idx}
-                                                            source={{ uri: uri || 'https://picsum.photos/150' }}
-                                                            style={[styles.attendeeAvatar, { marginLeft: idx > 0 ? -8 : 0 }]}
-                                                        />
+                                                    {((selectedLog?.details as any)?.attendees?.map((a: any) => a.avatar) || (selectedLog?.details as any)?.participantImages || []).slice(0, 3).map((uri: string, idx: number) => (
+                                                        uri && uri !== 'https://picsum.photos/150' ? (
+                                                            <Image
+                                                                key={idx}
+                                                                source={{ uri: uri }}
+                                                                style={[styles.attendeeAvatar, { marginLeft: idx > 0 ? -8 : 0 }]}
+                                                            />
+                                                        ) : (
+                                                            <View key={idx} style={[styles.attendeeAvatar, { marginLeft: idx > 0 ? -8 : 0, backgroundColor: COLORS.neutral100, justifyContent: 'center', alignItems: 'center' }]}>
+                                                                <User size={16} color={COLORS.neutral400} />
+                                                            </View>
+                                                        )
                                                     ))}
                                                     {/* 본인 표시 */}
                                                     <View style={[styles.attendeeAvatar, styles.attendeeYou, { marginLeft: -8 }]}>
@@ -2055,7 +2062,7 @@ const A2AScreen = () => {
                                     {confirmationType !== 'reschedule' && (
                                         <TouchableOpacity style={styles.viewCalendarBtn} onPress={() => { handleClose(); navigation.navigate('Home'); }}>
                                             <Calendar size={18} color="rgba(255,255,255,0.8)" style={{ marginRight: 8 }} />
-                                            <Text style={styles.viewCalendarText}>View in Calendar</Text>
+                                            <Text style={styles.viewCalendarText}>캘린더에서 확인하기</Text>
                                         </TouchableOpacity>
                                     )}
                                 </View>
@@ -2131,7 +2138,13 @@ const A2AScreen = () => {
                                                 {console.log('🔍 [DEBUG] selectedLog.status:', selectedLog.status, 'toLowerCase:', selectedLog.status?.toLowerCase?.())}
                                                 {/* Proposer */}
                                                 <View style={styles.proposerCard}>
-                                                    <Image source={{ uri: selectedLog.details.proposerAvatar }} style={styles.proposerAvatar} />
+                                                    {selectedLog.details.proposerAvatar && selectedLog.details.proposerAvatar !== 'https://picsum.photos/150' ? (
+                                                        <Image source={{ uri: selectedLog.details.proposerAvatar }} style={styles.proposerAvatar} />
+                                                    ) : (
+                                                        <View style={[styles.proposerAvatar, { backgroundColor: COLORS.neutral100, justifyContent: 'center', alignItems: 'center' }]}>
+                                                            <User size={20} color={COLORS.neutral400} />
+                                                        </View>
+                                                    )}
                                                     <View>
                                                         <Text style={styles.proposerLabel}>보낸 사람</Text>
                                                         <Text style={styles.proposerName}>{selectedLog.details.proposer}</Text>
@@ -2332,11 +2345,17 @@ const A2AScreen = () => {
                                                                 <View style={styles.participantAvatarRow}>
                                                                     {approvedAttendees.length > 0 ? (
                                                                         approvedAttendees.map((attendee: any, idx: number) => (
-                                                                            <Image
-                                                                                key={idx}
-                                                                                source={{ uri: attendee.avatar || 'https://picsum.photos/150' }}
-                                                                                style={styles.approvedAvatar}
-                                                                            />
+                                                                            attendee.avatar && attendee.avatar !== 'https://picsum.photos/150' ? (
+                                                                                <Image
+                                                                                    key={idx}
+                                                                                    source={{ uri: attendee.avatar }}
+                                                                                    style={styles.approvedAvatar}
+                                                                                />
+                                                                            ) : (
+                                                                                <View key={idx} style={[styles.approvedAvatar, { backgroundColor: COLORS.neutral100, justifyContent: 'center', alignItems: 'center' }]}>
+                                                                                    <User size={16} color={COLORS.neutral400} />
+                                                                                </View>
+                                                                            )
                                                                         ))
                                                                     ) : (
                                                                         <Text style={styles.noParticipantText}>아직 없음</Text>
@@ -2356,11 +2375,17 @@ const A2AScreen = () => {
                                                                 {pendingAttendees.length > 0 && (
                                                                     <View style={styles.participantAvatarRow}>
                                                                         {pendingAttendees.map((attendee: any, idx: number) => (
-                                                                            <Image
-                                                                                key={idx}
-                                                                                source={{ uri: attendee.avatar || 'https://picsum.photos/150' }}
-                                                                                style={styles.pendingAvatar}
-                                                                            />
+                                                                            attendee.avatar && attendee.avatar !== 'https://picsum.photos/150' ? (
+                                                                                <Image
+                                                                                    key={idx}
+                                                                                    source={{ uri: attendee.avatar }}
+                                                                                    style={styles.pendingAvatar}
+                                                                                />
+                                                                            ) : (
+                                                                                <View key={idx} style={[styles.pendingAvatar, { backgroundColor: COLORS.neutral100, justifyContent: 'center', alignItems: 'center' }]}>
+                                                                                    <User size={16} color={COLORS.neutral400} />
+                                                                                </View>
+                                                                            )
                                                                         ))}
                                                                     </View>
                                                                 )}
