@@ -62,7 +62,7 @@ import TimePickerModal from '../components/TimePickerModal';
 import { API_BASE } from '../constants/config';
 import WebSocketService from '../services/WebSocketService';
 import NotificationPanel from '../components/NotificationPanel';
-import { badgeStore } from '../store/badgeStore';
+
 import { useTutorial } from '../store/TutorialContext';
 import { FAKE_CONFIRMED_SCHEDULE } from '../constants/tutorialData';
 import { dataCache, CACHE_KEYS } from '../utils/dataCache';
@@ -358,7 +358,7 @@ export default function HomeScreen() {
     // HomeScreen에서 필요한 메시지만 구독
     const unsubscribe = WebSocketService.subscribe(
       'HomeScreen',
-      ['a2a_request', 'friend_request', 'friend_accepted', 'notification', 'a2a_status_changed'],
+      ['a2a_request', 'friend_request', 'friend_accepted', 'notification', 'a2a_status_changed', 'user_info_updated'],
       (data) => {
         console.log("[WS:Home] WS Event:", data.type);
 
@@ -2163,7 +2163,6 @@ export default function HomeScreen() {
                           )}
                           <View style={styles.friendItemInfo}>
                             <Text style={styles.friendItemName}>{item.friend.name}</Text>
-                            <Text style={styles.friendItemEmail}>{item.friend.email}</Text>
                           </View>
                           <View style={[
                             styles.friendItemCheckbox,

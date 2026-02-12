@@ -19,7 +19,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { friendsStore } from '../store/friendsStore';
 import { a2aStore } from '../store/a2aStore';
 import { homeStore } from '../store/homeStore';
-import { badgeStore } from '../store/badgeStore';
+
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -253,7 +253,7 @@ const MyPageScreen = () => {
       }
 
       if (!newNickname.trim()) {
-        Alert.alert('오류', '닉네임을 입력해주세요.');
+        Alert.alert('오류', '이름을 입력해주세요.');
         return;
       }
 
@@ -272,17 +272,19 @@ const MyPageScreen = () => {
         setNickname(newNickname.trim());
         setNicknameModalVisible(false);
         setNewNickname('');
-        Alert.alert('성공', '닉네임이 업데이트되었습니다.');
 
-        // 사용자 정보 다시 불러오기
-        await fetchUserInfo();
+        // friendsStore 캐시 갱신하여 다른 화면에서도 닉네임 업데이트 반영
+        friendsStore.invalidate();
+        friendsStore.refresh();
+
+        Alert.alert('성공', '이름이 업데이트되었습니다.');
       } else {
         const errorData = await response.json();
-        Alert.alert('오류', errorData.detail || '닉네임 업데이트 실패');
+        Alert.alert('오류', errorData.detail || '이름 업데이트 실패');
       }
     } catch (error) {
-      console.error('닉네임 업데이트 오류:', error);
-      Alert.alert('오류', '닉네임 업데이트 실패');
+      console.error('이름 업데이트 오류:', error);
+      Alert.alert('오류', '이름 업데이트 실패');
     }
   };
 
@@ -317,7 +319,7 @@ const MyPageScreen = () => {
       friendsStore.reset();
       a2aStore.reset();
       homeStore.reset();
-      await badgeStore.reset();
+
 
       setLogoutModalVisible(false);
       navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
@@ -366,7 +368,7 @@ const MyPageScreen = () => {
         friendsStore.reset();
         a2aStore.reset();
         homeStore.reset();
-        await badgeStore.reset();
+
         Alert.alert('탈퇴 완료', '정상적으로 탈퇴되었습니다.');
         setWithdrawModalVisible(false);
         navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
@@ -483,7 +485,7 @@ const MyPageScreen = () => {
               )}
             </TouchableOpacity>
             <Divider />
-            <SettingItem icon={PenSquareIcon} label="닉네임 설정" onPress={() => setNicknameModalVisible(true)} />
+            <SettingItem icon={PenSquareIcon} label="이름 설정" onPress={() => setNicknameModalVisible(true)} />
             <Divider />
             <SettingItem icon={SettingsIcon} label="앱 설정" onPress={() => Alert.alert('알림', '준비 중인 기능입니다.')} />
             <Divider />
@@ -509,10 +511,16 @@ const MyPageScreen = () => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>닉네임 변경</Text>
+            <View style={[styles.modalIconContainer, { backgroundColor: '#E0E7FF' }]}>
+              <PenSquareIcon size={24} color={COLORS.primaryMain} />
+            </View>
+            <Text style={styles.modalTitle}>이름 변경</Text>
+            <Text style={{ fontSize: 12, color: COLORS.neutral400, marginBottom: 16, marginTop: -8 }}>
+              *친구 추가 시 사용하는 아이디가 아닙니다
+            </Text>
             <TextInput
               style={styles.input}
-              placeholder="새 닉네임을 입력하세요"
+              placeholder="새로운 이름을 입력하세요"
               placeholderTextColor={COLORS.neutral400}
               value={newNickname}
               onChangeText={setNewNickname}

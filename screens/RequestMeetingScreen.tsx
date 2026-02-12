@@ -44,6 +44,7 @@ import { RootStackParamList, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
 import { getBackendUrl } from '../utils/environment';
 import { useTutorial } from '../store/TutorialContext';
+import { useRequestMeetingStore } from '../store/requestMeetingStore';
 
 const COLORS = {
     primaryMain: '#3730A3',
@@ -103,24 +104,28 @@ const RequestMeetingScreen = () => {
 
     const [friends, setFriends] = useState<Friend[]>([]);
     const [loadingFriends, setLoadingFriends] = useState(true);
-    const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
     const [currentUserId, setCurrentUserId] = useState<string>('');  // ✅ 현재 사용자 ID
 
-    // Request details state
-    const [title, setTitle] = useState('');
-    const [location, setLocation] = useState('');
+    // Store State
+    const {
+        title, setTitle,
+        location, setLocation,
+        selectedFriends, setSelectedFriends,
+        startDate, setStartDate,
+        endDate, setEndDate,
+        startTime, setStartTime,
+        endTime, setEndTime,
+        durationNights, setDurationNights,
+        durationHour, setDurationHour,
+        durationMinute, setDurationMinute,
+        reset
+    } = useRequestMeetingStore();
 
     const [showFriendModal, setShowFriendModal] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
 
-    // Get today's date in YYYY-MM-DD format
+    // Get today's date in YYYY-MM-DD format (for local helpers)
     const today = new Date();
-    const todayStr = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
-
-    const [startDate, setStartDate] = useState(todayStr);
-    const [endDate, setEndDate] = useState(todayStr);
-    const [startTime, setStartTime] = useState('09:00');
-    const [endTime, setEndTime] = useState('18:00');
 
     const [activePicker, setActivePicker] = useState<'startDate' | 'endDate' | 'startTime' | 'endTime' | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -130,6 +135,19 @@ const RequestMeetingScreen = () => {
     const [appliedRecIndex, setAppliedRecIndex] = useState<number | null>(null);
     const [recommendations, setRecommendations] = useState<any[]>([]);
     const [showResetModal, setShowResetModal] = useState(false);
+
+    // Custom Alert Modal State
+    const [customAlertVisible, setCustomAlertVisible] = useState(false);
+    const [customAlertTitle, setCustomAlertTitle] = useState('');
+    const [customAlertMessage, setCustomAlertMessage] = useState('');
+    const [customAlertType, setCustomAlertType] = useState<'success' | 'error' | 'info'>('info');
+
+    const showCustomAlert = (title: string, message: string, type: 'success' | 'error' | 'info' = 'info') => {
+        setCustomAlertTitle(title);
+        setCustomAlertMessage(message);
+        setCustomAlertType(type);
+        setCustomAlertVisible(true);
+    };
 
     // Calendar state
     const [calendarYear, setCalendarYear] = useState(today.getFullYear());
@@ -142,8 +160,6 @@ const RequestMeetingScreen = () => {
 
     // Duration picker state
     const [showDurationPicker, setShowDurationPicker] = useState(false);
-    const [durationHour, setDurationHour] = useState(1);
-    const [durationMinute, setDurationMinute] = useState(0);
     const [tempDurationHour, setTempDurationHour] = useState(1);
     const [tempDurationMinute, setTempDurationMinute] = useState(0);
 
@@ -153,9 +169,6 @@ const RequestMeetingScreen = () => {
     const durationHours = [0, 1, 2, 3, 4, 5, 6];
     const durationMinutes = [0, 15, 30, 45];
     const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
-
-    // Duration Nights State
-    const [durationNights, setDurationNights] = useState(0);
 
     // ScrollView ref for auto-scroll during tutorial
     const scrollViewRef = useRef<ScrollView>(null);
@@ -405,13 +418,16 @@ const RequestMeetingScreen = () => {
             if (currentSubStep?.id === 'go_to_request' || currentSubStep?.id === 'select_friend') {
                 // 강제로 초기화하여 "이미 선택됨" 버그 방지
                 // 단, 무한 루프 주의. selectedFriends가 비어있지 않을 때만.
-                setSelectedFriends(prev => prev.length > 0 ? [] : prev);
+                if (selectedFriends.length > 0) setSelectedFriends([]);
             }
         } else if (!isTutorialActive) {
             // 튜토리얼이 아닐 때 가이드 계정이 선택되어 있다면 제거
-            setSelectedFriends(prev => prev.filter(id => id !== 'tutorial_guide_joyner'));
+            const filtered = selectedFriends.filter(id => id !== 'tutorial_guide_joyner');
+            if (filtered.length !== selectedFriends.length) {
+                setSelectedFriends(filtered);
+            }
         }
-    }, [isTutorialActive, currentStep, currentSubStep?.id]);
+    }, [isTutorialActive, currentStep, currentSubStep?.id, selectedFriends, setSelectedFriends]);
 
     // ✅ [NEW] 튜토리얼: 자동 제목 입력
     useEffect(() => {
@@ -459,6 +475,26 @@ const RequestMeetingScreen = () => {
             buttonScale.setValue(1);
         }
     }, [isTutorialActive, currentStep, currentSubStep?.id]);
+    // ✅ [NEW] 로딩 게이지 애니메이션
+    const loadingProgress = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        if (isSending) {
+            loadingProgress.setValue(0);
+            Animated.timing(loadingProgress, {
+                toValue: 0.9, // 90%까지 천천히
+                duration: 10000, // 10초 동안 (더 천천히)
+                useNativeDriver: false,
+            }).start();
+        } else if (isSent) {
+            // 완료 시 100%로 꽉 채우기
+            Animated.timing(loadingProgress, {
+                toValue: 1,
+                duration: 300,
+                useNativeDriver: false,
+            }).start();
+        }
+    }, [isSending, isSent]);
 
     // Fetch friends from API
     const fetchFriends = async () => {
@@ -514,7 +550,10 @@ const RequestMeetingScreen = () => {
     );
 
     const toggleFriendSelection = (id: string) => {
-        setSelectedFriends(prev => prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]);
+        const newSelection = selectedFriends.includes(id)
+            ? selectedFriends.filter(f => f !== id)
+            : [...selectedFriends, id];
+        setSelectedFriends(newSelection);
         setHasAnalyzed(false);
         setAppliedRecIndex(null);
     };
@@ -592,17 +631,17 @@ const RequestMeetingScreen = () => {
                 setRecommendations(recs);
 
                 if (recs.length === 0) {
-                    Alert.alert('알림', '조건에 맞는 추천 일정을 찾을 수 없습니다.');
+                    showCustomAlert('오류', '조건에 맞는 추천 일정을 찾을 수 없습니다.', 'error');
                 }
                 setHasAnalyzed(true);
             } else {
                 const errorText = await response.text();
                 console.error('Failed to analyze:', errorText);
-                Alert.alert('오류', '일정 분석 중 문제가 발생했습니다.\n' + errorText);
+                showCustomAlert('오류', '일정 분석 중 문제가 발생했습니다.\n' + errorText, 'error');
             }
         } catch (error) {
             console.error('Error analyzing schedules:', error);
-            Alert.alert('오류', '서버 연결에 실패했습니다.');
+            showCustomAlert('오류', '서버 연결에 실패했습니다.', 'error');
         } finally {
             setIsAnalyzing(false);
         }
@@ -648,7 +687,7 @@ const RequestMeetingScreen = () => {
         if (selectedFriends.length === 0) return;
 
         if (!title.trim()) {
-            Alert.alert('알림', '일정 제목을 입력해주세요.');
+            showCustomAlert('알림', '일정 제목을 입력해주세요.', 'info');
             return;
         }
 
@@ -700,7 +739,8 @@ const RequestMeetingScreen = () => {
 
             if (response.ok) {
                 // ✅ 전송 성공 시 저장된 폼 상태 초기화
-                await AsyncStorage.removeItem('requestMeetingFormState');
+                // await AsyncStorage.removeItem('requestMeetingFormState'); // Removed, handled by reset() if needed, or keep state? Usually reset on success.
+                reset();
                 setIsSent(true);
             } else {
                 const error = await response.text();
@@ -734,25 +774,12 @@ const RequestMeetingScreen = () => {
 
     const confirmReset = async () => {
         setShowResetModal(false);
-        setTitle('');
-        setLocation('');
-        setSelectedFriends([]);
-        setDurationNights(0);
-        setStartDate(todayStr);
-        setEndDate(todayStr);
-        setStartTime('09:00');
-        setEndTime('18:00');
-        setDurationHour(1);
-        setDurationMinute(0);
+        reset();
         setAppliedRecIndex(null);
         setRecommendations([]);
         setIsAnalyzing(false);
         setHasAnalyzed(false);
-        try {
-            await AsyncStorage.removeItem('requestMeetingFormState');
-        } catch (e) {
-            console.error(e);
-        }
+        // await AsyncStorage.removeItem('requestMeetingFormState'); 
     };
 
     const filteredFriends = friends.filter(f => f.name.includes(searchTerm) || f.email.includes(searchTerm));
@@ -1029,7 +1056,7 @@ const RequestMeetingScreen = () => {
                                     <Text style={styles.dateValue}>{formatDisplayDate(startDate)}</Text>
                                 </View>
                             </TouchableOpacity>
-                            <ArrowRight size={18} color={COLORS.neutralGray} style={{ opacity: 0.4 }} />
+                            <Text style={{ fontSize: 20, color: COLORS.neutralGray, fontWeight: '600', marginHorizontal: 4 }}>~</Text>
                             <TouchableOpacity
                                 onPress={() => { setActivePicker(activePicker === 'endDate' ? null : 'endDate'); setHasAnalyzed(false); }}
                                 style={[styles.dateButton, activePicker === 'endDate' && styles.dateButtonActive]}
@@ -1056,7 +1083,7 @@ const RequestMeetingScreen = () => {
                                 <Text style={{ fontSize: 11, color: COLORS.primaryMain, fontWeight: 'bold' }}>여행 모드는 종일 설정됨</Text>
                             )}
                         </View>
-                        <View style={styles.timeContainer}>
+                        <View style={[styles.timeContainer, { alignItems: 'center' }]}>
                             <TouchableOpacity
                                 onPress={() => openTimePicker('startTime')}
                                 style={[styles.timeButton, activePicker === 'startTime' && styles.timeButtonActive]}
@@ -1064,6 +1091,7 @@ const RequestMeetingScreen = () => {
                                 <Clock size={16} color={COLORS.primaryLight} />
                                 <Text style={styles.timeValue}>{startTime}</Text>
                             </TouchableOpacity>
+                            <Text style={{ fontSize: 20, color: COLORS.neutralGray, fontWeight: '600', marginHorizontal: 4 }}>~</Text>
                             <TouchableOpacity
                                 onPress={() => openTimePicker('endTime')}
                                 style={[styles.timeButton, activePicker === 'endTime' && styles.timeButtonActive]}
@@ -1206,10 +1234,13 @@ const RequestMeetingScreen = () => {
                                                         return (
                                                             <View key={id} style={styles.participantCardAvailable}>
                                                                 <View style={styles.friendAvatarContainer}>
-                                                                    <Image
-                                                                        source={typeof friend.avatar === 'string' ? { uri: friend.avatar } : friend.avatar}
-                                                                        style={styles.friendAvatarSmall}
-                                                                    />
+                                                                    {friend.avatar ? (
+                                                                        <Image source={{ uri: friend.avatar }} style={[styles.friendAvatarSmall, { borderWidth: 1, borderColor: COLORS.primaryMain }]} />
+                                                                    ) : (
+                                                                        <View style={[styles.friendAvatarSmall, { backgroundColor: COLORS.neutralLight, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: COLORS.primaryMain }]}>
+                                                                            <User size={16} color={COLORS.neutralGray} />
+                                                                        </View>
+                                                                    )}
                                                                     <View style={styles.checkBadge}><Check size={8} color={COLORS.white} strokeWidth={4} /></View>
                                                                 </View>
                                                                 <Text style={styles.participantCardName}>{friend.name}</Text>
@@ -1261,13 +1292,13 @@ const RequestMeetingScreen = () => {
                             disabled={
                                 isTutorialActive
                                     ? ((!isSent && recommendations.length > 0 && appliedRecIndex === null) || isSending)
-                                    : (selectedFriends.length === 0 || isSending)
+                                    : (selectedFriends.length === 0 || recommendations.length === 0 || isSending)
                             }
                             style={[
                                 styles.sendButton,
                                 (isTutorialActive
                                     ? ((!isSent && recommendations.length > 0 && appliedRecIndex === null) || isSending)
-                                    : (selectedFriends.length === 0 || isSending)) && styles.sendButtonDisabled
+                                    : (selectedFriends.length === 0 || recommendations.length === 0 || isSending)) && styles.sendButtonDisabled
                             ]}
                             testID="btn_send_request"
                             ref={(r) => { if (r) registerTarget('btn_send_request', r); }}
@@ -1521,7 +1552,6 @@ const RequestMeetingScreen = () => {
                                                         )}
                                                         <View>
                                                             <Text style={[styles.friendItemName, isSelected && { color: COLORS.primaryMain }]}>{item.name}</Text>
-                                                            <Text style={styles.friendItemEmail}>{item.email}</Text>
                                                         </View>
                                                     </View>
                                                     <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
@@ -1571,6 +1601,52 @@ const RequestMeetingScreen = () => {
                             </TouchableOpacity>
                             <TouchableOpacity onPress={confirmReset} style={styles.deleteButton}>
                                 <Text style={styles.deleteButtonText}>초기화</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Sending Loading Modal */}
+            <Modal visible={isSending} transparent animationType="fade">
+                <View style={[styles.modalOverlay, { backgroundColor: 'rgba(255, 255, 255, 0.95)', justifyContent: 'center', alignItems: 'center' }]}>
+                    <View style={{ alignItems: 'center', justifyContent: 'center', width: '100%', marginBottom: 100 }}>
+                        <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 24 }}>
+                            요청을 보내고 있습니다...
+                        </Text>
+
+                        {/* Progress Gauge */}
+                        <View style={{ width: '50%', height: 6, backgroundColor: COLORS.neutral100, borderRadius: 3, overflow: 'hidden' }}>
+                            <Animated.View
+                                style={{
+                                    height: '100%',
+                                    backgroundColor: COLORS.primaryMain,
+                                    width: loadingProgress.interpolate({
+                                        inputRange: [0, 1],
+                                        outputRange: ['0%', '100%']
+                                    })
+                                }}
+                            />
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Custom Alert Modal */}
+            <Modal visible={customAlertVisible} transparent animationType="fade" onRequestClose={() => setCustomAlertVisible(false)}>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={[styles.modalIconContainer, { backgroundColor: COLORS.red50 }]}>
+                            <X size={28} color={COLORS.red400} />
+                        </View>
+                        <Text style={styles.modalTitle}>{customAlertTitle}</Text>
+                        <Text style={styles.modalMessage}>{customAlertMessage}</Text>
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                onPress={() => setCustomAlertVisible(false)}
+                                style={[styles.deleteButton, { backgroundColor: COLORS.red400 }]}
+                            >
+                                <Text style={styles.confirmButtonText}>확인</Text>
                             </TouchableOpacity>
                         </View>
                     </View>

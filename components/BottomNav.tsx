@@ -121,9 +121,8 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
                                     color={isActive ? COLORS.white : COLORS.lightGray}
                                     style={{ opacity: isActive ? 1 : 0.7 }}
                                 />
-                                {/* 배지 표시 */}
-
                             </View>
+
                             <Text style={[
                                 styles.label,
                                 { color: isActive ? COLORS.white : COLORS.lightGray, opacity: isActive ? 1 : 0.7 }
