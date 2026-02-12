@@ -4,7 +4,6 @@ import {
     Text,
     TouchableOpacity,
     StyleSheet,
-    SafeAreaView,
     ScrollView,
     Image,
     TextInput,
@@ -16,6 +15,7 @@ import {
     Animated, // Added Animated
     Dimensions, // Added Dimensions
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
     Clock,
     ArrowRight,
@@ -96,7 +96,9 @@ const RequestMeetingScreen = () => {
         ghostFriend,
         tutorialFriendAdded,
         registerTarget,
-        unregisterTarget
+        unregisterTarget,
+        registerActionCallback,
+        unregisterActionCallback
     } = useTutorial();
 
     const [friends, setFriends] = useState<Friend[]>([]);
@@ -259,9 +261,56 @@ const RequestMeetingScreen = () => {
         }
     }, [isTutorialActive, currentStep, currentSubStep]);
 
+    // ✅ [NEW] 튜토리얼 액션 콜백 등록
+    useEffect(() => {
+        if (!isTutorialActive) return;
+
+        // "참여자 추가" 버튼 클릭 콜백 - 친구 모달 열기
+        registerActionCallback('btn_add_participant', () => {
+            setShowFriendModal(true);
+            setTimeout(() => nextSubStep(), 300);
+        });
+
+        // "JOYNER 가이드 선택" 체크박스 클릭 콜백
+        registerActionCallback('checkbox_friend_select', () => {
+            // toggleFriendSelection을 사용하여 친구 추가 (hasAnalyzed 리셋 포함)
+            toggleFriendSelection(ghostFriend.id);
+            // 선택 후 useEffect에서 selectedFriends 변경 감지하여 다음 단계 진행
+        });
+
+        // "AI 분석" 버튼 클릭 콜백
+        registerActionCallback('btn_analyze_schedule', () => {
+            handleAnalyzeWithTutorial();
+        });
+
+        // "추천 일정 선택" 콜백
+        registerActionCallback('section_ai_recommendations', () => {
+            if (recommendations.length > 0) {
+                handleApplyRecommendation(0);
+                setTimeout(() => {
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                    nextSubStep();
+                }, 500);
+            }
+        });
+
+        // "요청 보내기" 버튼 클릭 콜백
+        registerActionCallback('btn_send_request', () => {
+            handleSendWithTutorial();
+        });
+
+        return () => {
+            unregisterActionCallback('btn_add_participant');
+            unregisterActionCallback('checkbox_friend_select');
+            unregisterActionCallback('btn_analyze_schedule');
+            unregisterActionCallback('section_ai_recommendations');
+            unregisterActionCallback('btn_send_request');
+        };
+    }, [isTutorialActive, selectedFriends, ghostFriend.id, recommendations, registerActionCallback, unregisterActionCallback, nextSubStep]);
+
     const openTimePicker = (type: 'startTime' | 'endTime') => {
         // [NEW] 튜토리얼: 시간 선택 시 자동 설정
-        if (isTutorialActive && currentStep === 'CREATE_REQUEST' && currentSubStep?.id === 'select_time') {
+        if (isTutorialActive && currentStep === 'CREATE_REQUEST' && currentSubStep?.id === 'explain_time_window') {
             setStartTime('18:30');
             setEndTime('20:30');
             setDurationHour(2);
@@ -561,6 +610,8 @@ const RequestMeetingScreen = () => {
 
     // 튜토리얼용 가짜 분석 함수
     const handleAnalyzeWithTutorial = async () => {
+        if (isAnalyzing) return; // 중복 실행 방지
+
         if (isTutorialActive && currentStep === 'CREATE_REQUEST') {
             setIsAnalyzing(true);
             setTimeout(() => {
@@ -577,14 +628,15 @@ const RequestMeetingScreen = () => {
                         const endM = endTotalMinutes % 60;
                         return `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
                     })(),
-                    availableCount: selectedFriends.length + 1,
-                    availableIds: [currentUserId, ...selectedFriends],
+                    availableCount: 2,
+                    availableIds: [currentUserId, ghostFriend.id],
                     unavailableIds: []
                 }];
                 setRecommendations(fakeRecs);
                 setIsAnalyzing(false);
                 setHasAnalyzed(true);
-                setHasAnalyzed(true);
+                // 결과 확인을 위해 스크롤 아래로 이동
+                setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
                 nextSubStep(); // 분석 완료 후 다음 단계로
             }, 1500);
             return;
@@ -790,7 +842,13 @@ const RequestMeetingScreen = () => {
                         })}
                         <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
                             <TouchableOpacity
-                                onPress={() => setShowFriendModal(true)}
+                                onPress={() => {
+                                    setShowFriendModal(true);
+                                    // 튜토리얼 중 직접 클릭 시에도 다음 단계로 진행
+                                    if (isTutorialActive && currentSubStep?.id === 'add_participant') {
+                                        setTimeout(() => nextSubStep(), 300);
+                                    }
+                                }}
                                 style={[
                                     styles.addParticipantButton,
                                     isTutorialActive && currentSubStep?.id === 'select_friend' && {
@@ -804,6 +862,7 @@ const RequestMeetingScreen = () => {
                                         elevation: 5
                                     }
                                 ]}
+                                ref={(r) => registerTarget('btn_add_participant', r)}
                                 testID="btn_add_participant"
                             >
                                 <Plus
@@ -1058,11 +1117,14 @@ const RequestMeetingScreen = () => {
                             )}
                         </TouchableOpacity>
                     ) : (
-                        <View style={styles.resultsContainer}>
+                        <View
+                            style={styles.resultsContainer}
+                            collapsable={false}
+                            testID="section_ai_recommendations"
+                            ref={(r) => { if (r) registerTarget('section_ai_recommendations', r); }}
+                        >
                             <View
                                 style={styles.resultsHeader}
-                                testID="section_ai_recommendations"
-                                ref={(r) => { if (r) registerTarget('section_ai_recommendations', r); }}
                             >
                                 <Text style={styles.resultsTitle}>AI 추천 일정</Text>
                             </View>
@@ -1139,12 +1201,15 @@ const RequestMeetingScreen = () => {
                                                     )}
 
                                                     {rec.availableIds.map((id: string) => {
-                                                        const friend = friends.find(f => f.id === id);
+                                                        const friend = displayedFriends.find(f => f.id === id);
                                                         if (!friend) return null;
                                                         return (
                                                             <View key={id} style={styles.participantCardAvailable}>
                                                                 <View style={styles.friendAvatarContainer}>
-                                                                    <Image source={{ uri: friend.avatar }} style={styles.friendAvatarSmall} />
+                                                                    <Image
+                                                                        source={typeof friend.avatar === 'string' ? { uri: friend.avatar } : friend.avatar}
+                                                                        style={styles.friendAvatarSmall}
+                                                                    />
                                                                     <View style={styles.checkBadge}><Check size={8} color={COLORS.white} strokeWidth={4} /></View>
                                                                 </View>
                                                                 <Text style={styles.participantCardName}>{friend.name}</Text>
@@ -1153,12 +1218,15 @@ const RequestMeetingScreen = () => {
                                                     })}
 
                                                     {rec.unavailableIds.map((id: string) => {
-                                                        const friend = friends.find(f => f.id === id);
+                                                        const friend = displayedFriends.find(f => f.id === id);
                                                         if (!friend) return null;
                                                         return (
                                                             <View key={id} style={styles.participantCardUnavailable}>
                                                                 <View style={styles.friendAvatarContainer}>
-                                                                    <Image source={{ uri: friend.avatar }} style={[styles.friendAvatarSmall, { opacity: 0.5 }]} />
+                                                                    <Image
+                                                                        source={typeof friend.avatar === 'string' ? { uri: friend.avatar } : friend.avatar}
+                                                                        style={[styles.friendAvatarSmall, { opacity: 0.5 }]}
+                                                                    />
                                                                     <View style={styles.xBadge}><X size={8} color={COLORS.white} strokeWidth={4} /></View>
                                                                 </View>
                                                                 <Text style={styles.participantCardNameGray}>{friend.name}</Text>
@@ -1202,6 +1270,7 @@ const RequestMeetingScreen = () => {
                                     : (selectedFriends.length === 0 || isSending)) && styles.sendButtonDisabled
                             ]}
                             testID="btn_send_request"
+                            ref={(r) => { if (r) registerTarget('btn_send_request', r); }}
                         >
                             {isSending ? (
                                 <>
@@ -1438,10 +1507,13 @@ const RequestMeetingScreen = () => {
                                                     style={[styles.friendItem, isSelected && styles.friendItemSelected]}
                                                     onPress={() => toggleFriendSelection(item.id)}
                                                     testID={item.id === ghostFriend.id ? 'checkbox_friend_select' : undefined}
+                                                    ref={(r) => { if (item.id === ghostFriend.id && r) registerTarget('checkbox_friend_select', r); }}
                                                 >
                                                     <View style={styles.friendItemLeft}>
                                                         {item.avatar ? (
-                                                            <Image source={{ uri: item.avatar }} style={styles.friendItemAvatar} />
+                                                            <Image source={typeof item.avatar === 'string' ? { uri: item.avatar } : item.avatar}
+                                                                style={styles.friendItemAvatar}
+                                                            />
                                                         ) : (
                                                             <View style={[styles.friendItemAvatar, { backgroundColor: COLORS.neutral100, alignItems: 'center', justifyContent: 'center' }]}>
                                                                 <User size={20} color={COLORS.neutralGray} />

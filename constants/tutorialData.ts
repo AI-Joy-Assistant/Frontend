@@ -10,7 +10,7 @@ export const TUTORIAL_GUIDE = {
     name: 'JOYNER 가이드',
     handle: 'joyner_guide',
     email: 'guide@joyner.app',
-    picture: 'assets/images/joyner_logo.png'
+    picture: require('../assets/images/icon.png')
 };
 
 // 튜토리얼 단계 타입
@@ -33,7 +33,7 @@ export interface SubStep {
     autoFill?: string;
     autoComplete?: boolean;
     delay?: number;
-    position?: 'top' | 'bottom' | 'left' | 'right' | 'center';
+    position?: 'top' | 'bottom' | 'left' | 'right' | 'center' | 'screen_top';
     action?: 'navigate' | 'click' | 'input' | 'wait';
 }
 
@@ -68,7 +68,7 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
             },
             {
                 id: 'intro_feature_2',
-                message: '복잡한 톡방 대화 없이, 버튼 한 번으로 일정을 조율하고 확정할 수 있어요.',
+                message: '복잡한 대화 없이, 버튼 한 번으로 일정을 조율하고 확정할 수 있어요.',
                 position: 'center',
             },
             {
@@ -111,8 +111,7 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
             {
                 id: 'friend_accepted',
                 message: '친구가 되었어요! 이제 일정을 조율할 수 있어요.',
-                autoComplete: true,
-                delay: 2000
+                position: 'center'
             }
         ]
     },
@@ -133,9 +132,16 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
                 position: 'center'
             },
             {
-                id: 'select_friend',
-                message: '참여자 선택 + 버튼을 눌러 JOYNER 가이드를 추가해주세요.',
+                id: 'add_participant',
+                message: '참여자 추가(+) 버튼을 눌러 친구를 추가해보세요.',
                 targetId: 'btn_add_participant',
+                position: 'bottom',
+                action: 'click'
+            },
+            {
+                id: 'select_friend',
+                message: 'JOYNER 가이드를 선택하여 약속 상대로 추가해주세요.',
+                targetId: 'checkbox_friend_select',
                 position: 'bottom',
                 action: 'click'
             },
@@ -169,7 +175,8 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
                 id: 'enter_title',
                 message: '일정 제목을 입력해보세요 (자동 입력됩니다)',
                 targetId: 'input_meeting_title',
-                action: 'input'
+                action: 'input',
+                position: 'bottom'
             },
             {
                 id: 'explain_analyze',
@@ -181,15 +188,12 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
             {
                 id: 'check_result',
                 message: 'AI가 찾아낸 최적의 추천 일정입니다!\n일정을 클릭한 후 스크롤을 내려 "선택한 일정으로 요청 보내기" 버튼을 눌러주세요.',
-                targetId: 'section_ai_recommendations',
-                position: 'top',
-                action: 'click'
+                position: 'screen_top'
             },
             {
                 id: 'request_sent',
                 message: '성공적으로 일정을 요청했습니다.',
-                autoComplete: true,
-                delay: 2500
+                position: 'center'
             }
         ]
     },
@@ -210,18 +214,9 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
                 position: 'center'
             },
             {
-                id: 'view_sent_request',
-                message: '방금 보낸 "프로젝트 킥오프" 요청을 확인해보세요.\n카드를 탭하면 상세 정보를 볼 수 있어요.',
-                targetId: 'card_a2a_request',
-                position: 'bottom',
-                action: 'click'
-            },
-            {
                 id: 'explain_status',
-                message: '현재 상태: 진행중\n친구가 응답하면 상태가 변경됩니다.',
+                message: '방금 보낸 요청이 "진행중" 상태로 표시됩니다.\n친구가 응답하면 상태가 변경돼요.',
                 position: 'center',
-                autoComplete: true,
-                delay: 2500
             }
         ]
     },
@@ -233,7 +228,8 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
             {
                 id: 'view_received_request',
                 message: 'JOYNER 가이드님이 보낸 "팀 회식" 요청이 도착했어요.\n요청 카드를 눌러 상세 내용을 확인하세요.',
-                position: 'center',
+                targetId: 'card_tutorial_received_request',
+                position: 'bottom',
                 action: 'click'
             },
             {
@@ -245,14 +241,12 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
             {
                 id: 'select_reschedule_time',
                 message: '시간을 변경하고 "AI에게 재협상 요청" 버튼을 눌러 전송하세요.',
-                targetId: 'btn_send_reschedule',
-                action: 'click'
+                position: 'screen_top'
             },
             {
                 id: 'reschedule_completed',
-                message: ' 재조율 요청이 완료되었습니다.\n 이제 다시 돌아가서 "승인"을 해볼게요.',
-                delay: 2000,
-                autoComplete: true
+                message: '재조율 요청이 완료되었습니다.',
+                position: 'center'
             },
             {
                 id: 'try_approve',
@@ -263,8 +257,7 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
             {
                 id: 'approved_success',
                 message: '일정이 확정되었습니다! 해당 일정은 캘린더에 자동으로 추가됩니다.',
-                delay: 2000,
-                autoComplete: true
+                position: 'center'
             },
             {
                 id: 'event_guide',
@@ -288,8 +281,6 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
                 id: 'home_calendar_intro',
                 message: '홈 화면에 오신 것을 환영합니다!\n여기서 일정을 한눈에 확인할 수 있어요.',
                 position: 'center',
-                autoComplete: true,
-                delay: 2500
             },
             {
                 id: 'home_calendar_view',
@@ -373,8 +364,6 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
                 id: 'complete_message',
                 message: '축하합니다!\nJOYNER의 모든 기능을 배우셨어요.\n이제 친구들과 스마트하게 일정을 조율하세요!',
                 position: 'center',
-                autoComplete: true,
-                delay: 3000
             }
         ]
     }

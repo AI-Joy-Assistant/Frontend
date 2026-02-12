@@ -869,7 +869,9 @@ const A2AScreen = () => {
         nextSubStep,
         tutorialRequestSent,
         registerTarget,
-        isHighlighted
+        isHighlighted,
+        registerActionCallback,
+        unregisterActionCallback
     } = useTutorial();
 
     // Fetch logs (GET /a2a/sessions)
@@ -1415,9 +1417,9 @@ const A2AScreen = () => {
     };
 
     const handleRescheduleClick = () => {
-        if (isTutorialActive && currentSubStep?.id === 'try_reschedule') {
-            // 튜토리얼에서는 재조율 화면으로 진입하지 않고 다음 설명으로 넘어감
-            nextSubStep();
+        if (isTutorialActive && currentSubStep?.id === 'explain_actions') {
+            setIsRescheduling(true);
+            setTimeout(() => nextSubStep(), 500);
             return;
         }
 
@@ -1594,15 +1596,66 @@ const A2AScreen = () => {
         setDeleteTargetLogId(null);
     };
 
+    // ✅ [NEW] 튜토리얼 액션 콜백 등록
+    useEffect(() => {
+        if (!isTutorialActive) return;
+
+        // "받은 요청 카드 클릭" 콜백 - 튜토리얼 fake request 열기
+        registerActionCallback('card_tutorial_received_request', () => {
+            // logs에서 튜토리얼 받은 요청 찾아서 클릭
+            const fakeReceivedLog = logs.find(log => log.id === 'tutorial_received_request');
+            if (fakeReceivedLog) {
+                handleLogClick(fakeReceivedLog);
+                setTimeout(() => nextSubStep(), 500);
+            }
+        });
+
+        registerActionCallback('btn_reschedule', () => {
+            handleRescheduleClick();
+        });
+
+        registerActionCallback('btn_send_reschedule', () => {
+            handleSubmitReschedule();
+        });
+
+        registerActionCallback('btn_approve', () => {
+            // 승인 로직 실행 (내부에서 튜토리얼 다음 단계 이동 처리됨)
+            handleApproveClick();
+        });
+        // [추가됨] 홈 탭 이동 액션 처리 (go_to_home_final 단계)
+        registerActionCallback('tab_home', () => {
+            // 1. 열려있는 모달 닫기
+            handleClose();
+
+            // 2. 홈 화면으로 네비게이션
+            navigation.navigate('Home');
+
+            // 3. 튜토리얼 다음 단계(CHECK_HOME)로 진행
+            // 화면 전환 애니메이션 시간을 고려해 약간의 딜레이 후 실행
+            setTimeout(() => {
+                nextSubStep();
+            }, 500);
+        });
+
+        return () => {
+            unregisterActionCallback('card_tutorial_received_request');
+            unregisterActionCallback('btn_reschedule');
+            unregisterActionCallback('btn_send_reschedule');
+            unregisterActionCallback('tab_home');
+            // [추가됨] 클린업
+            unregisterActionCallback('btn_approve');
+        };
+    }, [isTutorialActive, logs, registerActionCallback, unregisterActionCallback, handleRescheduleClick, handleSubmitReschedule]);
+
     const renderLogItem = ({ item }: { item: A2ALog }) => {
         const isTutorialReceivedTarget = item.id === 'tutorial_received_request';
         const isTutorialSentTarget = item.id === 'tutorial_fake_request';  // FAKE_A2A_REQUEST.id와 일치
-        const highlighted = isTutorialReceivedTarget && isHighlighted('log_card_tutorial_received_request');
+        const highlighted = isTutorialReceivedTarget && isHighlighted('card_tutorial_received_request');
         const highlightedSent = isTutorialSentTarget && isHighlighted('card_a2a_request');
 
         // ref 등록 함수
         const getRef = () => {
-            if (isTutorialReceivedTarget) return (r: any) => { if (r) registerTarget('log_card_tutorial_received_request', r); };
+            if (isTutorialReceivedTarget) return (r: any) => { if (r) registerTarget('card_tutorial_received_request', r); };
             if (isTutorialSentTarget) return (r: any) => { if (r) registerTarget('card_a2a_request', r); };
             return undefined;
         };
@@ -2039,7 +2092,7 @@ const A2AScreen = () => {
                                                     {((selectedLog?.details as any)?.attendees?.map((a: any) => a.avatar) || (selectedLog?.details as any)?.participantImages || ['https://picsum.photos/150']).slice(0, 3).map((uri: string, idx: number) => (
                                                         <Image
                                                             key={idx}
-                                                            source={{ uri: uri || 'https://picsum.photos/150' }}
+                                                            source={typeof uri === 'string' ? { uri: uri || 'https://picsum.photos/150' } : uri}
                                                             style={[styles.attendeeAvatar, { marginLeft: idx > 0 ? -8 : 0 }]}
                                                         />
                                                     ))}
@@ -2089,6 +2142,7 @@ const A2AScreen = () => {
                                                 (!startDate || !startTime || !endDate || !endTime) && styles.submitButtonDisabled
                                             ]}
                                             testID="btn_send_reschedule"
+                                            ref={(r) => registerTarget('btn_send_reschedule', r)}
                                         >
                                             <Text style={styles.confirmBtnText}>AI에게 재협상 요청</Text>
                                         </TouchableOpacity>
@@ -2131,7 +2185,14 @@ const A2AScreen = () => {
                                                 {console.log('🔍 [DEBUG] selectedLog.status:', selectedLog.status, 'toLowerCase:', selectedLog.status?.toLowerCase?.())}
                                                 {/* Proposer */}
                                                 <View style={styles.proposerCard}>
-                                                    <Image source={{ uri: selectedLog.details.proposerAvatar }} style={styles.proposerAvatar} />
+                                                    <Image
+                                                        source={
+                                                            typeof selectedLog.details.proposerAvatar === 'string'
+                                                                ? { uri: selectedLog.details.proposerAvatar }
+                                                                : selectedLog.details.proposerAvatar
+                                                        }
+                                                        style={styles.proposerAvatar}
+                                                    />
                                                     <View>
                                                         <Text style={styles.proposerLabel}>보낸 사람</Text>
                                                         <Text style={styles.proposerName}>{selectedLog.details.proposer}</Text>
@@ -2334,7 +2395,11 @@ const A2AScreen = () => {
                                                                         approvedAttendees.map((attendee: any, idx: number) => (
                                                                             <Image
                                                                                 key={idx}
-                                                                                source={{ uri: attendee.avatar || 'https://picsum.photos/150' }}
+                                                                                source={
+                                                                                    typeof attendee.avatar === 'string'
+                                                                                        ? { uri: attendee.avatar || 'https://picsum.photos/150' }
+                                                                                        : attendee.avatar
+                                                                                }
                                                                                 style={styles.approvedAvatar}
                                                                             />
                                                                         ))
@@ -2358,7 +2423,11 @@ const A2AScreen = () => {
                                                                         {pendingAttendees.map((attendee: any, idx: number) => (
                                                                             <Image
                                                                                 key={idx}
-                                                                                source={{ uri: attendee.avatar || 'https://picsum.photos/150' }}
+                                                                                source={
+                                                                                    typeof attendee.avatar === 'string'
+                                                                                        ? { uri: attendee.avatar || 'https://picsum.photos/150' }
+                                                                                        : attendee.avatar
+                                                                                }
                                                                                 style={styles.pendingAvatar}
                                                                             />
                                                                         ))}
@@ -2442,7 +2511,12 @@ const A2AScreen = () => {
                                             {/* 모달이 닫히는 중이 아닐 때만 버튼 표시 */}
                                             {!isModalClosing && (
                                                 <>
-                                                    <TouchableOpacity onPress={handleRescheduleClick} style={styles.rescheduleButton}>
+                                                    <TouchableOpacity
+                                                        onPress={handleRescheduleClick}
+                                                        style={styles.rescheduleButton}
+                                                        ref={(r) => registerTarget('btn_reschedule', r)}
+                                                        testID="btn_reschedule"
+                                                    >
                                                         <Text style={styles.rescheduleButtonText}>재조율</Text>
                                                     </TouchableOpacity>
 
@@ -2466,7 +2540,8 @@ const A2AScreen = () => {
                                                         const showButtons = !isRequester && !isApproved;
 
                                                         // 협상 완료 상태 여부 (pending_approval일 때만 버튼 활성화)
-                                                        const isNegotiationComplete = selectedLog?.status?.toLowerCase() === 'pending_approval';
+                                                        // 튜토리얼 모드에서는 항상 활성화
+                                                        const isNegotiationComplete = (isTutorialActive && currentStep === 'RESPOND_TO_REQUEST') || selectedLog?.status?.toLowerCase() === 'pending_approval';
 
                                                         const handleApproveWithCheck = () => {
                                                             // 튜토리얼 모드에서는 협상 완료 체크 건너뛰기
@@ -2497,6 +2572,8 @@ const A2AScreen = () => {
                                                                         styles.approveButton,
                                                                         !isNegotiationComplete && { opacity: 0.5 }
                                                                     ]}
+                                                                    ref={(r) => registerTarget('btn_approve', r)}
+                                                                    testID="btn_approve"
                                                                 >
                                                                     <CheckCircle2 size={16} color="white" style={{ marginRight: 6 }} />
                                                                     <Text style={styles.approveButtonText}>승인</Text>
