@@ -20,7 +20,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import { friendsStore } from '../store/friendsStore';
 import { a2aStore } from '../store/a2aStore';
 import { homeStore } from '../store/homeStore';
-import { badgeStore } from '../store/badgeStore';
 import { useRefresh } from '../hooks/useRefresh';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -379,7 +378,6 @@ const MyPageScreen = () => {
         friendsStore.reset();
         a2aStore.reset();
         homeStore.reset();
-        await badgeStore.reset();
 
         // ✅ 캘린더 서비스 로그아웃 및 캐시 초기화
         await calendarService.logout();
