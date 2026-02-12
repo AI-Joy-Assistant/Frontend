@@ -63,7 +63,7 @@ import TimePickerModal from '../components/TimePickerModal';
 import { API_BASE } from '../constants/config';
 import WebSocketService from '../services/WebSocketService';
 import NotificationPanel from '../components/NotificationPanel';
-import { badgeStore } from '../store/badgeStore';
+
 import { useTutorial } from '../store/TutorialContext';
 import { FAKE_CONFIRMED_SCHEDULE } from '../constants/tutorialData';
 import { dataCache, CACHE_KEYS } from '../utils/dataCache';
@@ -112,7 +112,9 @@ export default function HomeScreen() {
     fakeSchedule,
     registerTarget,
     currentSubStep,
-    nextSubStep
+    nextSubStep,
+    registerActionCallback,
+    unregisterActionCallback
   } = useTutorial();
 
   // homeStore에서 전역 상태 구독
@@ -355,10 +357,10 @@ export default function HomeScreen() {
     // 싱글톤 서비스 연결 (이미 연결되어 있으면 스킵)
     WebSocketService.connect(currentUserId);
 
-    // HomeScreen에서 필요한 메시지만 구독
+        // HomeScreen에서 필요한 메시지만 구독
     const unsubscribe = WebSocketService.subscribe(
       'HomeScreen',
-      ['a2a_request', 'friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'notification', 'a2a_status_changed'],
+      ['a2a_request', 'friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'notification', 'a2a_status_changed', 'user_info_updated'],
       (data) => {
         console.log("[WS:Home] WS Event:", data.type);
 
@@ -379,6 +381,30 @@ export default function HomeScreen() {
       unsubscribe();
     };
   }, [currentUserId]);
+
+  // ---------------------------------------------------------
+  // [추가] 튜토리얼 액션 콜백 (친구 탭, 채팅 탭 이동 처리)
+  // ---------------------------------------------------------
+  useEffect(() => {
+    if (!isTutorialActive) return;
+
+    // 1. 친구 탭 이동
+    registerActionCallback('tab_friends', () => {
+      navigation.navigate('Friends');
+      setTimeout(() => nextSubStep(), 500);
+    });
+
+    // 2. 채팅 탭 이동 (여기서 처리됨)
+    registerActionCallback('tab_chat', () => {
+      navigation.navigate('Chat');
+      setTimeout(() => nextSubStep(), 500);
+    });
+
+    return () => {
+      unregisterActionCallback('tab_friends');
+      unregisterActionCallback('tab_chat');
+    };
+  }, [isTutorialActive, registerActionCallback, unregisterActionCallback, navigation, nextSubStep]);
 
   // 표시할 요청 필터링 (dismissed 제외, 첫 번째만 표시)
   const visibleRequest = pendingRequests.find(req => !dismissedRequestIds.includes(req.id));
@@ -2369,7 +2395,6 @@ export default function HomeScreen() {
                           )}
                           <View style={styles.friendItemInfo}>
                             <Text style={styles.friendItemName}>{item.friend.name}</Text>
-                            <Text style={styles.friendItemEmail}>{item.friend.email}</Text>
                           </View>
                           <View style={[
                             styles.friendItemCheckbox,

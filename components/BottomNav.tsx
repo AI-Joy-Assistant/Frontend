@@ -32,7 +32,7 @@ const TUTORIAL_TAB_MAP: Record<string, string> = {
 
 const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-    const { isTutorialActive, currentSubStep, nextSubStep, registerTarget } = useTutorial();
+    const { isTutorialActive, currentSubStep, nextSubStep, registerTarget, registerActionCallback, unregisterActionCallback } = useTutorial();
 
     const navItems = [
         { id: Tab.HOME, label: '홈', icon: 'home', route: 'Home' },
@@ -42,6 +42,29 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
         { id: Tab.A2A, label: '이벤트', icon: 'calendar', route: 'A2A' },
         { id: Tab.USER, label: '프로필', icon: 'information-circle', route: 'User' },
     ];
+
+    // 튜토리얼 액션 콜백 등록 - 탭 네비게이션
+    useEffect(() => {
+        if (!isTutorialActive) return;
+
+        // 각 탭에 대한 콜백 등록 (네비게이션 후 다음 단계로)
+        const tabCallbacks: Record<string, () => void> = {
+            'tab_home': () => { navigation.navigate('Home' as any); setTimeout(() => nextSubStep(), 300); },
+            'tab_request': () => { navigation.navigate('RequestMeeting' as any); setTimeout(() => nextSubStep(), 300); },
+            'tab_friends': () => { navigation.navigate('Friends' as any); setTimeout(() => nextSubStep(), 300); },
+            'tab_a2a': () => { navigation.navigate('A2A' as any); setTimeout(() => nextSubStep(), 300); },
+        };
+
+        Object.entries(tabCallbacks).forEach(([targetId, callback]) => {
+            registerActionCallback(targetId, callback);
+        });
+
+        return () => {
+            Object.keys(tabCallbacks).forEach((targetId) => {
+                unregisterActionCallback(targetId);
+            });
+        };
+    }, [isTutorialActive, navigation, registerActionCallback, unregisterActionCallback]);
 
     const handlePress = (item: any) => {
         // 튜토리얼 모드일 때 탭 클릭 감지
@@ -98,9 +121,8 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
                                     color={isActive ? COLORS.white : COLORS.lightGray}
                                     style={{ opacity: isActive ? 1 : 0.7 }}
                                 />
-                                {/* 배지 표시 */}
-
                             </View>
+
                             <Text style={[
                                 styles.label,
                                 { color: isActive ? COLORS.white : COLORS.lightGray, opacity: isActive ? 1 : 0.7 }

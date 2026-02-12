@@ -27,7 +27,7 @@ import BottomNav from "../components/BottomNav";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "../constants/config";
 import WebSocketService from "../services/WebSocketService";
-import { badgeStore } from "../store/badgeStore";
+
 import { dataCache, CACHE_KEYS } from "../utils/dataCache";
 
 import { LinearGradient } from "expo-linear-gradient";
@@ -37,16 +37,9 @@ import {
   X,
   Search,
   Check,
-  Menu,
-  MoreHorizontal,
-  Edit2,
-  Trash2,
-  Plus,
-  MessageSquare,
   User,
 } from "lucide-react-native";
 import { COLORS } from "../constants/Colors";
-import { BlurView } from "expo-blur";
 
 interface Friend {
   id: string;
@@ -99,6 +92,46 @@ interface ChatSession {
   isDefault?: boolean; // 기본 채팅 세션 여부
 }
 
+const TypingIndicator = () => {
+  const dot1 = useRef(new Animated.Value(0)).current;
+  const dot2 = useRef(new Animated.Value(0)).current;
+  const dot3 = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animate = (dot: Animated.Value, delay: number) => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(dot, {
+            toValue: 1,
+            duration: 400,
+            useNativeDriver: true,
+            delay
+          }),
+          Animated.timing(dot, {
+            toValue: 0.3,
+            duration: 400,
+            useNativeDriver: true
+          })
+        ])
+      ).start();
+    };
+
+    animate(dot1, 0);
+    animate(dot2, 200);
+    animate(dot3, 400);
+  }, []);
+
+  return (
+    <View style={[styles.messageItem, styles.aiMessage, { marginBottom: 10 }]}>
+      <View style={styles.loadingBubble}>
+        <Animated.View style={[styles.loadingDot, { opacity: dot1, backgroundColor: COLORS.primaryMain }]} />
+        <Animated.View style={[styles.loadingDot, { opacity: dot2, backgroundColor: COLORS.primaryMain }]} />
+        <Animated.View style={[styles.loadingDot, { opacity: dot3, backgroundColor: COLORS.primaryMain }]} />
+      </View>
+    </View>
+  );
+};
+
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const navigation =
@@ -108,24 +141,8 @@ export default function ChatScreen() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
-  // UI State for Management
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [activeMenuSessionId, setActiveMenuSessionId] = useState<string | null>(
-    null
-  );
-  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Modals
-  const [renameModal, setRenameModal] = useState<{
-    isOpen: boolean;
-    sessionId: string | null;
-    currentTitle: string;
-  }>({ isOpen: false, sessionId: null, currentTitle: "" });
-
-  const [deleteModal, setDeleteModal] = useState<{
-    isOpen: boolean;
-    sessionId: string | null;
-  }>({ isOpen: false, sessionId: null });
+  // Chat State (채팅방 관리 UI 삭제됨 - 기본 세션만 사용)
 
   // Chat State
   const [input, setInput] = useState("");
@@ -446,197 +463,10 @@ export default function ChatScreen() {
     return sessions.find((s) => s.id === currentSessionId)?.messages || [];
   }, [sessions, currentSessionId]);
 
-  const currentSessionTitle = useMemo(() => {
-    return sessions.find((s) => s.id === currentSessionId)?.title || "새 채팅";
-  }, [sessions, currentSessionId]);
 
-  const createNewSession = async () => {
-    try {
-      const token = await AsyncStorage.getItem("accessToken");
-      if (!token) {
-        console.warn("액세스 토큰 없음 – 세션을 만들 수 없습니다.");
-        return;
-      }
 
-      // 1) 백엔드에 실제 chat_sessions row 생성 요청
-      const res = await fetch(`${API_BASE}/chat/sessions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ title: "새 채팅" }),
-      });
 
-      if (!res.ok) {
-        console.error("세션 생성 실패", res.status);
-        return;
-      }
-
-      const json = await res.json();
-      const session = json.data ?? json;
-
-      const now = new Date();
-
-      const newSessionId: string = session.id; // uuid
-      const newSessionTitle: string = session.title ?? "새 채팅";
-      const updatedAt: Date = session.updated_at
-        ? new Date(session.updated_at)
-        : now;
-
-      const newSession: ChatSession = {
-        id: newSessionId,
-        title: newSessionTitle,
-        updatedAt,
-        messages: [
-          {
-            id: "init",
-            sender: "ai",
-            text: "새로운 대화를 시작합니다. 무엇을 도와드릴까요?",
-            timestamp: now.toISOString(),
-          },
-        ],
-      };
-
-      setSessions((prev) => [newSession, ...prev]);
-      setCurrentSessionId(newSessionId);
-
-      setIsSidebarOpen(false);
-      setActiveMenuSessionId(null);
-    } catch (e) {
-      console.error("세션 생성 중 오류", e);
-    }
-  };
-
-  const updateSessionTitle = async () => {
-    if (renameModal.sessionId && renameModal.currentTitle.trim()) {
-      const sessionIdToUpdate = renameModal.sessionId;
-      const newTitle = renameModal.currentTitle.trim();
-
-      // 백엔드에서 세션 이름 변경 (uuid 형식인 경우에만)
-      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sessionIdToUpdate);
-
-      if (isUUID) {
-        try {
-          const token = await AsyncStorage.getItem("accessToken");
-          if (token) {
-            await fetch(`${API_BASE}/chat/sessions/${sessionIdToUpdate}`, {
-              method: "PUT",
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ title: newTitle }),
-            });
-          }
-        } catch (e) {
-          console.error("Failed to update session title on backend", e);
-        }
-      }
-
-      // 로컬 상태 업데이트
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === sessionIdToUpdate
-            ? { ...s, title: newTitle }
-            : s
-        )
-      );
-      setRenameModal({ isOpen: false, sessionId: null, currentTitle: "" });
-      setActiveMenuSessionId(null);
-    }
-  };
-
-  const deleteSession = async () => {
-    if (deleteModal.sessionId) {
-      const sessionIdToDelete = deleteModal.sessionId;
-
-      // 백엔드에서 세션 삭제 (uuid 형식인 경우에만)
-      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sessionIdToDelete);
-
-      if (isUUID) {
-        try {
-          const token = await AsyncStorage.getItem("accessToken");
-          if (token) {
-            await fetch(`${API_BASE}/chat/sessions/${sessionIdToDelete}`, {
-              method: "DELETE",
-              headers: { Authorization: `Bearer ${token}` },
-            });
-          }
-        } catch (e) {
-          console.error("Failed to delete session from backend", e);
-        }
-      }
-
-      // 로컬 상태에서 제거
-      const newSessions = sessions.filter(
-        (s) => s.id !== sessionIdToDelete
-      );
-      setSessions(newSessions);
-
-      if (currentSessionId === sessionIdToDelete) {
-        if (newSessions.length > 0) {
-          setCurrentSessionId(newSessions[0].id);
-        } else {
-          // 완전 비면 프론트 단에서만 임시 세션 하나 만들어둘 수도 있음
-          const now = new Date();
-          const tmpId = now.getTime().toString();
-          setSessions([
-            {
-              id: tmpId,
-              title: "새 채팅",
-              updatedAt: now,
-              messages: [],
-            },
-          ]);
-          setCurrentSessionId(tmpId);
-        }
-      }
-      setDeleteModal({ isOpen: false, sessionId: null });
-      setActiveMenuSessionId(null);
-    }
-  };
-
-  const groupedSessions = useMemo(() => {
-    const today = new Date();
-    const startOfToday = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate()
-    ).getTime();
-    const startOfWeek =
-      startOfToday - today.getDay() * 24 * 60 * 60 * 1000;
-
-    const groups = {
-      today: [] as ChatSession[],
-      thisWeek: [] as ChatSession[],
-      older: [] as ChatSession[],
-    };
-
-    sessions.forEach((session) => {
-      const date = new Date(session.updatedAt);
-      const time = isNaN(date.getTime()) ? 0 : date.getTime();
-
-      if (time >= startOfToday) {
-        groups.today.push(session);
-      } else if (time >= startOfWeek) {
-        groups.thisWeek.push(session);
-      } else {
-        groups.older.push(session);
-      }
-    });
-
-    const sorter = (a: ChatSession, b: ChatSession) =>
-      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-
-    groups.today.sort(sorter);
-    groups.thisWeek.sort(sorter);
-    groups.older.sort(sorter);
-
-    return groups;
-  }, [sessions]);
-
-  // --- Chat History Load Logic ---
+  // --- Chat History Load Logic --- (채팅방 관리 함수 삭제됨)
 
   const isValidUUID = (value?: string | null): boolean => {
     if (!value) return false;
@@ -697,33 +527,46 @@ export default function ChatScreen() {
       const loadedMessages: Message[] = [];
 
       if (Array.isArray(chatLogs)) {
-        chatLogs.forEach((log: any) => {
-          // user message
+        // 백엔드는 created_at DESC 순서로 반환하므로, 역순 처리 필요
+        // 또한, 같은 log에서 user → ai 순서를 보장하기 위해 인덱스 사용
+        let messageIndex = 0;
+        chatLogs.forEach((log: any, logIndex: number) => {
+          // 원본 인덱스를 반전 (DESC → ASC)
+          const baseOrder = chatLogs.length - logIndex;
+
+          // user message (먼저)
           if (log.request_text) {
             loadedMessages.push({
               sender: "user",
               text: log.request_text,
               timestamp: log.created_at,
-              id: `${log.id}-user`,  // 고유 ID 생성
-            });
+              id: `${log.id}-user`,
+              _order: baseOrder * 10,  // user가 ai보다 먼저
+            } as Message & { _order: number });
           }
 
-          // ai message
+          // ai message (나중)
           if (log.response_text) {
             loadedMessages.push({
               sender: "ai",
               text: log.response_text,
               timestamp: log.created_at,
-              id: `${log.id}-ai`,  // 고유 ID 생성
-            });
+              id: `${log.id}-ai`,
+              _order: baseOrder * 10 + 1,  // ai가 user 다음
+            } as Message & { _order: number });
           }
         });
 
-        loadedMessages.sort(
-          (a, b) =>
-            new Date(a.timestamp || 0).getTime() -
-            new Date(b.timestamp || 0).getTime()
-        );
+        // timestamp 기준 1차 정렬, 동일 timestamp면 _order 기준 2차 정렬
+        loadedMessages.sort((a, b) => {
+          const timeA = new Date(a.timestamp || 0).getTime();
+          const timeB = new Date(b.timestamp || 0).getTime();
+          if (timeA !== timeB) {
+            return timeA - timeB;
+          }
+          // timestamp가 같으면 _order로 정렬 (원래 순서 보존)
+          return ((a as any)._order || 0) - ((b as any)._order || 0);
+        });
 
         const now = new Date();
 
@@ -748,6 +591,11 @@ export default function ChatScreen() {
               : s
           );
         });
+
+        // [FIX] 메시지 로드 완료 후 마지막 메시지로 스크롤
+        setTimeout(() => {
+          messagesEndRef.current?.scrollToEnd({ animated: false });
+        }, 150);
       }
     } catch (error) {
       console.error("채팅 기록 불러오기 오류:", error);
@@ -765,7 +613,7 @@ export default function ChatScreen() {
       fetchSessions();
 
       // 채팅 화면 들어오면 lastReadAt을 현재 시간으로 강제 리셋 (배지 즉시 제거)
-      badgeStore.forceResetLastReadAt();
+
 
       // 30초마다 폴링 (WebSocket 백업용 - 연결 끊김 대비)
       const interval = setInterval(() => {
@@ -775,7 +623,7 @@ export default function ChatScreen() {
       return () => {
         clearInterval(interval);
         // 화면을 떠날 때도 읽음 처리 (채팅 중 받은 메시지들도 읽음으로 표시)
-        badgeStore.forceResetLastReadAt();
+
       };
     }, []) // 의존성 배열 비움 - 화면 포커스 시 1회만 실행
   );
@@ -892,6 +740,7 @@ export default function ChatScreen() {
     if (!input.trim()) return;
     const userText = input;
     setInput("");
+    setLoading(true); // 타이핑 인디케이터 표시 시작
 
     // Clear draft and selected friends after sending
     if (currentSessionId) {
@@ -910,6 +759,7 @@ export default function ChatScreen() {
     const activeSessionId = currentSessionId;
     if (!activeSessionId) {
       console.error("No active session ID");
+      setLoading(false); // 로딩 해제
       return;
     }
 
@@ -1076,6 +926,8 @@ export default function ChatScreen() {
         undefined, undefined, undefined, undefined,
         activeSessionId
       );
+    } finally {
+      setLoading(false); // 로딩 종료
     }
   };
 
@@ -1344,6 +1196,12 @@ export default function ChatScreen() {
       keyboardShowEvent,
       () => {
         setKeyboardVisible(true);
+        // 키보드가 올라올 때 스크롤을 최하단으로 이동
+        setTimeout(() => {
+          if (messagesEndRef.current) {
+            messagesEndRef.current.scrollToEnd({ animated: true });
+          }
+        }, 100);
       }
     );
     const hideSubscription = Keyboard.addListener(
@@ -1405,138 +1263,16 @@ export default function ChatScreen() {
               <Text style={styles.headerTitle}>
                 {userName}님의 비서
               </Text>
-              <Text style={styles.headerSubtitle}>
-                {currentSessionTitle}
-              </Text>
             </View>
           </View>
-
-          <TouchableOpacity
-            onPress={() => setIsSidebarOpen(true)}
-            style={styles.menuButton}
-          >
-            <Menu size={24} color="white" />
-          </TouchableOpacity>
         </View>
       </LinearGradient>
-
-      {/* 2. Chat Sidebar */}
-      {isSidebarOpen && (
-        <View style={styles.sidebarOverlay}>
-          <TouchableWithoutFeedback
-            onPress={() => setIsSidebarOpen(false)}
-          >
-            <BlurView
-              intensity={20}
-              style={StyleSheet.absoluteFill}
-              tint="dark"
-            />
-          </TouchableWithoutFeedback>
-
-          <View style={styles.sidebarPanel}>
-            <View style={[styles.sidebarHeader, { paddingTop: insets.top + 20 }]}>
-              <Text style={styles.sidebarTitle}>채팅방</Text>
-              <TouchableOpacity
-                onPress={createNewSession}
-                style={styles.newChatButton}
-              >
-                <Plus size={20} color={COLORS.primaryMain} />
-              </TouchableOpacity>
-            </View>
-
-            <FlatList
-              data={["today", "thisWeek", "older"]}
-              keyExtractor={(item) => item}
-              renderItem={({ item: groupKey }) => {
-                const groupItems =
-                  groupedSessions[
-                  groupKey as keyof typeof groupedSessions
-                  ];
-                if (groupItems.length === 0) return null;
-
-                let label = "";
-                if (groupKey === "today") label = "오늘";
-                else if (groupKey === "thisWeek") label = "이번 주";
-                else label = "이전";
-
-                return (
-                  <View style={styles.sessionGroup}>
-                    <Text style={styles.sessionGroupLabel}>
-                      {label}
-                    </Text>
-                    {groupItems.map((session) => {
-                      const isActive =
-                        session.id === currentSessionId;
-                      return (
-                        <TouchableOpacity
-                          key={session.id}
-                          style={[
-                            styles.sessionItem,
-                            isActive && styles.sessionItemActive,
-                          ]}
-                          onPress={() => {
-                            setCurrentSessionId(session.id);
-                            setIsSidebarOpen(false);
-                            // 선택하자마자 해당 세션 히스토리 로드
-                            loadChatHistory(true, session.id);
-                          }}
-                        >
-                          <MessageSquare
-                            size={16}
-                            color={
-                              isActive
-                                ? COLORS.primaryMain
-                                : COLORS.neutral400
-                            }
-                            style={{ marginRight: 12 }}
-                          />
-                          <View style={{ flex: 1 }}>
-                            <Text
-                              style={[
-                                styles.sessionTitle,
-                                isActive &&
-                                styles.sessionTitleActive,
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {session.title}
-                            </Text>
-                          </View>
-
-                          <TouchableOpacity
-                            style={styles.sessionOptionButton}
-                            onPress={(event) => {
-                              // 버튼의 화면 위치 가져오기
-                              const { pageX, pageY } = event.nativeEvent;
-                              setMenuPosition({ x: pageX, y: pageY });
-                              setActiveMenuSessionId(
-                                activeMenuSessionId === session.id
-                                  ? null
-                                  : session.id
-                              );
-                            }}
-                          >
-                            <MoreHorizontal
-                              size={16}
-                              color={COLORS.neutral400}
-                            />
-                          </TouchableOpacity>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                );
-              }}
-              style={styles.sidebarList}
-            />
-          </View>
-        </View>
-      )}
 
       {/* 3. Messages Area */}
       <KeyboardAvoidingView
         style={styles.chatContainer}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
       >
         {loading && currentMessages.length === 0 ? (
           <View style={styles.loadingContainer}>
@@ -1582,6 +1318,12 @@ export default function ChatScreen() {
               }
             }}
             ListEmptyComponent={null}
+            ListFooterComponent={
+              <View>
+                {loading && currentMessages.length > 0 && <TypingIndicator />}
+                <View style={{ height: 20 }} />
+              </View>
+            }
             style={{ flex: 1 }}
           />
         )}
@@ -1794,11 +1536,6 @@ export default function ChatScreen() {
                             >
                               {item.friend.name}
                             </Text>
-                            <Text
-                              style={styles.friendListEmail}
-                            >
-                              {item.friend.email}
-                            </Text>
                           </View>
                         </View>
                         <View
@@ -1832,177 +1569,6 @@ export default function ChatScreen() {
             </TouchableWithoutFeedback>
           </View>
         </TouchableWithoutFeedback>
-      </Modal>
-
-      {/* Context Menu Modal */}
-      <Modal
-        visible={activeMenuSessionId !== null}
-        transparent={true}
-        animationType="none"
-        onRequestClose={() => setActiveMenuSessionId(null)}
-      >
-        <TouchableWithoutFeedback onPress={() => setActiveMenuSessionId(null)}>
-          <View style={styles.contextMenuOverlay}>
-            <View style={[
-              styles.contextMenuModal,
-              { position: "absolute", top: menuPosition.y - 10, left: menuPosition.x - 180 }
-            ]}>
-              <TouchableOpacity
-                onPress={() => {
-                  const session = sessions.find(s => s.id === activeMenuSessionId);
-                  if (session) {
-                    setRenameModal({
-                      isOpen: true,
-                      sessionId: session.id,
-                      currentTitle: session.title,
-                    });
-                  }
-                  setActiveMenuSessionId(null);
-                }}
-                style={styles.contextMenuItem}
-              >
-                <Edit2
-                  size={16}
-                  color={COLORS.neutral600}
-                  style={{ marginRight: 12 }}
-                />
-                <Text style={styles.contextMenuText}>
-                  이름 변경
-                </Text>
-              </TouchableOpacity>
-              <View style={styles.contextMenuDivider} />
-              <TouchableOpacity
-                onPress={() => {
-                  if (activeMenuSessionId) {
-                    setDeleteModal({
-                      isOpen: true,
-                      sessionId: activeMenuSessionId,
-                    });
-                  }
-                  setActiveMenuSessionId(null);
-                }}
-                style={styles.contextMenuItem}
-              >
-                <Trash2
-                  size={16}
-                  color="#EF4444"
-                  style={{ marginRight: 12 }}
-                />
-                <Text style={[styles.contextMenuText, { color: "#EF4444" }]}>
-                  삭제
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-
-      {/* Rename Modal */}
-      <Modal
-        visible={renameModal.isOpen}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() =>
-          setRenameModal({
-            isOpen: false,
-            sessionId: null,
-            currentTitle: "",
-          })
-        }
-      >
-        <View style={styles.alertModalOverlay}>
-          <View style={styles.alertModalContent}>
-            <Text style={styles.alertModalTitle}>
-              채팅방 이름 변경
-            </Text>
-            <TextInput
-              value={renameModal.currentTitle}
-              onChangeText={(text) =>
-                setRenameModal((prev) => ({
-                  ...prev,
-                  currentTitle: text,
-                }))
-              }
-              style={styles.alertInput}
-              autoFocus
-            />
-            <View style={styles.alertButtonContainer}>
-              <TouchableOpacity
-                onPress={() =>
-                  setRenameModal({
-                    isOpen: false,
-                    sessionId: null,
-                    currentTitle: "",
-                  })
-                }
-                style={styles.alertButtonCancel}
-              >
-                <Text style={styles.alertButtonCancelText}>
-                  취소
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={updateSessionTitle}
-                style={styles.alertButtonConfirm}
-              >
-                <Text style={styles.alertButtonConfirmText}>
-                  저장
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Delete Modal */}
-      <Modal
-        visible={deleteModal.isOpen}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() =>
-          setDeleteModal({ isOpen: false, sessionId: null })
-        }
-      >
-        <View style={styles.alertModalOverlay}>
-          <View style={styles.alertModalContent}>
-            <View style={styles.deleteIconContainer}>
-              <Trash2 size={24} color="#EF4444" />
-            </View>
-            <Text style={styles.alertModalTitle}>
-              채팅방 삭제
-            </Text>
-            <Text style={styles.alertModalMessage}>
-              이 채팅방을 삭제하시겠습니까?{"\n"}삭제된 대화
-              내용은 복구할 수 없습니다.
-            </Text>
-            <View style={styles.alertButtonContainer}>
-              <TouchableOpacity
-                onPress={() =>
-                  setDeleteModal({
-                    isOpen: false,
-                    sessionId: null,
-                  })
-                }
-                style={styles.alertButtonCancel}
-              >
-                <Text style={styles.alertButtonCancelText}>
-                  취소
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={deleteSession}
-                style={[
-                  styles.alertButtonConfirm,
-                  { backgroundColor: "#EF4444" },
-                ]}
-              >
-                <Text style={styles.alertButtonConfirmText}>
-                  삭제하기
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
       </Modal>
     </View>
   );
@@ -2304,7 +1870,6 @@ const styles = StyleSheet.create({
   messagesContainer: {
     paddingHorizontal: 16,
     paddingTop: 20,
-    paddingBottom: 20,
   },
   messagesContainerWithContent: {
     flexGrow: 1,
