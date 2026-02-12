@@ -20,7 +20,8 @@ import {
   TouchableWithoutFeedback,
   Pressable,
   Platform,
-  Animated
+  Animated,
+  RefreshControl
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -32,6 +33,7 @@ import WebSocketService from '../services/WebSocketService';
 import { useTutorial } from '../store/TutorialContext';
 import { friendsStore } from '../store/friendsStore';
 import { SkeletonListItem } from '../components/Skeleton';
+import { useRefresh } from '../hooks/useRefresh';
 
 // Colors
 const COLORS = {
@@ -144,6 +146,16 @@ const FriendsScreen = () => {
   const loadingFriends = storeState.loadingFriends;
   const loadingRequests = storeState.loadingRequests;
 
+  // 화면 포커스 때마다 WebSocket 연결 확인 (연결 끊김 방지)
+  useFocusEffect(
+    useCallback(() => {
+      if (userInfo?.id) {
+        console.log('[FriendsScreen] Focus: Checking WS connection');
+        WebSocketService.connect(userInfo.id);
+      }
+    }, [userInfo?.id])
+  );
+
   // Delete Modal State
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<{ id: string; name: string } | null>(null);
@@ -151,14 +163,19 @@ const FriendsScreen = () => {
   // 중복 클릭 방지를 위한 처리 중인 요청 ID 목록
   const [processingRequestIds, setProcessingRequestIds] = useState<Set<string>>(new Set());
 
+  // Pull-to-refresh
+  const { refreshing, onRefresh } = useRefresh(async () => {
+    await friendsStore.refresh();
+  });
+
   // Custom Alert Modal State
   const [customAlertVisible, setCustomAlertVisible] = useState(false);
   const [customAlertTitle, setCustomAlertTitle] = useState('');
   const [customAlertMessage, setCustomAlertMessage] = useState('');
-  const [customAlertType, setCustomAlertType] = useState<'success' | 'error' | 'info'>('info');
+  const [customAlertType, setCustomAlertType] = useState<'success' | 'error' | 'info' | 'reject'>('info');
 
   // Custom alert function (replaces window.alert)
-  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' = 'info') => {
+  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' | 'reject' = 'info') => {
     setCustomAlertTitle(title);
     setCustomAlertMessage(message);
     setCustomAlertType(type);
@@ -239,9 +256,20 @@ const FriendsScreen = () => {
     // FriendsScreen에서 필요한 메시지 구독
     const unsubscribe = WebSocketService.subscribe(
       'FriendsScreen',
-      ['friend_request', 'friend_accepted', 'friend_rejected'],
+      ['friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted'],
       (data) => {
         console.log(`[WS:Friends] Event: ${data.type}`);
+
+        // [DEBUG] 친구 삭제 이벤트 수신 확인용 Alert
+        if (data.type === 'friend_deleted') {
+          console.log(`[WS:Friends] ⚡ friend_deleted 수신! deleted_by=${data.deleted_by}`);
+          Alert.alert('디버그', `친구 삭제 이벤트 수신: ${data.deleted_by}`);
+
+          if (data.deleted_by) {
+            console.log(`[WS:Friends] Removing friend locally: ${data.deleted_by}`);
+            friendsStore.removeFriend(data.deleted_by);
+          }
+        }
 
         // WebSocket 이벤트 시 캐시 무효화 후 새로고침
         friendsStore.invalidate();
@@ -412,7 +440,8 @@ const FriendsScreen = () => {
       });
 
       if (response.ok) {
-        showAlert('성공', '친구 요청을 거절했습니다.', 'success');
+        // [FIX] 거절 시 빨간색 X와 빨간 버튼 표시, 제목 '거절' 추가
+        showAlert('거절', '친구 요청을 거절했습니다.', 'reject');
       } else {
         // 실패 시 요청 목록 다시 불러오기
         friendsStore.refresh();
@@ -545,19 +574,21 @@ const FriendsScreen = () => {
                     justifyContent: 'center',
                     alignItems: 'center',
                     backgroundColor: customAlertType === 'success' ? '#E0E7FF' :
-                      customAlertType === 'error' ? '#FEE2E2' : '#E0E7FF'
+                      (customAlertType === 'error' || customAlertType === 'reject') ? '#FEE2E2' : '#E0E7FF'
                   }}>
                     {customAlertType === 'success' ? (
                       <Check size={28} color={COLORS.primaryMain} />
-                    ) : customAlertType === 'error' ? (
+                    ) : (customAlertType === 'error' || customAlertType === 'reject') ? (
                       <X size={28} color="#DC2626" />
                     ) : (
                       <Info size={28} color={COLORS.primaryMain} />
                     )}
                   </View>
-                  <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 12, textAlign: 'center' }}>
-                    {customAlertTitle}
-                  </Text>
+                  {customAlertTitle ? (
+                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 12, textAlign: 'center' }}>
+                      {customAlertTitle}
+                    </Text>
+                  ) : null}
                   <Text style={{ fontSize: 16, color: COLORS.neutral500, lineHeight: 24, marginBottom: 32, textAlign: 'center' }}>
                     {customAlertMessage}
                   </Text>
@@ -569,7 +600,7 @@ const FriendsScreen = () => {
                       alignItems: 'center',
                       borderRadius: 16,
                       backgroundColor: customAlertType === 'success' ? COLORS.primaryMain :
-                        customAlertType === 'error' ? '#EF4444' : COLORS.primaryMain
+                        (customAlertType === 'error' || customAlertType === 'reject') ? '#EF4444' : COLORS.primaryMain
                     }}
                     onPress={() => setCustomAlertVisible(false)}
                   >
@@ -693,6 +724,9 @@ const FriendsScreen = () => {
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingBottom: 100 }}
             ListHeaderComponent={null}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
             renderItem={({ item }) => (
               <View style={styles.friendItem}>
                 <View style={styles.friendInfo}>
@@ -731,6 +765,9 @@ const FriendsScreen = () => {
             data={displayedRequests}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingBottom: 100 }}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
             renderItem={({ item }) => (
               <View style={styles.requestItem}>
                 <View style={styles.friendInfo}>
@@ -861,19 +898,21 @@ const FriendsScreen = () => {
                   justifyContent: 'center',
                   alignItems: 'center',
                   backgroundColor: customAlertType === 'success' ? '#E0E7FF' :
-                    customAlertType === 'error' ? '#FEE2E2' : '#E0E7FF'
+                    (customAlertType === 'error' || customAlertType === 'reject') ? '#FEE2E2' : '#E0E7FF'
                 }}>
                   {customAlertType === 'success' ? (
                     <Check size={28} color={COLORS.primaryMain} />
-                  ) : customAlertType === 'error' ? (
+                  ) : (customAlertType === 'error' || customAlertType === 'reject') ? (
                     <X size={28} color="#DC2626" />
                   ) : (
                     <Info size={28} color={COLORS.primaryMain} />
                   )}
                 </View>
-                <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 12, textAlign: 'center' }}>
-                  {customAlertTitle}
-                </Text>
+                {customAlertTitle ? (
+                  <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 12, textAlign: 'center' }}>
+                    {customAlertTitle}
+                  </Text>
+                ) : null}
                 <Text style={{ fontSize: 16, color: COLORS.neutral500, lineHeight: 24, marginBottom: 32, textAlign: 'center' }}>
                   {customAlertMessage}
                 </Text>
@@ -885,7 +924,7 @@ const FriendsScreen = () => {
                     alignItems: 'center',
                     borderRadius: 16,
                     backgroundColor: customAlertType === 'success' ? COLORS.primaryMain :
-                      customAlertType === 'error' ? '#EF4444' : COLORS.primaryMain
+                      (customAlertType === 'error' || customAlertType === 'reject') ? '#EF4444' : COLORS.primaryMain
                   }}
                   onPress={() => setCustomAlertVisible(false)}
                 >

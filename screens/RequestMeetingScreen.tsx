@@ -15,6 +15,7 @@ import {
     Alert,
     Animated, // Added Animated
     Dimensions, // Added Dimensions
+    RefreshControl
 } from 'react-native';
 import {
     Clock,
@@ -44,6 +45,7 @@ import { RootStackParamList, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
 import { getBackendUrl } from '../utils/environment';
 import { useTutorial } from '../store/TutorialContext';
+import { useRefresh } from '../hooks/useRefresh';
 
 const COLORS = {
     primaryMain: '#3730A3',
@@ -464,6 +466,11 @@ const RequestMeetingScreen = () => {
         }, [])
     );
 
+    // Pull-to-refresh
+    const { refreshing, onRefresh } = useRefresh(async () => {
+        await fetchFriends();
+    });
+
     const toggleFriendSelection = (id: string) => {
         setSelectedFriends(prev => prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]);
         setHasAnalyzed(false);
@@ -759,6 +766,9 @@ const RequestMeetingScreen = () => {
                 style={styles.scrollView}
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                }
             >
                 {/* Participants */}
                 <View style={styles.section}>
