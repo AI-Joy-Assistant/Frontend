@@ -110,7 +110,9 @@ export default function HomeScreen() {
     fakeSchedule,
     registerTarget,
     currentSubStep,
-    nextSubStep
+    nextSubStep,
+    registerActionCallback,
+    unregisterActionCallback
   } = useTutorial();
 
   // homeStore에서 전역 상태 구독
@@ -372,6 +374,30 @@ export default function HomeScreen() {
       unsubscribe();
     };
   }, [currentUserId]);
+
+  // ---------------------------------------------------------
+  // [추가] 튜토리얼 액션 콜백 (친구 탭, 채팅 탭 이동 처리)
+  // ---------------------------------------------------------
+  useEffect(() => {
+    if (!isTutorialActive) return;
+
+    // 1. 친구 탭 이동
+    registerActionCallback('tab_friends', () => {
+      navigation.navigate('Friends');
+      setTimeout(() => nextSubStep(), 500);
+    });
+
+    // 2. 채팅 탭 이동 (여기서 처리됨)
+    registerActionCallback('tab_chat', () => {
+      navigation.navigate('Chat');
+      setTimeout(() => nextSubStep(), 500);
+    });
+
+    return () => {
+      unregisterActionCallback('tab_friends');
+      unregisterActionCallback('tab_chat');
+    };
+  }, [isTutorialActive, registerActionCallback, unregisterActionCallback, navigation, nextSubStep]);
 
   // 표시할 요청 필터링 (dismissed 제외, 첫 번째만 표시)
   const visibleRequest = pendingRequests.find(req => !dismissedRequestIds.includes(req.id));

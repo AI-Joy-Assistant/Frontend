@@ -4,7 +4,7 @@ import { UserPlus, Check, X, Info, User } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useEffect, useState, useCallback, useSyncExternalStore } from 'react';
+import React, { useEffect, useState, useCallback, useSyncExternalStore, useRef } from 'react';
 import {
   Alert,
   FlatList,
@@ -91,6 +91,18 @@ const FriendsScreen = () => {
     route.params?.initialTab || 'friends'
   );
 
+  const getAvatarSource = (picture?: string) => {
+    if (!picture) return null;
+
+    // 1. 이미 require()로 불러온 이미지(숫자)인 경우 그대로 반환
+    if (typeof picture === 'number') {
+      return picture;
+    }
+
+    // 2. 일반 유저(원격 URL 문자열)인 경우 객체로 반환
+    return { uri: picture };
+  };
+
   // 튜토리얼 훅 사용
   const {
     isTutorialActive,
@@ -101,7 +113,9 @@ const FriendsScreen = () => {
     tutorialFriendAdded,
     ghostFriend,
     currentSubStep,
-    registerTarget
+    registerTarget,
+    registerActionCallback,
+    unregisterActionCallback
   } = useTutorial();
 
   // ✅ [NEW] 튜토리얼 탭 강조 애니메이션
@@ -130,6 +144,42 @@ const FriendsScreen = () => {
     }
   }, [isTutorialActive, currentStep, currentSubStep?.id]);
 
+  // ✅ [NEW] 튜토리얼: 탭이 'requests'로 바뀌면 자동으로 다음 단계 진행
+  // (콜백에서 nextSubStep을 호출하면 중복/경쟁 상태가 발생할 수 있어 상태 감지로 변경)
+  useEffect(() => {
+    if (isTutorialActive && currentStep === 'ACCEPT_FRIEND' && currentSubStep?.id === 'go_to_requests' && activeTab === 'requests') {
+      const timer = setTimeout(() => {
+        nextSubStep();
+      }, 500); // 탭 전환 애니메이션 등을 고려해 약간의 여유
+      return () => clearTimeout(timer);
+    }
+  }, [isTutorialActive, currentStep, currentSubStep, activeTab, nextSubStep]);
+
+
+
+  // ✅ [NEW] 튜토리얼 액션 콜백 등록
+  useEffect(() => {
+    if (!isTutorialActive) return;
+
+    // "받은 요청" 탭 클릭 콜백
+    registerActionCallback('tab_requests', () => {
+      setActiveTab('requests');
+      // nextSubStep은 위 useEffect에서 처리됨
+    });
+
+    // "친구 요청 수락" 버튼 클릭 콜백
+    registerActionCallback('btn_accept_friend', () => {
+      if (fakeFriendRequest) {
+        handleAcceptRequest(fakeFriendRequest.id);
+      }
+    });
+
+    return () => {
+      unregisterActionCallback('tab_requests');
+      unregisterActionCallback('btn_accept_friend');
+    };
+  }, [isTutorialActive, fakeFriendRequest, registerActionCallback, unregisterActionCallback]);
+
   const [emailInput, setEmailInput] = useState<string>('');
 
   // friendsStore에서 전역 상태 구독
@@ -156,14 +206,28 @@ const FriendsScreen = () => {
   const [customAlertTitle, setCustomAlertTitle] = useState('');
   const [customAlertMessage, setCustomAlertMessage] = useState('');
   const [customAlertType, setCustomAlertType] = useState<'success' | 'error' | 'info'>('info');
+  const onAlertConfirmRef = useRef<(() => void) | null>(null);
 
   // Custom alert function (replaces window.alert)
-  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' = 'info') => {
+  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' = 'info', onConfirm?: () => void) => {
     setCustomAlertTitle(title);
     setCustomAlertMessage(message);
     setCustomAlertType(type);
+    onAlertConfirmRef.current = onConfirm || null;
     setCustomAlertVisible(true);
   };
+
+  // ✅ [NEW] 튜토리얼: 친구 추가 완료 후 모달이 닫히면 자동으로 다음 단계 진행
+  // (콜백 대신 상태 감지로 변경하여 안정성 확보)
+  useEffect(() => {
+    if (isTutorialActive && currentStep === 'ACCEPT_FRIEND' && currentSubStep?.id === 'accept_request' && tutorialFriendAdded && !customAlertVisible) {
+      // 친구가 추가되었고, 모달도 닫혔는데 여전히 수락 단계라면 다음 단계로
+      const timer = setTimeout(() => {
+        nextSubStep();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [isTutorialActive, currentStep, currentSubStep, tutorialFriendAdded, customAlertVisible, nextSubStep]);
 
   // [REMOVED] fetchUserInfo - friendsStore.fetchAll()로 대체됨
 
@@ -344,12 +408,9 @@ const FriendsScreen = () => {
       }
 
       markTutorialFriendAdded();
-      showAlert('성공', '친구 요청을 수락했습니다.', 'success');
 
-      // 다음 단계로 진행
-      setTimeout(() => {
-        nextSubStep();
-      }, 500);
+      // 모달만 띄우고, 진행은 위 useEffect에서 처리
+      showAlert('성공', '친구 요청을 수락했습니다.', 'success');
       return;
     }
 
@@ -566,7 +627,10 @@ const FriendsScreen = () => {
                       backgroundColor: customAlertType === 'success' ? COLORS.primaryMain :
                         customAlertType === 'error' ? '#EF4444' : COLORS.primaryMain
                     }}
-                    onPress={() => setCustomAlertVisible(false)}
+                    onPress={() => {
+                      setCustomAlertVisible(false);
+                      if (onAlertConfirmRef.current) onAlertConfirmRef.current();
+                    }}
                   >
                     <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>확인</Text>
                   </TouchableOpacity>
@@ -693,9 +757,9 @@ const FriendsScreen = () => {
                 <View style={styles.friendInfo}>
                   <View style={styles.avatarContainer}>
                     <View style={[styles.avatarRing, !item.friend.picture && { backgroundColor: COLORS.neutral100 }]}>
-                      {item.friend.picture ? (
+                      {getAvatarSource(item.friend.picture) ? (
                         <Image
-                          source={{ uri: item.friend.picture }}
+                          source={getAvatarSource(item.friend.picture)!}
                           style={styles.avatarImage}
                         />
                       ) : (
@@ -731,9 +795,9 @@ const FriendsScreen = () => {
                 <View style={styles.friendInfo}>
                   <View style={styles.avatarContainer}>
                     <View style={[styles.avatarRing, !item.from_user.picture && { backgroundColor: COLORS.neutral100 }]}>
-                      {item.from_user.picture ? (
+                      {getAvatarSource(item.from_user.picture) ? (
                         <Image
-                          source={{ uri: item.from_user.picture }}
+                          source={getAvatarSource(item.from_user.picture)!}
                           style={styles.avatarImage}
                         />
                       ) : (
@@ -754,6 +818,11 @@ const FriendsScreen = () => {
                     onPress={() => handleAcceptRequest(item.id)}
                     disabled={processingRequestIds.has(item.id)}
                     testID={item.id === fakeFriendRequest.id ? 'btn_accept_friend' : undefined}
+                    ref={(r) => {
+                      if (item.id === fakeFriendRequest.id && r) {
+                        registerTarget('btn_accept_friend', r);
+                      }
+                    }}
                   >
                     <Check size={18} color={COLORS.white} />
                   </TouchableOpacity>
