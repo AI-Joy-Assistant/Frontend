@@ -17,6 +17,7 @@ export interface CalendarEvent {
   }>;
   location?: string;
   htmlLink?: string;
+  source?: string;
 }
 
 export interface CreateEventRequest {

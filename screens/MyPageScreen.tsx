@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Image as ExpoImage } from 'expo-image';
 import {
-  View, Text, StyleSheet, Image, TouchableOpacity, Modal, TextInput, Alert, ScrollView, Platform, TouchableWithoutFeedback
+  View, Text, StyleSheet, Image, TouchableOpacity, Modal, TextInput, Alert, ScrollView, Platform, TouchableWithoutFeedback, RefreshControl
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -9,6 +9,7 @@ import { RootStackParamList, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE } from '../constants/config';
+import { calendarService } from '../services/calendarService';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Bot, Settings, LogOut, Trash2, ChevronRight, User as UserIcon, Calendar as CalendarIcon, Check, AlertCircle, Info, BookOpen, Users } from 'lucide-react-native';
 import * as WebBrowser from 'expo-web-browser';
@@ -19,7 +20,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { friendsStore } from '../store/friendsStore';
 import { a2aStore } from '../store/a2aStore';
 import { homeStore } from '../store/homeStore';
-
+import { badgeStore } from '../store/badgeStore';
+import { useRefresh } from '../hooks/useRefresh';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -69,6 +71,12 @@ const MyPageScreen = () => {
   const [resultModalMessage, setResultModalMessage] = useState('');
   const [isCalendarLinked, setIsCalendarLinked] = useState<boolean | null>(null);
   const [tutorialSelectModalVisible, setTutorialSelectModalVisible] = useState(false);
+
+  // Pull-to-refresh
+  const { refreshing, onRefresh } = useRefresh(async () => {
+    await fetchUserInfo(false);
+    await checkCalendarLinkStatus(false);
+  });
 
   // 사용자 정보 불러오기
   // 사용자 정보 불러오기
@@ -321,6 +329,9 @@ const MyPageScreen = () => {
       homeStore.reset();
 
 
+      // ✅ 캘린더 서비스 로그아웃 및 캐시 초기화
+      await calendarService.logout();
+
       setLogoutModalVisible(false);
       navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
     } catch (error) {
@@ -368,6 +379,10 @@ const MyPageScreen = () => {
         friendsStore.reset();
         a2aStore.reset();
         homeStore.reset();
+        await badgeStore.reset();
+
+        // ✅ 캘린더 서비스 로그아웃 및 캐시 초기화
+        await calendarService.logout();
 
         Alert.alert('탈퇴 완료', '정상적으로 탈퇴되었습니다.');
         setWithdrawModalVisible(false);
@@ -432,7 +447,9 @@ const MyPageScreen = () => {
 
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: 100 }}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: 100 }} refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }>
         {/* Profile Header */}
         <LinearGradient
           colors={[COLORS.primaryLight, COLORS.primaryMain]}
