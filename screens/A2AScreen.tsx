@@ -49,6 +49,7 @@ import { RootStackParamList, A2ALog, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
 import { API_BASE } from '../constants/config';
 import WebSocketService from '../services/WebSocketService';
+import { calendarService } from '../services/calendarService';
 
 // Colors based on the provided React/Tailwind code
 const COLORS = {
@@ -1567,6 +1568,9 @@ const A2AScreen = () => {
             console.log('승인 API 응답 데이터:', data);
 
             if (res.ok) {
+                // 승인 이후 홈 캘린더가 캐시로 남아있지 않도록 즉시 무효화
+                calendarService.invalidateEventsCache();
+
                 // 전원 승인 완료 시 일정 확정 화면 표시
                 if (data.all_approved) {
                     console.log(' 전원 승인 완료 - 일정 확정 화면 표시');
