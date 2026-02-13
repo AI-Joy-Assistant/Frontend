@@ -857,58 +857,60 @@ const RequestMeetingScreen = () => {
                             <RotateCw size={16} color={COLORS.neutralGray} />
                         </TouchableOpacity>
                     </View>
-                    <View style={styles.participantsContainer}>
-                        {selectedFriends.map(id => {
-                            const friend = displayedFriends.find(f => f.id === id);
-                            if (!friend) return null;
-                            return (
-                                <View key={id} style={styles.participantChip}>
-                                    {friend.avatar ? (
-                                        <Image source={{ uri: friend.avatar }} style={styles.participantAvatar} />
-                                    ) : (
-                                        <View style={[styles.participantAvatar, { backgroundColor: COLORS.neutral100, alignItems: 'center', justifyContent: 'center' }]}>
-                                            <User size={16} color={COLORS.neutralGray} />
-                                        </View>
-                                    )}
-                                    <Text style={styles.participantName}>{friend.name}</Text>
-                                    <TouchableOpacity onPress={() => toggleFriendSelection(id)} style={styles.participantRemove}>
-                                        <X size={14} color={COLORS.neutralGray} />
-                                    </TouchableOpacity>
-                                </View>
-                            );
-                        })}
-                        <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
-                            <TouchableOpacity
-                                onPress={() => {
-                                    setShowFriendModal(true);
-                                    // 튜토리얼 중 직접 클릭 시에도 다음 단계로 진행
-                                    if (isTutorialActive && currentSubStep?.id === 'add_participant') {
-                                        setTimeout(() => nextSubStep(), 300);
-                                    }
-                                }}
-                                style={[
-                                    styles.addParticipantButton,
-                                    isTutorialActive && currentSubStep?.id === 'select_friend' && {
-                                        borderColor: COLORS.primaryMain,
-                                        borderWidth: 2,
-                                        backgroundColor: '#EDE9FE', // Light purple bg
-                                        shadowColor: COLORS.primaryMain,
-                                        shadowOffset: { width: 0, height: 0 },
-                                        shadowOpacity: 0.5,
-                                        shadowRadius: 8,
-                                        elevation: 5
-                                    }
-                                ]}
-                                ref={(r) => registerTarget('btn_add_participant', r)}
-                                testID="btn_add_participant"
-                            >
-                                <Plus
-                                    size={24}
-                                    color={isTutorialActive && currentSubStep?.id === 'select_friend' ? COLORS.primaryMain : COLORS.neutralGray}
-                                />
-                            </TouchableOpacity>
-                        </Animated.View>
-                    </View>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}>
+                        <View style={styles.participantsContainer}>
+                            {selectedFriends.map(id => {
+                                const friend = displayedFriends.find(f => f.id === id);
+                                if (!friend) return null;
+                                return (
+                                    <View key={id} style={styles.participantChip}>
+                                        {friend.avatar ? (
+                                            <Image source={{ uri: friend.avatar }} style={styles.participantAvatar} />
+                                        ) : (
+                                            <View style={[styles.participantAvatar, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' }]}>
+                                                <User size={16} color={COLORS.primaryMain} />
+                                            </View>
+                                        )}
+                                        <Text style={styles.participantName}>{friend.name}</Text>
+                                        <TouchableOpacity onPress={() => toggleFriendSelection(id)} style={styles.participantRemove}>
+                                            <X size={14} color={COLORS.neutralGray} />
+                                        </TouchableOpacity>
+                                    </View>
+                                );
+                            })}
+                            <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        setShowFriendModal(true);
+                                        // 튜토리얼 중 직접 클릭 시에도 다음 단계로 진행
+                                        if (isTutorialActive && currentSubStep?.id === 'add_participant') {
+                                            setTimeout(() => nextSubStep(), 300);
+                                        }
+                                    }}
+                                    style={[
+                                        styles.addParticipantButton,
+                                        isTutorialActive && currentSubStep?.id === 'select_friend' && {
+                                            borderColor: COLORS.primaryMain,
+                                            borderWidth: 2,
+                                            backgroundColor: '#EDE9FE', // Light purple bg
+                                            shadowColor: COLORS.primaryMain,
+                                            shadowOffset: { width: 0, height: 0 },
+                                            shadowOpacity: 0.5,
+                                            shadowRadius: 8,
+                                            elevation: 5
+                                        }
+                                    ]}
+                                    ref={(r) => registerTarget('btn_add_participant', r)}
+                                    testID="btn_add_participant"
+                                >
+                                    <Plus
+                                        size={24}
+                                        color={isTutorialActive && currentSubStep?.id === 'select_friend' ? COLORS.primaryMain : COLORS.neutralGray}
+                                    />
+                                </TouchableOpacity>
+                            </Animated.View>
+                        </View>
+                    </ScrollView>
                 </View>
 
                 {/* Settings Card */}
@@ -1138,8 +1140,8 @@ const RequestMeetingScreen = () => {
                     {!hasAnalyzed ? (
                         <TouchableOpacity
                             onPress={handleAnalyzeWithTutorial}
-                            disabled={selectedFriends.length === 0 || isAnalyzing}
-                            style={[styles.analyzeButton, selectedFriends.length === 0 && styles.analyzeButtonDisabled]}
+                            disabled={selectedFriends.length === 0 || !title.trim() || isAnalyzing}
+                            style={[styles.analyzeButton, (selectedFriends.length === 0 || !title.trim()) && styles.analyzeButtonDisabled]}
                             testID="btn_analyze_schedule"
                             ref={(r) => { if (r) registerTarget('btn_analyze_schedule', r); }}
                         >
@@ -1245,10 +1247,10 @@ const RequestMeetingScreen = () => {
                                                             <View key={id} style={styles.participantCardAvailable}>
                                                                 <View style={styles.friendAvatarContainer}>
                                                                     {friend.avatar ? (
-                                                                        <Image source={{ uri: friend.avatar }} style={[styles.friendAvatarSmall, { borderWidth: 1, borderColor: COLORS.primaryMain }]} />
+                                                                        <Image source={{ uri: friend.avatar }} style={styles.friendAvatarSmall} />
                                                                     ) : (
-                                                                        <View style={[styles.friendAvatarSmall, { backgroundColor: COLORS.neutralLight, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: COLORS.primaryMain }]}>
-                                                                            <User size={16} color={COLORS.neutralGray} />
+                                                                        <View style={[styles.friendAvatarSmall, { backgroundColor: 'transparent', borderWidth: 1, borderColor: 'rgba(55, 48, 163, 0.1)', justifyContent: 'center', alignItems: 'center' }]}>
+                                                                            <User size={16} color={COLORS.primaryMain} />
                                                                         </View>
                                                                     )}
                                                                     <View style={styles.checkBadge}><Check size={8} color={COLORS.white} strokeWidth={4} /></View>
@@ -1264,10 +1266,16 @@ const RequestMeetingScreen = () => {
                                                         return (
                                                             <View key={id} style={styles.participantCardUnavailable}>
                                                                 <View style={styles.friendAvatarContainer}>
-                                                                    <Image
-                                                                        source={typeof friend.avatar === 'string' ? { uri: friend.avatar } : friend.avatar}
-                                                                        style={[styles.friendAvatarSmall, { opacity: 0.5 }]}
-                                                                    />
+                                                                    {friend.avatar ? (
+                                                                        <Image
+                                                                            source={typeof friend.avatar === 'string' ? { uri: friend.avatar } : friend.avatar}
+                                                                            style={[styles.friendAvatarSmall, { opacity: 0.5 }]}
+                                                                        />
+                                                                    ) : (
+                                                                        <View style={[styles.friendAvatarSmall, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center', opacity: 0.5 }]}>
+                                                                            <User size={16} color={COLORS.primaryMain} />
+                                                                        </View>
+                                                                    )}
                                                                     <View style={styles.xBadge}><X size={8} color={COLORS.white} strokeWidth={4} /></View>
                                                                 </View>
                                                                 <Text style={styles.participantCardNameGray}>{friend.name}</Text>
@@ -1302,13 +1310,13 @@ const RequestMeetingScreen = () => {
                             disabled={
                                 isTutorialActive
                                     ? ((!isSent && recommendations.length > 0 && appliedRecIndex === null) || isSending)
-                                    : (selectedFriends.length === 0 || recommendations.length === 0 || isSending)
+                                    : (selectedFriends.length === 0 || !title.trim() || recommendations.length === 0 || isSending)
                             }
                             style={[
                                 styles.sendButton,
                                 (isTutorialActive
                                     ? ((!isSent && recommendations.length > 0 && appliedRecIndex === null) || isSending)
-                                    : (selectedFriends.length === 0 || recommendations.length === 0 || isSending)) && styles.sendButtonDisabled
+                                    : (selectedFriends.length === 0 || !title.trim() || recommendations.length === 0 || isSending)) && styles.sendButtonDisabled
                             ]}
                             testID="btn_send_request"
                             ref={(r) => { if (r) registerTarget('btn_send_request', r); }}
@@ -1507,8 +1515,8 @@ const RequestMeetingScreen = () => {
                         </TouchableOpacity>
                         <View style={styles.bottomModalHeader}>
                             <View>
-                                <Text style={styles.modalTitle}>친구 선택</Text>
-                                <Text style={styles.modalSubtitle}>조율에 참여할 친구를 추가하세요.</Text>
+                                <Text style={[styles.modalTitle, { fontSize: 18, marginBottom: 0 }]}>참여자 선택</Text>
+                                <Text style={styles.modalSubtitle}>일정에 초대할 친구를 선택해주세요</Text>
                             </View>
                             <TouchableOpacity onPress={() => setShowFriendModal(false)}><X size={24} color={COLORS.neutralGray} /></TouchableOpacity>
                         </View>
@@ -1533,8 +1541,8 @@ const RequestMeetingScreen = () => {
                             <View style={{ flex: 1 }}>
                                 {displayedFriends.length === 0 ? (
                                     <View style={styles.emptyContainer}>
-                                        <Text style={styles.emptyText}>과거의 친구가 없습니다</Text>
-                                        <Text style={styles.emptySubtext}>'친구' 탭에서 새로운 친구를 추가해보세요.</Text>
+                                        <Text style={styles.emptyText}>친구가 없습니다.</Text>
+                                        <Text style={styles.emptySubtext}>'친구' 탭에서 새로운 친구를 추가해보세요!</Text>
                                     </View>
                                 ) : (
                                     <FlatList
@@ -1556,8 +1564,8 @@ const RequestMeetingScreen = () => {
                                                                 style={styles.friendItemAvatar}
                                                             />
                                                         ) : (
-                                                            <View style={[styles.friendItemAvatar, { backgroundColor: COLORS.neutral100, alignItems: 'center', justifyContent: 'center' }]}>
-                                                                <User size={20} color={COLORS.neutralGray} />
+                                                            <View style={[styles.friendItemAvatar, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' }]}>
+                                                                <User size={20} color={COLORS.primaryMain} />
                                                             </View>
                                                         )}
                                                         <View>
@@ -1707,7 +1715,7 @@ const styles = StyleSheet.create({
     sectionHeader: { marginBottom: 10, paddingHorizontal: 4, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     sectionTitle: { fontSize: 12, fontWeight: 'bold', color: COLORS.neutralSlate, textTransform: 'uppercase', letterSpacing: 1.5 },
     sectionCount: { color: COLORS.primaryMain },
-    participantsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+    participantsContainer: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     participantChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, borderWidth: 1, borderColor: 'rgba(148, 163, 184, 0.3)', borderRadius: 16, paddingLeft: 6, paddingRight: 12, paddingVertical: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
     participantAvatar: { width: 32, height: 32, borderRadius: 16, marginRight: 8 },
     participantName: { fontSize: 12, fontWeight: 'bold', color: COLORS.neutralSlate },
@@ -1769,7 +1777,7 @@ const styles = StyleSheet.create({
     tipBoxIndigo: { padding: 12, backgroundColor: COLORS.indigo50, borderRadius: 12, borderWidth: 1, borderColor: COLORS.indigo100 },
     tipTextIndigo: { fontSize: 10, fontWeight: '500', color: COLORS.indigo700, lineHeight: 16 },
     tipBoxAmber: { padding: 12, backgroundColor: COLORS.amber50, borderRadius: 12, borderWidth: 1, borderColor: COLORS.amber100 },
-    emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
+    emptyContainer: { flex: 1, justifyContent: 'flex-start', alignItems: 'center', paddingVertical: 60 },
     emptyText: { fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 8 },
     emptySubtext: { fontSize: 12, color: COLORS.neutralGray },
     friendItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, marginHorizontal: 0, marginBottom: 0, borderRadius: 0, borderWidth: 0, borderBottomWidth: 1, borderBottomColor: COLORS.neutral100, borderColor: 'transparent', backgroundColor: COLORS.white },

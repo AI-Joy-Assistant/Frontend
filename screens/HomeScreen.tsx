@@ -345,8 +345,10 @@ export default function HomeScreen() {
       homeStore.fetchAll();
       friendsStore.fetchAll();
       fetchCurrentUser();
-      // 배지 폴링은 BottomNav에서 처리하므로 여기서는 제거
-      // Apple 캘린더 연동 상태 체크는 별도 useEffect에서 authProvider 변경 시 처리
+      // 캘린더 연동 상태 체크 (마이페이지에서 연동 후 돌아왔을 때 반영)
+      checkCalendarLinkStatus();
+      // 캘린더 일정 새로고침 (연동 후 돌아왔을 때 일정 반영)
+      fetchSchedulesWithCache();
     }, [])
   );
 
@@ -357,7 +359,7 @@ export default function HomeScreen() {
     // 싱글톤 서비스 연결 (이미 연결되어 있으면 스킵)
     WebSocketService.connect(currentUserId);
 
-        // HomeScreen에서 필요한 메시지만 구독
+    // HomeScreen에서 필요한 메시지만 구독
     const unsubscribe = WebSocketService.subscribe(
       'HomeScreen',
       ['a2a_request', 'friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'notification', 'a2a_status_changed', 'user_info_updated'],
@@ -2148,38 +2150,36 @@ export default function HomeScreen() {
                       onPress={() => setShowFriendPicker(true)}
                     >
                       {selectedFriendIds.length > 0 ? (
-                        <View style={styles.selectedParticipantsRow}>
-                          {getSelectedFriends().slice(0, 4).map((f, idx) => (
-                            <View key={f.friend.id} style={[styles.participantChip, { marginLeft: idx > 0 ? -8 : 0 }]}>
-                              {f.friend.picture ? (
-                                <Image
-                                  source={{ uri: f.friend.picture }}
-                                  style={styles.participantAvatarImage}
-                                />
-                              ) : (
-                                <View style={[styles.participantAvatar, { backgroundColor: idx % 2 === 0 ? COLORS.primaryLight : COLORS.primaryMain }]}>
-                                  <Text style={styles.participantAvatarText}>{f.friend.name[0]}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flex: 1 }}>
+                            <View style={styles.selectedParticipantsRow}>
+                              {getSelectedFriends().map((f) => (
+                                <View key={f.friend.id} style={styles.participantChip}>
+                                  {f.friend.picture ? (
+                                    <Image
+                                      source={{ uri: f.friend.picture }}
+                                      style={styles.participantAvatarImage}
+                                    />
+                                  ) : (
+                                    <View style={[styles.participantAvatar, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0' }]}>
+                                      <UserIcon size={14} color={COLORS.primaryMain} />
+                                    </View>
+                                  )}
+                                  <Text style={styles.participantName}>{f.friend.name}</Text>
+                                  <TouchableOpacity
+                                    onPress={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedFriendIds(prev => prev.filter(id => id !== f.friend.id));
+                                    }}
+                                    style={styles.participantRemoveButton}
+                                  >
+                                    <X size={14} color={COLORS.neutral400} />
+                                  </TouchableOpacity>
                                 </View>
-                              )}
+                              ))}
                             </View>
-                          ))}
-                          {selectedFriendIds.length > 4 && (
-                            <View style={[styles.participantChip, { marginLeft: -8 }]}>
-                              <View style={[styles.participantAvatar, { backgroundColor: COLORS.neutral400 }]}>
-                                <Text style={styles.participantAvatarText}>+{selectedFriendIds.length - 4}</Text>
-                              </View>
-                            </View>
-                          )}
-                          <Text style={styles.participantCount}>{selectedFriendIds.length}명 선택됨</Text>
-                          <TouchableOpacity
-                            onPress={(e) => {
-                              e.stopPropagation();
-                              setSelectedFriendIds([]);
-                            }}
-                            style={styles.clearParticipantsButton}
-                          >
-                            <X size={18} color={COLORS.neutral500} />
-                          </TouchableOpacity>
+                          </ScrollView>
+                          <UserPlus size={18} color={COLORS.primaryMain} style={{ marginLeft: 8 }} />
                         </View>
                       ) : (
                         <View style={styles.addParticipantRow}>
@@ -2389,18 +2389,18 @@ export default function HomeScreen() {
                               style={styles.friendItemAvatarImage}
                             />
                           ) : (
-                            <View style={[styles.friendItemAvatar, { backgroundColor: COLORS.neutral100, alignItems: 'center', justifyContent: 'center' }]}>
-                              <UserIcon size={20} color={COLORS.neutral400} />
+                            <View style={[styles.friendItemAvatar, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' }]}>
+                              <UserIcon size={20} color={COLORS.primaryMain} />
                             </View>
                           )}
                           <View style={styles.friendItemInfo}>
-                            <Text style={styles.friendItemName}>{item.friend.name}</Text>
+                            <Text style={[styles.friendItemName, isSelected && { color: COLORS.primaryMain }]}>{item.friend.name}</Text>
                           </View>
                           <View style={[
                             styles.friendItemCheckbox,
                             {
                               backgroundColor: isSelected ? COLORS.primaryMain : 'transparent',
-                              borderColor: isSelected ? COLORS.primaryMain : COLORS.neutral300
+                              borderColor: isSelected ? COLORS.primaryMain : 'rgba(148, 163, 184, 0.4)'
                             }
                           ]}>
                             {isSelected && <Check size={14} color="white" />}
@@ -2409,9 +2409,14 @@ export default function HomeScreen() {
                       );
                     }}
                     ListEmptyComponent={
-                      <Text style={styles.emptyFriendsText}>
-                        {friends.length === 0 ? '친구가 없습니다. 먼저 친구를 추가하세요!' : '검색 결과가 없습니다.'}
-                      </Text>
+                      friends.length === 0 ? (
+                        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 }}>
+                          <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 8 }}>친구가 없습니다.</Text>
+                          <Text style={{ fontSize: 12, color: COLORS.neutralGray }}>'친구' 탭에서 새로운 친구를 추가해보세요!</Text>
+                        </View>
+                      ) : (
+                        <Text style={styles.emptyFriendsText}>검색 결과가 없습니다.</Text>
+                      )
                     }
                   />
 
@@ -3679,36 +3684,66 @@ const styles = StyleSheet.create({
   selectedParticipantsRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
   participantChip: {
-    zIndex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.3)',
+    borderRadius: 16,
+    paddingLeft: 4,
+    paddingRight: 10,
+    paddingVertical: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   participantAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'white',
   },
   participantAvatarImage: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: 'white',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  participantName: {
+    fontSize: 12,
+    fontWeight: 'bold' as const,
+    color: COLORS.neutralSlate,
+    marginLeft: 6,
+  },
+  participantRemoveButton: {
+    marginLeft: 6,
+  },
+  addParticipantButtonSmall: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderStyle: 'dashed' as const,
+    borderColor: COLORS.primaryMain,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    backgroundColor: COLORS.primaryBg,
   },
   participantAvatarText: {
     color: 'white',
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: 'bold' as const,
   },
   participantCount: {
     fontSize: 13,
     color: COLORS.neutral600,
     marginLeft: 12,
-    fontWeight: '500',
+    fontWeight: '500' as const,
     flex: 1,
   },
   clearParticipantsButton: {
@@ -3804,6 +3839,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.neutral100,
+    backgroundColor: COLORS.white,
   },
   friendItemAvatar: {
     width: 44,
@@ -3830,7 +3866,7 @@ const styles = StyleSheet.create({
   friendItemName: {
     fontSize: 15,
     fontWeight: '600',
-    color: COLORS.neutral900,
+    color: COLORS.neutralSlate,
   },
   friendItemEmail: {
     fontSize: 12,

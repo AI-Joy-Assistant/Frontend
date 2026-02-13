@@ -172,7 +172,11 @@ const MyPageScreen = () => {
           setResultModalMessage('Google 캘린더가 연동되었습니다!');
           setResultModalVisible(true);
           setIsCalendarLinked(true); // 즉시 상태 업데이트
+          await AsyncStorage.setItem('isCalendarLinked', 'true');
           dataCache.set('calendar:link-status', { is_linked: true }, 10 * 60 * 1000);
+          // ✅ calendarService 캐시 무효화 (홈화면에서 일정을 새로 불러오도록)
+          calendarService.clearLinkStatusCache();
+          calendarService.invalidateEventsCache();
         } else if (errorParam) {
           setResultModalType('error');
           setResultModalMessage(`캘린더 연동 실패: ${errorParam}`);
@@ -182,7 +186,11 @@ const MyPageScreen = () => {
           setResultModalMessage('연동이 완료되었습니다.');
           setResultModalVisible(true);
           setIsCalendarLinked(true); // 즉시 상태 업데이트
+          await AsyncStorage.setItem('isCalendarLinked', 'true');
           dataCache.set('calendar:link-status', { is_linked: true }, 10 * 60 * 1000);
+          // ✅ calendarService 캐시 무효화 (홈화면에서 일정을 새로 불러오도록)
+          calendarService.clearLinkStatusCache();
+          calendarService.invalidateEventsCache();
         }
       }
     } catch (error) {

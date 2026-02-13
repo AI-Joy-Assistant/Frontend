@@ -318,7 +318,7 @@ const FriendsScreen = () => {
     WebSocketService.connect(currentUserId);
 
     // FriendsScreen에서 필요한 메시지 구독
-       const unsubscribe = WebSocketService.subscribe(
+    const unsubscribe = WebSocketService.subscribe(
       'FriendsScreen',
       ['friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'user_info_updated'],
       (data) => {
@@ -790,14 +790,14 @@ const FriendsScreen = () => {
               <View style={styles.friendItem}>
                 <View style={styles.friendInfo}>
                   <View style={styles.avatarContainer}>
-                    <View style={[styles.avatarRing, !item.friend.picture && { backgroundColor: COLORS.neutral100 }]}>
+                    <View style={[styles.avatarRing, !item.friend.picture && { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0' }]}>
                       {getAvatarSource(item.friend.picture) ? (
                         <Image
                           source={getAvatarSource(item.friend.picture)!}
                           style={styles.avatarImage}
                         />
                       ) : (
-                        <User size={24} color={COLORS.neutral400} />
+                        <User size={24} color={COLORS.primaryMain} />
                       )}
                     </View>
                   </View>
@@ -831,14 +831,14 @@ const FriendsScreen = () => {
               <View style={styles.requestItem}>
                 <View style={styles.friendInfo}>
                   <View style={styles.avatarContainer}>
-                    <View style={[styles.avatarRing, !item.from_user.picture && { backgroundColor: COLORS.neutral100 }]}>
+                    <View style={[styles.avatarRing, !item.from_user.picture && { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0' }]}>
                       {getAvatarSource(item.from_user.picture) ? (
                         <Image
                           source={getAvatarSource(item.from_user.picture)!}
                           style={styles.avatarImage}
                         />
                       ) : (
-                        <User size={24} color={COLORS.neutral400} />
+                        <User size={24} color={COLORS.primaryMain} />
                       )}
                     </View>
                   </View>
@@ -1086,7 +1086,7 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingHorizontal: 20,
     paddingBottom: 10,
-    shadowColor: '#4F46E5',
+    shadowColor: '#3730A3',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
     shadowRadius: 16,
