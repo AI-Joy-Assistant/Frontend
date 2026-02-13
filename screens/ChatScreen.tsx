@@ -1288,7 +1288,7 @@ export default function ChatScreen() {
               {
                 id: 'welcome-message',
                 // [수정] 기본 멘트
-                text: `안녕하세요! ${userName}님, 저는 당신의 AI 비서입니다.\n무엇을 도와드릴까요?`,
+                text: `안녕하세요! ${userName}님,\n저는 당신의 AI 비서 JOYNER입니다.\n무엇을 도와드릴까요?`,
                 sender: 'ai',
                 timestamp: sessions.find(s => s.id === currentSessionId)?.messages[0]?.timestamp || new Date().toISOString(), // 첫 메시지 시간 또는 현재 시간
               },
@@ -1369,8 +1369,8 @@ export default function ChatScreen() {
                         style={styles.chipAvatar}
                       />
                     ) : (
-                      <View style={[styles.chipAvatar, { backgroundColor: COLORS.neutral200, justifyContent: 'center', alignItems: 'center' }]}>
-                        <User size={14} color={COLORS.neutral400} />
+                      <View style={[styles.chipAvatar, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' }]}>
+                        <User size={14} color={COLORS.primaryMain} />
                       </View>
                     )}
                     <Text style={styles.chipName}>
@@ -1448,8 +1448,8 @@ export default function ChatScreen() {
 
                 <View style={styles.modalHeader}>
                   <View>
-                    <Text style={styles.modalTitle}>친구 선택</Text>
-                    <Text style={styles.modalSubtitle}>일정을 잡을 친구를 선택하세요</Text>
+                    <Text style={styles.modalTitle}>참여자 선택</Text>
+                    <Text style={styles.modalSubtitle}>일정에 초대할 친구를 선택해주세요</Text>
                   </View>
                   <TouchableOpacity onPress={() => setShowFriendModal(false)}>
                     <X size={24} color={COLORS.neutralGray} />
@@ -1492,11 +1492,7 @@ export default function ChatScreen() {
                         onPress={() =>
                           toggleFriendSelection(item.friend.id)
                         }
-                        style={[
-                          styles.friendListItem,
-                          isSelected &&
-                          styles.friendListItemSelected,
-                        ]}
+                        style={styles.friendListItem}
                       >
                         <View style={styles.friendListInfo}>
                           <View
@@ -1518,11 +1514,13 @@ export default function ChatScreen() {
                                   {
                                     justifyContent: "center",
                                     alignItems: "center",
-                                    backgroundColor: COLORS.neutral200,
+                                    backgroundColor: 'transparent',
+                                    borderWidth: 1,
+                                    borderColor: '#E2E8F0',
                                   },
                                 ]}
                               >
-                                <User size={20} color={COLORS.neutral400} />
+                                <User size={20} color={COLORS.primaryMain} />
                               </View>
                             )}
                           </View>
@@ -1530,8 +1528,7 @@ export default function ChatScreen() {
                             <Text
                               style={[
                                 styles.friendListName,
-                                isSelected &&
-                                styles.friendListNameSelected,
+                                isSelected && { color: COLORS.primaryMain },
                               ]}
                             >
                               {item.friend.name}
@@ -1553,6 +1550,12 @@ export default function ChatScreen() {
                     );
                   }}
                   style={styles.friendList}
+                  ListEmptyComponent={
+                    <View style={{ flex: 1, justifyContent: 'flex-start', alignItems: 'center', paddingVertical: 60 }}>
+                      <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 8 }}>친구가 없습니다.</Text>
+                      <Text style={{ fontSize: 12, color: COLORS.neutralGray }}>'친구' 탭에서 새로운 친구를 추가해보세요!</Text>
+                    </View>
+                  }
                 />
 
                 <View style={styles.modalFooter}>
