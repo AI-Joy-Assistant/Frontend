@@ -2,6 +2,8 @@ export interface CalendarEvent {
   id: string;
   summary: string;
   description?: string;
+  google_event_id?: string;
+  session_id?: string;
   start: {
     dateTime?: string;
     date?: string;

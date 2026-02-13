@@ -14,7 +14,8 @@ import {
   Switch,
   FlatList,
   Image,
-  RefreshControl
+  RefreshControl,
+  AppState
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -83,6 +84,7 @@ interface PendingRequest {
   participant_count: number;
   proposed_date?: string;
   proposed_time?: string;
+  location?: string;
   status: string;
   created_at: string;
   reschedule_requested_at?: string; // 재조율 요청 시간
@@ -376,6 +378,12 @@ export default function HomeScreen() {
         homeStore.refresh();
         friendsStore.invalidate();
         friendsStore.refresh();
+
+        // [FIX] A2A 상태 변경 시 캘린더 이벤트 캐시도 무효화 후 강제 갱신
+        if (data.type === 'a2a_status_changed' || data.type === 'a2a_request') {
+          calendarService.invalidateEventsCache();
+          fetchSchedules(true);
+        }
       }
     );
 
@@ -429,6 +437,8 @@ export default function HomeScreen() {
   // Modal & Edit State
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
+  const deletedScheduleKeysRef = useRef<Map<string, number>>(new Map());
+  const deletedEventIdsRef = useRef<Map<string, number>>(new Map());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [scheduleToDelete, setScheduleToDelete] = useState<ScheduleItem | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -488,6 +498,40 @@ export default function HomeScreen() {
     date.setHours(hours);
     date.setMinutes(minutes);
     return date;
+  };
+
+  const DELETED_SCHEDULE_TTL_MS = 60 * 1000;
+  const normalizeTitleKey = (title: string) => (title || '').replace(/[\s\u200b\u00a0]+/g, '');
+  const getScheduleKey = (s: Pick<ScheduleItem, 'title' | 'date' | 'time' | 'endDate'>) =>
+    `${normalizeTitleKey(s.title)}__${s.date}__${s.time}__${s.endDate || ''}`;
+  const isSameScheduleForImmediateHide = (a: ScheduleItem, b: ScheduleItem) => {
+    const keyMatched = getScheduleKey(a) === getScheduleKey(b);
+    const idMatched = !!a.id && !!b.id && a.id === b.id;
+    const linkedIdMatched =
+      (!!a.googleEventId && !!b.googleEventId && a.googleEventId === b.googleEventId) ||
+      (!!a.id && !!b.googleEventId && a.id === b.googleEventId) ||
+      (!!a.googleEventId && !!b.id && a.googleEventId === b.id);
+    return idMatched || linkedIdMatched || keyMatched;
+  };
+  const isRecentlyDeletedSchedule = (s: Pick<ScheduleItem, 'title' | 'date' | 'time' | 'endDate'>) => {
+    const now = Date.now();
+    for (const [key, expireAt] of deletedScheduleKeysRef.current.entries()) {
+      if (expireAt <= now) deletedScheduleKeysRef.current.delete(key);
+    }
+    const scheduleKey = getScheduleKey(s);
+    const expireAt = deletedScheduleKeysRef.current.get(scheduleKey);
+    return !!expireAt && expireAt > now;
+  };
+  const isRecentlyDeletedEventRaw = (event: any) => {
+    const now = Date.now();
+    for (const [key, expireAt] of deletedEventIdsRef.current.entries()) {
+      if (expireAt <= now) deletedEventIdsRef.current.delete(key);
+    }
+    const eventId = (event?.id || '').toString();
+    const googleEventId = (event?.google_event_id || '').toString();
+    const idExpire = eventId ? deletedEventIdsRef.current.get(eventId) : undefined;
+    const googleIdExpire = googleEventId ? deletedEventIdsRef.current.get(googleEventId) : undefined;
+    return (!!idExpire && idExpire > now) || (!!googleIdExpire && googleIdExpire > now);
   };
 
   const onStartDateChange = (event: any, selectedDate?: Date) => {
@@ -705,18 +749,15 @@ export default function HomeScreen() {
     const cached = calendarService.getCachedEvents(startOfMonth, endOfMonth);
     if (cached.exists && cached.data.length > 0) {
       console.log('[HomeScreen] 캐시에서 일정 즉시 로드:', cached.data.length);
-      const mappedSchedules = mapEventsToSchedules(cached.data);
+      const mappedSchedules = mapEventsToSchedules(
+        cached.data.filter(e => !isRecentlyDeletedEventRaw(e))
+      ).filter(s => !isRecentlyDeletedSchedule(s));
       const schedulesWithConflicts = detectScheduleConflicts(mappedSchedules);
       setSchedules(schedulesWithConflicts);
-
-      // 캐시가 stale하지 않으면 API 호출 스킵
-      if (!cached.isStale) {
-        return;
-      }
     }
 
-    // 2. 백그라운드에서 새 데이터 가져오기
-    fetchSchedules();
+    // 2. 포커스 시에는 백그라운드 강제 동기화로 외부(Google) 변경도 즉시 반영
+    fetchSchedules(true);
   }, [viewYear, viewMonth, isTutorialActive, currentStep]);
 
   // 이벤트 데이터를 ScheduleItem으로 변환하는 공통 함수
@@ -764,7 +805,8 @@ export default function HomeScreen() {
 
       // A2A 일정인지 확인 (백엔드에서 A2A 일정 생성 시 description에 마커 저장)
       const description = event.description || '';
-      const isA2A = description.includes('A2A Agent') || description.includes('session_id:') || description.includes('[A2A]');
+      const hasA2AMarker = description.includes('A2A Agent') || description.includes('session_id:') || description.includes('[A2A]');
+      const isA2A = !!(event as any).session_id || hasA2AMarker;
 
       // [NEW] A2A 일정의 경우 description에서 참여자 정보 파싱
       let participants: string[] = event.attendees?.map((a: any) => a.displayName || a.email) || [];
@@ -790,7 +832,10 @@ export default function HomeScreen() {
         time: isAllDayEvent ? '종일' : `${startTime} - ${endTime}`,
         participants: participants,
         type: isA2A ? 'A2A' : 'NORMAL',
-        location: event.location
+        location: event.location,
+        source: (event as any).source,
+        googleEventId: (event as any).google_event_id || (event as any).id,
+        sessionId: (event as any).session_id,
       };
     });
 
@@ -834,7 +879,8 @@ export default function HomeScreen() {
         setIsLoading(true);
       }
 
-      const events = await calendarService.getCalendarEvents(startOfMonth, endOfMonth);
+      const events = (await calendarService.getCalendarEvents(startOfMonth, endOfMonth))
+        .filter(e => !isRecentlyDeletedEventRaw(e));
 
       let mappedSchedules: ScheduleItem[] = events.map(event => {
         // Check if it's an all-day event (has date but no dateTime)
@@ -895,7 +941,8 @@ export default function HomeScreen() {
 
         // A2A 일정인지 확인 (백엔드에서 A2A 일정 생성 시 description에 마커 저장)
         const description = event.description || '';
-        const isA2A = description.includes('A2A Agent') || description.includes('session_id:') || description.includes('[A2A]');
+        const hasA2AMarker = description.includes('A2A Agent') || description.includes('session_id:') || description.includes('[A2A]');
+        const isA2A = !!(event as any).session_id || hasA2AMarker;
 
         // [NEW] A2A 일정의 경우 description에서 참여자 정보 파싱
         let participants: string[] = event.attendees?.map(a => a.displayName || a.email) || [];
@@ -921,36 +968,41 @@ export default function HomeScreen() {
           time: isAllDayEvent ? '종일' : `${startTime} - ${endTime}`,
           participants: participants,
           type: isA2A ? 'A2A' : 'NORMAL',
-          location: event.location
+          location: event.location,
+          source: (event as any).source,
+          googleEventId: (event as any).google_event_id || (event as any).id,
+          sessionId: (event as any).session_id,
         };
       });
 
-      // [FIX] A2A 일정과 일반 일정이 중복될 경우 A2A 일정을 우선하고 일반 일정을 제거합니다.
-      mappedSchedules = mappedSchedules.filter((sched, index, self) => {
-        // 제목, 날짜가 같은 일정들을 찾습니다. (시간 비교 제외 - 종일/시간 포맷 차이 무시)
-        // [FIX] Zero-width space, NBSP 등 특수 공백도 제거
-        const schedTitle = sched.title.replace(/[\s\u200b\u00a0]+/g, '');
-        const schedDate = sched.date;
+      // [FIX] 동일 일정 중복 제거
+      // - 동일 키: 제목(공백 정규화) + 시작일 + 시간 + 종료일
+      // - 우선순위: A2A(구글) > A2A(app) > NORMAL
+      mappedSchedules = mappedSchedules.filter((sched, _index, self) => {
+        const normalizeTitle = (t: string) => t.replace(/[\s\u200b\u00a0]+/g, '');
+        const makeKey = (s: ScheduleItem) =>
+          `${normalizeTitle(s.title)}__${s.date}__${s.time}__${s.endDate || ''}`;
+        const key = makeKey(sched);
+        const duplicates = self.filter(s => makeKey(s) === key);
 
-        const duplicates = self.filter(s =>
-          s.title.replace(/[\s\u200b\u00a0]+/g, '') === schedTitle &&
-          s.date === schedDate
-        );
-
-        // 중복이 없으면 유지
         if (duplicates.length <= 1) return true;
 
-        // 현재 일정이 A2A이면 무조건 유지 (가장 우선순위 높음)
-        if (sched.type === 'A2A') return true;
+        const getPriority = (s: ScheduleItem) => {
+          if (s.type === 'A2A' && s.source !== 'app') return 3;
+          if (s.type === 'A2A') return 2;
+          return 1;
+        };
 
-        // 현재 일정이 NORMAL인데, 중복된 것 중에 A2A가 있으면 현재 일정 제거
-        // (A2A 일정이 이미 표시되므로 일반 일정은 숨김)
-        const hasA2A = duplicates.some(s => s.type === 'A2A');
-        if (hasA2A) return false;
+        const best = [...duplicates].sort((a, b) => {
+          const byPriority = getPriority(b) - getPriority(a);
+          if (byPriority !== 0) return byPriority;
+          // sessionId가 있으면 A2A 정합성이 더 높다고 간주
+          const bySession = (b.sessionId ? 1 : 0) - (a.sessionId ? 1 : 0);
+          if (bySession !== 0) return bySession;
+          return a.id.localeCompare(b.id);
+        })[0];
 
-        // 둘 다 NORMAL이거나 둘 다 A2A인 경우 ID 정렬하여 첫 번째만 유지
-        const firstId = duplicates.map(s => s.id).sort()[0];
-        return sched.id === firstId;
+        return sched.id === best.id;
       });
 
       // [NEW] 튜토리얼 중이고 'CHECK_HOME' 또는 'COMPLETE' 단계라면 가짜 확정 일정 추가
@@ -968,6 +1020,9 @@ export default function HomeScreen() {
           conflictWith: []
         });
       }
+
+      // 최근 삭제된 일정은 서버 동기화 지연 동안 임시 숨김 처리
+      mappedSchedules = mappedSchedules.filter(s => !isRecentlyDeletedSchedule(s));
 
       // 충돌(중복) 감지 로직
       const schedulesWithConflicts = detectScheduleConflicts(mappedSchedules);
@@ -1063,9 +1118,22 @@ export default function HomeScreen() {
   };
 
   useEffect(() => {
-    // 화면 진입 및 월 변경 시 캐시 우선 로딩
-    fetchSchedules();
-  }, [viewYear, viewMonth, isTutorialActive, currentStep]);
+    // 월 전환 시 캐시 즉시 표시 + 강제 동기화
+    fetchSchedulesWithCache();
+  }, [fetchSchedulesWithCache]);
+
+  useEffect(() => {
+    // 앱 재개(active) 시 캐시 즉시 표시 + 강제 동기화
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        fetchSchedulesWithCache();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [fetchSchedulesWithCache]);
 
   // Helper: Get all events for a specific date
   const getEventsForDate = (dateStr: string) => {
@@ -1460,7 +1528,12 @@ export default function HomeScreen() {
       };
 
       if (editingScheduleId) {
-        await calendarService.deleteCalendarEvent(editingScheduleId);
+        const editingSchedule = schedules.find(s => s.id === editingScheduleId);
+        await calendarService.deleteCalendarEvent(
+          editingScheduleId,
+          'primary',
+          editingSchedule?.source
+        );
       }
 
       await calendarService.createCalendarEvent(eventData);
@@ -2689,12 +2762,41 @@ export default function HomeScreen() {
                   if (scheduleToDelete) {
                     try {
                       console.log('[HomeScreen] 삭제 시도 중... eventId:', scheduleToDelete.id);
-                      await calendarService.deleteCalendarEvent(scheduleToDelete.id);
+                      const deleted = await calendarService.deleteCalendarEvent(
+                        scheduleToDelete.id,
+                        'primary',
+                        scheduleToDelete.source
+                      );
+                      if (!deleted) {
+                        throw new Error('삭제 응답이 실패로 반환되었습니다.');
+                      }
                       console.log('[HomeScreen] 삭제 성공!');
 
+                      // 삭제 직후 서버 반영 지연 대비: 동일 일정 키를 잠시 숨김 처리
+                      deletedScheduleKeysRef.current.set(
+                        getScheduleKey(scheduleToDelete),
+                        Date.now() + DELETED_SCHEDULE_TTL_MS
+                      );
+                      if (scheduleToDelete.id) {
+                        deletedEventIdsRef.current.set(
+                          scheduleToDelete.id,
+                          Date.now() + DELETED_SCHEDULE_TTL_MS
+                        );
+                      }
+                      if (scheduleToDelete.googleEventId) {
+                        deletedEventIdsRef.current.set(
+                          scheduleToDelete.googleEventId,
+                          Date.now() + DELETED_SCHEDULE_TTL_MS
+                        );
+                      }
+
+                      // 즉시 UI 반영 (네트워크 동기화 전 화면에서 먼저 제거)
+                      setSchedules(prev =>
+                        prev.filter(s => !isSameScheduleForImmediateHide(s, scheduleToDelete))
+                      );
                       setShowDetailModal(false);
                       setShowScheduleModal(false);
-                      fetchSchedules();
+                      fetchSchedules(true);
                     } catch (error) {
                       console.error('[HomeScreen] 일정 삭제 실패:', error);
                       Alert.alert('삭제 실패', '일정을 삭제할 수 없습니다. 다시 시도해주세요.');

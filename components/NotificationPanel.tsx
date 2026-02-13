@@ -50,6 +50,7 @@ interface PendingRequest {
     participant_count: number;
     proposed_date?: string;
     proposed_time?: string;
+    location?: string;
     status: string;
     created_at: string;
     reschedule_requested_at?: string; // 재조율 요청 시간
@@ -187,7 +188,7 @@ export default function NotificationPanel({
                 </View>
             </View>
             <Text style={styles.requestSubInfo}>
-                {item.initiator_name} · {item.proposed_date} {item.proposed_time || ''}
+                {item.initiator_name} · {item.proposed_date} {item.proposed_time || ''}{item.location ? ` · ${item.location}` : ''}
             </Text>
         </TouchableOpacity>
     );

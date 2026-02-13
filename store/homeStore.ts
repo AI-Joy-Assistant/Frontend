@@ -15,6 +15,7 @@ interface PendingRequest {
     participant_count: number;
     proposed_date?: string;
     proposed_time?: string;
+    location?: string;
     status: string;
     created_at: string;
     reschedule_requested_at?: string;

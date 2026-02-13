@@ -240,7 +240,51 @@ class CalendarService {
             fetchAppEvents(),
             fetchGoogleEvents()
           ]);
-          events = [...appEvents, ...googleEvents];
+          // [FIX] 동일 이벤트가 app-events(DB)와 Google 양쪽에서 내려올 때 중복 제거
+          // 우선순위는 Google 이벤트(설명/attendees 등 정보가 더 풍부함).
+          const googleHtmlLinks = new Set(
+            googleEvents
+              .map((e: any) => (e?.htmlLink || '').trim())
+              .filter((v: string) => !!v)
+          );
+
+          const googleSignatureSet = new Set(
+            googleEvents.map((e: any) => {
+              const s = e?.start?.dateTime || e?.start?.date || '';
+              const en = e?.end?.dateTime || e?.end?.date || '';
+              const summary = e?.summary || '';
+              const location = e?.location || '';
+              return `${summary}__${s}__${en}__${location}`;
+            })
+          );
+          const googleEventIdSet = new Set(
+            googleEvents
+              .map((e: any) => (e?.id || '').trim())
+              .filter((v: string) => !!v)
+          );
+
+          const dedupedAppEvents = appEvents.filter((e: any) => {
+            // Google 연동 상태에서, DB에만 남은 고아(원격 삭제) Google 이벤트는 숨김
+            const appGoogleEventId = (e?.google_event_id || '').trim();
+            const isGoogleBackedAppRow = !!appGoogleEventId && !appGoogleEventId.startsWith('app_');
+            if (isGoogleBackedAppRow && !googleEventIdSet.has(appGoogleEventId)) {
+              return false;
+            }
+
+            const appLink = (e?.htmlLink || '').trim();
+            if (appLink && googleHtmlLinks.has(appLink)) return false;
+
+            const s = e?.start?.dateTime || e?.start?.date || '';
+            const en = e?.end?.dateTime || e?.end?.date || '';
+            const summary = e?.summary || '';
+            const location = e?.location || '';
+            const sig = `${summary}__${s}__${en}__${location}`;
+            if (googleSignatureSet.has(sig)) return false;
+
+            return true;
+          });
+
+          events = [...dedupedAppEvents, ...googleEvents];
         } catch (e: any) {
           if (e.message === 'AUTH_ERROR') {
             // 토큰 만료 등으로 연동 풀리면 앱 일정이라도 반환 (재귀 호출 대신 바로 처리)
@@ -332,7 +376,8 @@ class CalendarService {
 
   async deleteCalendarEvent(
     eventId: string,
-    calendarId: string = 'primary'
+    calendarId: string = 'primary',
+    source?: string
   ): Promise<boolean> {
     try {
       const jwtToken = await this.getStoredAccessToken();
@@ -343,7 +388,7 @@ class CalendarService {
       // Google Calendar 연동 여부 확인
       const isLinked = await this.isGoogleCalendarLinked();
 
-      const isAppEvent = eventId.startsWith('app_');
+      const isAppEvent = source === 'app' || eventId.startsWith('app_');
 
       if (isAppEvent || !isLinked) {
         // 앱 자체 캘린더 API 사용 (ID가 앱 형식이거나 미연동 상태일 때)
@@ -354,9 +399,12 @@ class CalendarService {
             'Authorization': `Bearer ${jwtToken}`
           }
         });
-
-        if (response.ok) this.invalidateEventsCache(); // 캐시 무효화
-        return response.ok;
+        if (!response.ok) {
+          const errorBody = await response.text().catch(() => '');
+          throw new Error(errorBody || `앱 일정 삭제 실패 (${response.status})`);
+        }
+        this.invalidateEventsCache(); // 캐시 무효화
+        return true;
       }
 
       // Google Calendar API 사용
@@ -371,9 +419,12 @@ class CalendarService {
           'Authorization': `Bearer ${jwtToken}`
         }
       });
-
-      if (response.ok) this.invalidateEventsCache(); // 캐시 무효화
-      return response.ok;
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => '');
+        throw new Error(errorBody || `Google 일정 삭제 실패 (${response.status})`);
+      }
+      this.invalidateEventsCache(); // 캐시 무효화
+      return true;
     } catch (error) {
       console.error('이벤트 삭제 실패:', error);
       throw error;
