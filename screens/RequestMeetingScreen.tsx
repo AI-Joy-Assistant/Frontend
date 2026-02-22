@@ -240,7 +240,11 @@ const RequestMeetingScreen = () => {
     const handleDateSelect = (day: number, isCurrentMonth: boolean) => {
         if (!isCurrentMonth) return;
         const dateStr = `${calendarYear}-${calendarMonth.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-        if (activePicker === 'startDate') setStartDate(dateStr);
+        if (activePicker === 'startDate') {
+            setStartDate(dateStr);
+            // [FIX] 시작날짜 선택 시 종료날짜도 자동으로 동일하게 설정
+            setEndDate(dateStr);
+        }
         else if (activePicker === 'endDate') setEndDate(dateStr);
         setActivePicker(null);
         setHasAnalyzed(false);

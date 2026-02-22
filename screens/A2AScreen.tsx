@@ -37,6 +37,11 @@ import {
     ChevronLeft,
     User,
     Info,
+    Sun,
+    Moon,
+    Minus,
+    Plus,
+    Plane,
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import TimePickerModal from '../components/TimePickerModal';
@@ -139,6 +144,8 @@ const A2AScreen = () => {
     const [lastProposalForDecision, setLastProposalForDecision] = useState<any>(null);
     const [isModalClosing, setIsModalClosing] = useState(false);  // 모달 닫힘 중 버튼 숨김용
     const [showRejectConfirm, setShowRejectConfirm] = useState(false);  // 거절 확인 팝업 상태
+    const [showRejectSuccess, setShowRejectSuccess] = useState(false);  // 거절 완료 배너
+    const [rejectedLogTitle, setRejectedLogTitle] = useState('');  // 거절된 일정 제목
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);  // 삭제 확인 팝업 상태
     const [deleteTargetLogId, setDeleteTargetLogId] = useState<string | null>(null);  // 삭제 대상 로그 ID
     const [showNegotiationIncompleteAlert, setShowNegotiationIncompleteAlert] = useState(false);  // 협상 미완료 알림
@@ -158,6 +165,8 @@ const A2AScreen = () => {
     // 오전/오후 선택 상태
     const [startPeriod, setStartPeriod] = useState<'AM' | 'PM' | null>(null);
     const [endPeriod, setEndPeriod] = useState<'AM' | 'PM' | null>(null);
+    // 박 수 (0 = 당일, 1 = 1박2일, ...)
+    const [durationNights, setDurationNights] = useState(0);
 
     // 바쁜 시간대 (캘린더 일정이 있는 시간)
     const [busyTimes, setBusyTimes] = useState<{ [date: string]: string[] }>({});
@@ -519,8 +528,8 @@ const A2AScreen = () => {
         );
     };
 
-    // 달력 렌더링 (시작/종료 공용) - [FIX] minDate 추가
-    const renderScheduleCalendar = (selectedDateVal: string | null, onSelectDate: (date: string) => void, month: Date, onMonthChange: (dir: 'prev' | 'next') => void, minDateStr?: string | null) => {
+    // 달력 렌더링 (시작/종료 공용) - [FIX] minDate 추가, rangeNights로 날짜 범위 표시
+    const renderScheduleCalendar = (selectedDateVal: string | null, onSelectDate: (date: string) => void, month: Date, onMonthChange: (dir: 'prev' | 'next') => void, minDateStr?: string | null, rangeNights?: number) => {
         const year = month.getFullYear();
         const monthNum = month.getMonth();
         const firstDay = new Date(year, monthNum, 1).getDay();
@@ -543,6 +552,17 @@ const A2AScreen = () => {
                 // 이미 ISO 형식인 경우
                 originalDate = originalDateRaw;
             }
+        }
+
+        // [NEW] 날짜 범위 계산 (rangeNights > 0 && selectedDateVal이 있을 때)
+        let rangeEndStr: string | null = null;
+        if (rangeNights && rangeNights > 0 && selectedDateVal) {
+            const rangeStart = new Date(selectedDateVal + 'T00:00:00');
+            rangeStart.setDate(rangeStart.getDate() + rangeNights);
+            const ry = rangeStart.getFullYear();
+            const rm = String(rangeStart.getMonth() + 1).padStart(2, '0');
+            const rd = String(rangeStart.getDate()).padStart(2, '0');
+            rangeEndStr = `${ry}-${rm}-${rd}`;
         }
 
         const weeks: (number | null)[][] = [];
@@ -586,6 +606,10 @@ const A2AScreen = () => {
                             const isSelected = selectedDateVal === dateStr;
                             const isOriginalDate = dateStr === originalDate;  // 기존 약속 날짜
 
+                            // [NEW] 범위 내 날짜인지 체크
+                            const isInRange = (rangeEndStr && selectedDateVal && dateStr > selectedDateVal && dateStr <= rangeEndStr);
+                            const isRangeEnd = (rangeEndStr && dateStr === rangeEndStr);
+
                             // [FIX] minDateStr이 있으면 그것보다 이전 날짜 비활성화, 없으면 오늘 이전 비활성화
                             let isDisabled = false;
                             if (minDateStr) {
@@ -603,12 +627,21 @@ const A2AScreen = () => {
                                 >
                                     <View style={{
                                         width: 32, height: 32, borderRadius: 16,
-                                        backgroundColor: isSelected ? COLORS.primaryMain : isOriginalDate ? COLORS.primaryBg : 'transparent',
+                                        backgroundColor: isSelected ? COLORS.primaryMain
+                                            : isRangeEnd ? '#818CF8'
+                                                : isInRange ? '#EEF2FF'
+                                                    : isOriginalDate ? COLORS.primaryBg
+                                                        : 'transparent',
                                         justifyContent: 'center', alignItems: 'center'
                                     }}>
                                         <Text style={{
-                                            color: isSelected ? 'white' : isDisabled ? COLORS.neutral300 : dIdx === 0 ? '#EF4444' : COLORS.neutralSlate,
-                                            fontSize: 14, fontWeight: isOriginalDate ? '700' : '400'
+                                            color: isSelected ? 'white'
+                                                : isRangeEnd ? 'white'
+                                                    : isInRange ? COLORS.primaryMain
+                                                        : isDisabled ? COLORS.neutral300
+                                                            : dIdx === 0 ? '#EF4444'
+                                                                : COLORS.neutralSlate,
+                                            fontSize: 14, fontWeight: (isOriginalDate || isInRange || isRangeEnd) ? '700' : '400'
                                         }}>{day}</Text>
                                     </View>
                                 </TouchableOpacity>
@@ -672,6 +705,69 @@ const A2AScreen = () => {
                     </View>
                 </View>
 
+                {/* 일정 총 기간 (박 수 설정) */}
+                <View style={{
+                    backgroundColor: COLORS.white, borderRadius: 16, padding: 16,
+                    marginBottom: 8, borderWidth: 1, borderColor: COLORS.neutral200
+                }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate }}>일정 총 기간</Text>
+                        <View style={{
+                            backgroundColor: '#EEF2FF',
+                            paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12
+                        }}>
+                            <Text style={{ color: COLORS.primaryMain, fontWeight: 'bold', fontSize: 12 }}>
+                                {durationNights === 0 ? '당일' : `${durationNights}박 ${durationNights + 1}일`}
+                            </Text>
+                        </View>
+                    </View>
+                    <View style={{
+                        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                        backgroundColor: COLORS.white, borderRadius: 16, padding: 8,
+                        borderWidth: 1, borderColor: COLORS.neutral200
+                    }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                            <View style={{
+                                width: 40, height: 40, borderRadius: 14,
+                                backgroundColor: durationNights === 0 ? COLORS.primaryMain : '#1E1B4B',
+                                alignItems: 'center', justifyContent: 'center'
+                            }}>
+                                {durationNights === 0 ? <Sun size={20} color="white" /> : <Moon size={20} color="white" />}
+                            </View>
+                            <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate }}>직접 설정하기</Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingRight: 8 }}>
+                            <TouchableOpacity onPress={() => setDurationNights(Math.max(0, durationNights - 1))} style={{ padding: 4 }}>
+                                <Minus size={20} color={COLORS.primaryMain} strokeWidth={3} />
+                            </TouchableOpacity>
+                            <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate, minWidth: 20, textAlign: 'center' }}>
+                                {durationNights}
+                            </Text>
+                            <TouchableOpacity onPress={() => setDurationNights(durationNights + 1)} style={{ padding: 4 }}>
+                                <Plus size={20} color={COLORS.primaryMain} strokeWidth={3} />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                    {durationNights > 0 && (
+                        <View style={{
+                            flexDirection: 'row', alignItems: 'center',
+                            backgroundColor: '#EEF2FF', borderRadius: 20,
+                            padding: 16, gap: 12, marginTop: 8
+                        }}>
+                            <View style={{
+                                width: 36, height: 36, borderRadius: 12,
+                                backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center'
+                            }}>
+                                <Plane size={18} color={COLORS.primaryMain} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 13, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 2 }}>여행 모드 활성화됨</Text>
+                                <Text style={{ fontSize: 11, color: COLORS.neutral500 }}>시작/종료 시간 대신 날짜 범위로 일정이 잡힙니다</Text>
+                            </View>
+                        </View>
+                    )}
+                </View>
+
                 {/* 시작시간 토글 */}
                 <TouchableOpacity
                     onPress={() => {
@@ -690,10 +786,15 @@ const A2AScreen = () => {
                         borderWidth: 1, borderColor: COLORS.neutral200
                     }}
                 >
-                    <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate }}>시작 시간</Text>
+                    <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate }}>
+                        {durationNights > 0 ? '시작 날짜' : '시작 시간'}
+                    </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                         <Text style={{ fontSize: 12, fontWeight: 'bold', color: COLORS.primaryMain, marginRight: 8 }}>
-                            {startDate && startTime ? `${startDate} ${startTime}` : '선택'}
+                            {durationNights > 0
+                                ? (startDate ? startDate : '선택')
+                                : (startDate && startTime ? `${startDate} ${startTime}` : '선택')
+                            }
                         </Text>
                         {startTimeExpanded ? <ChevronUp size={16} color={COLORS.neutral400} /> : <ChevronDown size={16} color={COLORS.neutral400} />}
                     </View>
@@ -709,8 +810,9 @@ const A2AScreen = () => {
                             const newDate = new Date(startMonth);
                             newDate.setMonth(newDate.getMonth() + (dir === 'prev' ? -1 : 1));
                             setStartMonth(newDate);
-                        })}
-                        {startDate && renderTimeButtons(
+                        }, undefined, durationNights)}
+                        {/* 0박(당일)일 때만 시간 버튼 표시 */}
+                        {durationNights === 0 && startDate && renderTimeButtons(
                             startTime,
                             (time) => {
                                 setStartTime(time);
@@ -731,45 +833,65 @@ const A2AScreen = () => {
                             startPeriod,
                             setStartPeriod
                         )}
+                        {/* 1박 이상일 때 종일 안내 표시 */}
+                        {durationNights > 0 && startDate && (
+                            <View style={{
+                                flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                                backgroundColor: '#EEF2FF', borderRadius: 12, padding: 12, marginTop: 12, gap: 8
+                            }}>
+                                <Calendar size={16} color={COLORS.primaryMain} />
+                                <Text style={{ fontSize: 13, color: COLORS.primaryMain, fontWeight: '600' }}>
+                                    {startDate} ~ {(() => {
+                                        const d = new Date(startDate + 'T00:00:00');
+                                        d.setDate(d.getDate() + durationNights);
+                                        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                                    })()} ({durationNights}박 {durationNights + 1}일) 종일
+                                </Text>
+                            </View>
+                        )}
                     </View>
                 )}
 
-                {/* 종료시간 토글 */}
-                <TouchableOpacity
-                    onPress={() => {
-                        // [FIX] 커스텀 애니메이션 적용
-                        LayoutAnimation.configureNext({
-                            duration: 300,
-                            create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-                            update: { type: LayoutAnimation.Types.easeInEaseOut },
-                            delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity }
-                        });
-                        setEndTimeExpanded(!endTimeExpanded);
-                    }}
-                    style={{
-                        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-                        padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginBottom: 4,
-                        borderWidth: 1, borderColor: COLORS.neutral200
-                    }}
-                >
-                    <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate }}>종료 시간</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Text style={{ fontSize: 12, fontWeight: 'bold', color: COLORS.primaryMain, marginRight: 8 }}>
-                            {endDate && endTime ? `${endDate} ${endTime}` : '선택'}
-                        </Text>
-                        {endTimeExpanded ? <ChevronUp size={16} color={COLORS.neutral400} /> : <ChevronDown size={16} color={COLORS.neutral400} />}
-                    </View>
-                </TouchableOpacity>
+                {/* 종료시간 토글 - 여행 모드(durationNights > 0)일 때는 숨김 */}
+                {durationNights === 0 && (
+                    <>
+                        <TouchableOpacity
+                            onPress={() => {
+                                // [FIX] 커스텀 애니메이션 적용
+                                LayoutAnimation.configureNext({
+                                    duration: 300,
+                                    create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+                                    update: { type: LayoutAnimation.Types.easeInEaseOut },
+                                    delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity }
+                                });
+                                setEndTimeExpanded(!endTimeExpanded);
+                            }}
+                            style={{
+                                flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                                padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginBottom: 4,
+                                borderWidth: 1, borderColor: COLORS.neutral200
+                            }}
+                        >
+                            <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate }}>종료 시간</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Text style={{ fontSize: 12, fontWeight: 'bold', color: COLORS.primaryMain, marginRight: 8 }}>
+                                    {endDate && endTime ? `${endDate} ${endTime}` : '선택'}
+                                </Text>
+                                {endTimeExpanded ? <ChevronUp size={16} color={COLORS.neutral400} /> : <ChevronDown size={16} color={COLORS.neutral400} />}
+                            </View>
+                        </TouchableOpacity>
 
-                {endTimeExpanded && (
-                    <View style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: COLORS.neutral100 }}>
-                        {renderScheduleCalendar(endDate, setEndDate, endMonth, (dir) => {
-                            const newDate = new Date(endMonth);
-                            newDate.setMonth(newDate.getMonth() + (dir === 'prev' ? -1 : 1));
-                            setEndMonth(newDate);
-                        }, startDate)}
-                        {endDate && renderTimeButtons(endTime, setEndTime, endDate, endPeriod, setEndPeriod, startTime, startDate)}
-                    </View>
+                        {endTimeExpanded && (
+                            <View style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: COLORS.neutral100 }}>
+                                {renderScheduleCalendar(endDate, setEndDate, endMonth, (dir) => {
+                                    const newDate = new Date(endMonth);
+                                    newDate.setMonth(newDate.getMonth() + (dir === 'prev' ? -1 : 1));
+                                    setEndMonth(newDate);
+                                }, startDate)}
+                                {endDate && renderTimeButtons(endTime, setEndTime, endDate, endPeriod, setEndPeriod, startTime, startDate)}
+                            </View>
+                        )}
+                    </>
                 )}
             </View>
         );
@@ -814,12 +936,27 @@ const A2AScreen = () => {
             const token = await AsyncStorage.getItem('accessToken');
 
             // 시작시간/종료시간 기반으로 proposal 구성
+            // [FIX] durationNights > 0이면 endDate를 startDate + durationNights로 자동 계산
+            let finalEndDate = endDate;
+            let finalEndTime = endTime;
+            if (durationNights > 0 && startDate) {
+                const sDate = new Date(startDate + 'T00:00:00');
+                sDate.setDate(sDate.getDate() + durationNights);
+                const ey = sDate.getFullYear();
+                const em = String(sDate.getMonth() + 1).padStart(2, '0');
+                const ed = String(sDate.getDate()).padStart(2, '0');
+                finalEndDate = `${ey}-${em}-${ed}`;
+                finalEndTime = null; // 여행 모드는 종일 이벤트
+            }
             const proposalDetails = {
                 date: startDate,
-                time: startTime,
-                endDate: endDate,
-                endTime: endTime,
-                reason: `${startDate} ${startTime} 제안`  // 요청 시간을 사유에 표시
+                time: durationNights > 0 ? null : startTime,
+                endDate: finalEndDate,
+                endTime: finalEndTime,
+                duration_nights: durationNights,
+                reason: durationNights > 0
+                    ? `${startDate}부터 ${durationNights}박 ${durationNights + 1}일 제안`
+                    : `${startDate} ${startTime} 제안`
             };
 
             const response = await fetch(`${API_BASE}/a2a/session/${selectedLog.id}/reschedule`, {
@@ -868,6 +1005,7 @@ const A2AScreen = () => {
                 setEndTime(null);
                 setStartPeriod(null);
                 setEndPeriod(null);
+                setDurationNights(0);
 
                 fetchA2ALogs(false);
             } else {
@@ -1599,10 +1737,11 @@ const A2AScreen = () => {
         // [FIX] 튜토리얼용 로그는 API 호출 차단
         if (isTutorialActive && selectedLog.id.startsWith('tutorial_')) {
             // 즉시 로컬 상태에서 해당 카드 제거 시늉
+            setRejectedLogTitle(selectedLog.title || '일정');
             setLogs(prevLogs => prevLogs.filter(log => log.id !== selectedLog.id));
             setShowRejectConfirm(false);
             handleClose();
-            Alert.alert("알림", "약속에서 나갔습니다. (테스트)");
+            setShowRejectSuccess(true);
             return;
         }
 
@@ -1638,11 +1777,12 @@ const A2AScreen = () => {
 
             if (res.ok) {
                 // [수정] 즉시 로컬 상태에서 해당 카드 제거
+                setRejectedLogTitle(selectedLog.title || '일정');
                 setLogs(prevLogs => prevLogs.filter(log => log.id !== selectedLog.id));
                 // 처리가 완료되면 모달 닫기
                 setShowRejectConfirm(false);
                 handleClose();
-                Alert.alert("알림", "약속에서 나갔습니다.");
+                setShowRejectSuccess(true);
             } else {
                 console.error("Reject failed:", data);
                 alert(data.detail || data.error || "거절 처리에 실패했습니다.");
@@ -2310,10 +2450,10 @@ const A2AScreen = () => {
                                         </TouchableOpacity>
                                         <TouchableOpacity
                                             onPress={handleSubmitReschedule}
-                                            disabled={!startDate || !startTime || !endDate || !endTime}
+                                            disabled={durationNights > 0 ? !startDate : (!startDate || !startTime || !endDate || !endTime)}
                                             style={[
                                                 styles.confirmBtn,
-                                                (!startDate || !startTime || !endDate || !endTime) && styles.submitButtonDisabled
+                                                (durationNights > 0 ? !startDate : (!startDate || !startTime || !endDate || !endTime)) && styles.submitButtonDisabled
                                             ]}
                                             testID="btn_send_reschedule"
                                             ref={(r) => registerTarget('btn_send_reschedule', r)}
@@ -3009,6 +3149,106 @@ const A2AScreen = () => {
             </Modal>
 
 
+            {/* 거절 완료 배너 모달 */}
+            <Modal
+                visible={showRejectSuccess}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowRejectSuccess(false)}
+            >
+                <View style={{
+                    flex: 1,
+                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    padding: 20,
+                }}>
+                    <View style={{
+                        backgroundColor: COLORS.white,
+                        borderRadius: 24,
+                        padding: 24,
+                        paddingTop: 40,
+                        width: '100%',
+                        maxWidth: 320,
+                        alignItems: 'center',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 12,
+                        elevation: 5,
+                        position: 'relative',
+                    }}>
+                        {/* X 닫기 버튼 */}
+                        <TouchableOpacity
+                            style={{
+                                position: 'absolute',
+                                top: 12,
+                                right: 12,
+                                width: 28,
+                                height: 28,
+                                borderRadius: 14,
+                                backgroundColor: '#F1F5F9',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                            }}
+                            onPress={() => setShowRejectSuccess(false)}
+                        >
+                            <X size={16} color="#64748B" />
+                        </TouchableOpacity>
+
+                        {/* 빨간 원 아이콘 */}
+                        <View style={{
+                            width: 64,
+                            height: 64,
+                            borderRadius: 32,
+                            backgroundColor: '#FEE2E2',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginBottom: 20,
+                        }}>
+                            <X size={32} color="#EF4444" strokeWidth={3} />
+                        </View>
+
+                        <Text style={{
+                            fontSize: 20,
+                            fontWeight: '700',
+                            color: '#1E293B',
+                            marginBottom: 8,
+                            textAlign: 'center',
+                        }}>약속 거절 완료</Text>
+
+                        <Text style={{
+                            fontSize: 14,
+                            color: '#64748B',
+                            textAlign: 'center',
+                            lineHeight: 22,
+                            marginBottom: 28,
+                        }}>
+                            "{rejectedLogTitle}" 약속에서 나갔습니다.{'\n'}상대방에게 알림이 전송되었습니다.
+                        </Text>
+
+                        {/* 확인 버튼 */}
+                        <TouchableOpacity
+                            style={{
+                                width: '100%',
+                                paddingVertical: 14,
+                                borderRadius: 16,
+                                backgroundColor: '#EF4444',
+                                alignItems: 'center',
+                                shadowColor: '#EF4444',
+                                shadowOffset: { width: 0, height: 2 },
+                                shadowOpacity: 0.2,
+                                shadowRadius: 4,
+                                elevation: 2,
+                            }}
+                            onPress={() => { setShowRejectSuccess(false); fetchA2ALogs(); }}
+                        >
+                            <Text style={{ fontSize: 16, fontWeight: 'bold', color: 'white' }}>확인</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
         </SafeAreaView >
     );
 };
@@ -3169,9 +3409,29 @@ const styles = StyleSheet.create({
 
 
     // Confirmation View
-    confirmIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.primaryBg, justifyContent: 'center', alignItems: 'center', marginBottom: 24, marginTop: 32 },
+    confirmationContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 32,
+        paddingBottom: 32,
+        backgroundColor: COLORS.white,
+    },
+    closeButtonAbsolute: {
+        position: 'absolute',
+        top: 16,
+        right: 16,
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: COLORS.neutral100,
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 10,
+    },
+    confirmIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.primaryBg, justifyContent: 'center', alignItems: 'center', alignSelf: 'center', marginBottom: 24, marginTop: 32 },
     confirmEmoji: { fontSize: 48, marginBottom: 16, marginTop: 32 },
-    confirmTitle: { fontSize: 24, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 8 },
+    confirmTitle: { fontSize: 24, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 8, textAlign: 'center' },
     confirmDesc: { fontSize: 14, color: COLORS.neutral500, textAlign: 'center', lineHeight: 20, marginBottom: 32 },
 
     ticketCard: {
@@ -3199,7 +3459,7 @@ const styles = StyleSheet.create({
     ticketLocationTitle: { fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 2 },
     ticketLocationSub: { fontSize: 12, color: COLORS.neutral400 },
 
-    viewCalendarBtn: { width: '100%', paddingVertical: 16, borderRadius: 12, backgroundColor: COLORS.approveBtn, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', shadowColor: COLORS.primaryDark, shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
+    viewCalendarBtn: { width: '100%', paddingVertical: 16, borderRadius: 16, backgroundColor: COLORS.approveBtn, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', shadowColor: COLORS.primaryDark, shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
     viewCalendarText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
 
     // Reschedule View
