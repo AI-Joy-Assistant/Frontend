@@ -37,6 +37,10 @@ interface TutorialContextType {
     tutorialFriendAdded: boolean;
     tutorialRequestSent: boolean;
 
+    // 앱 준비 상태 (Home 화면 진입 시 true)
+    isAppReady: boolean;
+    setAppReady: () => void;
+
     // 액션
     startTutorial: () => void;
     skipTutorial: () => void;
@@ -84,6 +88,12 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
     // 튜토리얼 진행 상태
     const [tutorialFriendAdded, setTutorialFriendAdded] = useState(false);
     const [tutorialRequestSent, setTutorialRequestSent] = useState(false);
+
+    // 앱 준비 상태 (Home 화면 진입 후에만 오버레이 표시)
+    const [isAppReady, setIsAppReadyState] = useState(false);
+    const setAppReady = useCallback(() => {
+        setIsAppReadyState(true);
+    }, []);
 
     // 액션 콜백 저장소
     const actionCallbacks = useRef<Record<string, () => void>>({});
@@ -414,6 +424,10 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
         currentStepData,
         currentSubStep,
         isCompleted,
+
+        // 앱 준비 상태
+        isAppReady,
+        setAppReady,
 
         // 튜토리얼용 데이터
         ghostFriend: TUTORIAL_GUIDE,
