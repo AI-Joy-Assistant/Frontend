@@ -1452,8 +1452,8 @@ const A2AScreen = () => {
     };
 
     // [NEW] 아바타 유효성 검사 (랜덤 이미지 필터링)
-    const isValidAvatar = (url: string | null | undefined) => {
-        if (!url) return false;
+    const isValidAvatar = (url: any) => {
+        if (!url || typeof url !== 'string') return false;
         if (url.includes('picsum.photos')) return false;
         if (url.includes('random')) return false;
         if (url.includes('placeholder')) return false;

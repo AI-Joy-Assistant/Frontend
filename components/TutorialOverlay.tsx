@@ -28,6 +28,7 @@ const TutorialOverlay: React.FC = () => {
         completeTutorial,
         targetRefs,
         triggerCurrentAction,
+        isAppReady,
     } = useTutorial();
 
     // 스킵 확인 모달 상태
@@ -104,7 +105,7 @@ const TutorialOverlay: React.FC = () => {
     }, [currentSubStep, nextSubStep]);
 
     // 렌더링 조건 체크
-    if (!isTutorialActive || !currentSubStep || !currentStepData) {
+    if (!isTutorialActive || !currentSubStep || !currentStepData || !isAppReady) {
         return null;
     }
 
@@ -117,7 +118,7 @@ const TutorialOverlay: React.FC = () => {
         const screenHeight = Dimensions.get('window').height;
         const tooltipHeight = 160;
         const safeTop = insets.top + 10;
-        const safeBottom = insets.bottom + 90;
+        const safeBottom = insets.bottom + 140;
 
         const baseStyle: any = {
             position: 'absolute',
@@ -476,26 +477,26 @@ const styles = StyleSheet.create({
     },
     modalCancelBtn: {
         flex: 1,
-        paddingVertical: 12,
+        paddingVertical: 16,
         borderRadius: 8,
         backgroundColor: COLORS.neutral100 || '#F1F5F9',
         alignItems: 'center',
     },
     modalCancelText: {
         color: COLORS.neutralSlate || '#334155',
-        fontSize: 14,
+        fontSize: 16,
         fontWeight: '600',
     },
     modalConfirmBtn: {
         flex: 1,
-        paddingVertical: 12,
+        paddingVertical: 16,
         borderRadius: 8,
         backgroundColor: COLORS.primaryDark,
         alignItems: 'center',
     },
     modalConfirmText: {
         color: COLORS.white,
-        fontSize: 14,
+        fontSize: 16,
         fontWeight: '600',
     },
 });

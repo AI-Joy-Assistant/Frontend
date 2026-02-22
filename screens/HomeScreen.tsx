@@ -116,8 +116,14 @@ export default function HomeScreen() {
     currentSubStep,
     nextSubStep,
     registerActionCallback,
-    unregisterActionCallback
+    unregisterActionCallback,
+    setAppReady,
   } = useTutorial();
+
+  // 앱이 Home 화면에 진입했음을 튜토리얼에 알림 (Splash/Login에서 오버레이 방지)
+  useEffect(() => {
+    setAppReady();
+  }, []);
 
   // homeStore에서 전역 상태 구독
   const homeState = useSyncExternalStore(

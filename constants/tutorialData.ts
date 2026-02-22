@@ -133,15 +133,8 @@ export const TUTORIAL_STEPS: TutorialStepData[] = [
             },
             {
                 id: 'add_participant',
-                message: '참여자 추가(+) 버튼을 눌러 친구를 추가해보세요.',
+                message: '참여자 추가(+) 버튼을 눌러 JOYNER 가이드를 추가해보세요.',
                 targetId: 'btn_add_participant',
-                position: 'bottom',
-                action: 'click'
-            },
-            {
-                id: 'select_friend',
-                message: 'JOYNER 가이드를 선택하여 약속 상대로 추가해주세요.',
-                targetId: 'checkbox_friend_select',
                 position: 'bottom',
                 action: 'click'
             },

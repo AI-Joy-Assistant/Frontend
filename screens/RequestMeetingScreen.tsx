@@ -165,6 +165,10 @@ const RequestMeetingScreen = () => {
     const [tempDurationHour, setTempDurationHour] = useState(1);
     const [tempDurationMinute, setTempDurationMinute] = useState(0);
 
+    // selectedFriends 최신 값을 useEffect 클로저 내에서 읽기 위한 ref
+    const selectedFriendsRef = useRef<string[]>(selectedFriends);
+    useEffect(() => { selectedFriendsRef.current = selectedFriends; }, [selectedFriends]);
+
     const totalParticipants = selectedFriends.length + 1;
     const hours = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     const minutes = [0, 1, 2, 3, 4, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
@@ -251,20 +255,6 @@ const RequestMeetingScreen = () => {
         return `${parseInt(month)}월 ${parseInt(day)}일`;
     };
 
-    // Tutorial: 친구 성공적 추가 시 다음 단계로 이동
-    useEffect(() => {
-        if (isTutorialActive && currentStep === 'CREATE_REQUEST' && currentSubStep?.id === 'select_friend') {
-            // 친구가 선택되어 있으면 모달 닫고 다음 단계로
-            if (selectedFriends.includes(ghostFriend.id)) {
-                // 먼저 모달 닫기
-                setShowFriendModal(false);
-                // 모달 닫힌 후 충분한 딜레이 후에 다음 단계로
-                setTimeout(() => {
-                    nextSubStep();
-                }, 500);
-            }
-        }
-    }, [selectedFriends, isTutorialActive, currentStep, currentSubStep, ghostFriend.id, nextSubStep]);
 
     // ✅ [NEW] 튜토리얼: explain_analyze 단계에서 분석 버튼으로 자동 스크롤
     useEffect(() => {
@@ -280,17 +270,23 @@ const RequestMeetingScreen = () => {
     useEffect(() => {
         if (!isTutorialActive) return;
 
-        // "참여자 추가" 버튼 클릭 콜백 - 친구 모달 열기
+        // "참여자 추가" 버튼 클릭 콜백 - 조이너 가이드 자동 추가
         registerActionCallback('btn_add_participant', () => {
+            // 모달 열기
             setShowFriendModal(true);
-            setTimeout(() => nextSubStep(), 300);
-        });
-
-        // "JOYNER 가이드 선택" 체크박스 클릭 콜백
-        registerActionCallback('checkbox_friend_select', () => {
-            // toggleFriendSelection을 사용하여 친구 추가 (hasAnalyzed 리셋 포함)
-            toggleFriendSelection(ghostFriend.id);
-            // 선택 후 useEffect에서 selectedFriends 변경 감지하여 다음 단계 진행
+            // 잠시 후 조이너 가이드 자동 선택 + 모달 닫기 + 다음 단계
+            setTimeout(() => {
+                // ref로 최신 selectedFriends 읽기 (클로저 stale 문제 방지)
+                const current = selectedFriendsRef.current;
+                if (!current.includes(ghostFriend.id)) {
+                    setSelectedFriends([...current, ghostFriend.id]);
+                }
+                setHasAnalyzed(false);
+                setTimeout(() => {
+                    setShowFriendModal(false);
+                    setTimeout(() => nextSubStep(), 300);
+                }, 500);
+            }, 500);
         });
 
         // "AI 분석" 버튼 클릭 콜백
@@ -316,7 +312,6 @@ const RequestMeetingScreen = () => {
 
         return () => {
             unregisterActionCallback('btn_add_participant');
-            unregisterActionCallback('checkbox_friend_select');
             unregisterActionCallback('btn_analyze_schedule');
             unregisterActionCallback('section_ai_recommendations');
             unregisterActionCallback('btn_send_request');
@@ -416,8 +411,9 @@ const RequestMeetingScreen = () => {
     useEffect(() => {
         if (isTutorialActive && currentStep === 'CREATE_REQUEST') {
             // 튜토리얼 진입 시 선택된 친구가 있다면 초기화 (단, 이미 사용자가 선택 작업을 진행 중인 경우는 제외해야 함)
-            // 여기서는 currentSubStep이 'select_friend' 이전이거나 초반일 때만 초기화
-            if (currentSubStep?.id === 'go_to_request' || currentSubStep?.id === 'select_friend') {
+            // 여기서는 최초 진입 단계(go_to_request)에서만 초기화
+            // add_participant 단계에서 초기화하면 가이드 추가 직후 리셋되는 버그 발생
+            if (currentSubStep?.id === 'go_to_request' || currentSubStep?.id === 'request_page_intro') {
                 // 강제로 초기화하여 "이미 선택됨" 버그 방지
                 // 단, 무한 루프 주의. selectedFriends가 비어있지 않을 때만.
                 if (selectedFriends.length > 0) setSelectedFriends([]);
@@ -456,7 +452,7 @@ const RequestMeetingScreen = () => {
     const buttonScale = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
-        if (isTutorialActive && currentStep === 'CREATE_REQUEST' && currentSubStep?.id === 'select_friend') {
+        if (isTutorialActive && currentStep === 'CREATE_REQUEST' && currentSubStep?.id === 'add_participant') {
             const pulse = Animated.loop(
                 Animated.sequence([
                     Animated.timing(buttonScale, {
@@ -865,7 +861,7 @@ const RequestMeetingScreen = () => {
                                 return (
                                     <View key={id} style={styles.participantChip}>
                                         {friend.avatar ? (
-                                            <Image source={{ uri: friend.avatar }} style={styles.participantAvatar} />
+                                            <Image source={typeof friend.avatar === 'string' ? { uri: friend.avatar } : friend.avatar} style={styles.participantAvatar} />
                                         ) : (
                                             <View style={[styles.participantAvatar, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' }]}>
                                                 <User size={16} color={COLORS.primaryMain} />
@@ -889,7 +885,7 @@ const RequestMeetingScreen = () => {
                                     }}
                                     style={[
                                         styles.addParticipantButton,
-                                        isTutorialActive && currentSubStep?.id === 'select_friend' && {
+                                        isTutorialActive && currentSubStep?.id === 'add_participant' && {
                                             borderColor: COLORS.primaryMain,
                                             borderWidth: 2,
                                             backgroundColor: '#EDE9FE', // Light purple bg
@@ -905,7 +901,7 @@ const RequestMeetingScreen = () => {
                                 >
                                     <Plus
                                         size={24}
-                                        color={isTutorialActive && currentSubStep?.id === 'select_friend' ? COLORS.primaryMain : COLORS.neutralGray}
+                                        color={isTutorialActive && currentSubStep?.id === 'add_participant' ? COLORS.primaryMain : COLORS.neutralGray}
                                     />
                                 </TouchableOpacity>
                             </Animated.View>

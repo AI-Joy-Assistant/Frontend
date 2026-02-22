@@ -12,6 +12,7 @@ import { API_BASE } from '../constants/config';
 import { calendarService } from '../services/calendarService';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Bot, Settings, LogOut, Trash2, ChevronRight, User as UserIcon, Calendar as CalendarIcon, Check, AlertCircle, Info, BookOpen, Users } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { getBackendUrl } from '../utils/environment';
 import { dataCache, CACHE_KEYS } from '../utils/dataCache';
@@ -720,7 +721,7 @@ const MyPageScreen = () => {
                   }}
                 >
                   <View style={styles.tutorialSelectItemIcon}>
-                    <Users size={20} color={COLORS.primaryMain} />
+                    <Ionicons name="people" size={20} color={COLORS.primaryMain} />
                   </View>
                   <View style={styles.tutorialSelectItemText}>
                     <Text style={styles.tutorialSelectItemTitle}>친구 추가하기</Text>
@@ -736,7 +737,7 @@ const MyPageScreen = () => {
                   }}
                 >
                   <View style={styles.tutorialSelectItemIcon}>
-                    <CalendarIcon size={20} color={COLORS.primaryMain} />
+                    <Ionicons name="add-circle" size={20} color={COLORS.primaryMain} />
                   </View>
                   <View style={styles.tutorialSelectItemText}>
                     <Text style={styles.tutorialSelectItemTitle}>AI로 일정 조율하기</Text>
@@ -752,7 +753,7 @@ const MyPageScreen = () => {
                   }}
                 >
                   <View style={styles.tutorialSelectItemIcon}>
-                    <Check size={20} color={COLORS.primaryMain} />
+                    <Ionicons name="calendar" size={20} color={COLORS.primaryMain} />
                   </View>
                   <View style={styles.tutorialSelectItemText}>
                     <Text style={styles.tutorialSelectItemTitle}>요청 확인하기</Text>
@@ -768,7 +769,7 @@ const MyPageScreen = () => {
                   }}
                 >
                   <View style={styles.tutorialSelectItemIcon}>
-                    <UserIcon size={20} color={COLORS.primaryMain} />
+                    <Ionicons name="home" size={20} color={COLORS.primaryMain} />
                   </View>
                   <View style={styles.tutorialSelectItemText}>
                     <Text style={styles.tutorialSelectItemTitle}>홈화면 둘러보기</Text>
@@ -784,7 +785,7 @@ const MyPageScreen = () => {
                   }}
                 >
                   <View style={styles.tutorialSelectItemIcon}>
-                    <Bot size={20} color={COLORS.primaryMain} />
+                    <Ionicons name="chatbubble" size={20} color={COLORS.primaryMain} />
                   </View>
                   <View style={styles.tutorialSelectItemText}>
                     <Text style={styles.tutorialSelectItemTitle}>채팅 화면 둘러보기</Text>
@@ -800,7 +801,7 @@ const MyPageScreen = () => {
                   }}
                 >
                   <View style={styles.tutorialSelectItemIcon}>
-                    <Users size={20} color={COLORS.primaryMain} />
+                    <Ionicons name="people" size={20} color={COLORS.primaryMain} />
                   </View>
                   <View style={styles.tutorialSelectItemText}>
                     <Text style={styles.tutorialSelectItemTitle}>친구 화면 둘러보기</Text>
