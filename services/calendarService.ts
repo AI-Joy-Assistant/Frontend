@@ -264,9 +264,15 @@ class CalendarService {
           );
 
           const dedupedAppEvents = appEvents.filter((e: any) => {
-            // Google 연동 상태에서, DB에만 남은 고아(원격 삭제) Google 이벤트는 숨김
+            // Google 연동 상태에서, app DB 이벤트가 Google Calendar에도 존재하면 제거 (Google 버전 우선)
             const appGoogleEventId = (e?.google_event_id || '').trim();
             const isGoogleBackedAppRow = !!appGoogleEventId && !appGoogleEventId.startsWith('app_');
+
+            // [FIX] google_event_id가 Google 이벤트 목록에 있으면 → 중복이므로 제거
+            if (isGoogleBackedAppRow && googleEventIdSet.has(appGoogleEventId)) {
+              return false;
+            }
+            // google_event_id가 Google 이벤트 목록에 없으면 → 고아(원격 삭제) 이벤트이므로 제거
             if (isGoogleBackedAppRow && !googleEventIdSet.has(appGoogleEventId)) {
               return false;
             }
