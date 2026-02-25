@@ -674,7 +674,7 @@ const A2AScreen = () => {
         let originalTimeDisplay = '미정';
         if (originalDate && originalStartTime) {
             const dateFormatted = formatDateShort(originalDate);
-            const endPart = originalEndTime ? `~${originalEndTime}` : '~미정';
+            const endPart = originalEndTime ? `~ ${originalEndTime}` : '~미정';
             originalTimeDisplay = `${dateFormatted} ${originalStartTime}${endPart}`;
         }
 
@@ -682,7 +682,7 @@ const A2AScreen = () => {
         let newTimeDisplay = '선택';
         if (startDate && startTime) {
             const dateFormatted = formatDateShort(startDate);
-            const endPart = endTime ? `~${endTime}` : '~미정';
+            const endPart = endTime ? `~ ${endTime}` : '~미정';
             newTimeDisplay = `${dateFormatted} ${startTime}${endPart}`;
         }
 
@@ -2377,7 +2377,7 @@ const A2AScreen = () => {
                                                     {(() => {
                                                         const d = (selectedLog?.details || {}) as any;
                                                         return confirmationType === 'reschedule' && startTime
-                                                            ? `${startTime}${endTime ? `~${endTime}` : ''}`
+                                                            ? `${startTime}${endTime ? `~ ${endTime}` : ''}`
                                                             : (d.proposedTime?.match(/\d{1,2}:\d{2}/)?.[0] || d.proposedTime || '시간 미정');
                                                     })()}
                                                 </Text>
@@ -2613,6 +2613,10 @@ const A2AScreen = () => {
                                                                         if (durationNights >= 1 && startDate) {
                                                                             try {
                                                                                 const startDateObj = new Date(startDate);
+                                                                                // [FIX] Invalid Date 방어 (데이터 로딩 중 NaN-NaN-NaN 표시 방지)
+                                                                                if (isNaN(startDateObj.getTime())) {
+                                                                                    return (selectedLog as any).timeRange || '확정 중...';
+                                                                                }
                                                                                 const endDateObj = new Date(startDateObj);
                                                                                 endDateObj.setDate(startDateObj.getDate() + durationNights);
 
@@ -2622,7 +2626,7 @@ const A2AScreen = () => {
 
                                                                                 return `${formatDate(startDateObj)} ~ ${formatDate(endDateObj)}`;
                                                                             } catch {
-                                                                                return startDate;
+                                                                                return (selectedLog as any).timeRange || startDate;
                                                                             }
                                                                         }
 
@@ -2634,7 +2638,7 @@ const A2AScreen = () => {
                                                                             return (selectedLog as any).timeRange || '협상 중';
                                                                         }
 
-                                                                        const timeRange = endTime ? `${startTime}~${endTime}` : startTime;
+                                                                        const timeRange = endTime ? `${startTime} ~ ${endTime}` : startTime;
                                                                         return startDate ? `${startDate} ${timeRange}` : timeRange;
                                                                     })()}
                                                                 </Text>

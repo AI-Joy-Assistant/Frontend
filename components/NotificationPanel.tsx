@@ -59,7 +59,7 @@ interface PendingRequest {
 
 interface Notification {
     id: string;
-    type: 'schedule_rejected' | 'schedule_rejection' | 'friend_request' | 'friend_accepted' | 'friend_rejected' | 'general' | 'schedule_confirmed';
+    type: 'schedule_rejected' | 'schedule_rejection' | 'friend_request' | 'friend_accepted' | 'friend_rejected' | 'general' | 'schedule_confirmed' | 'schedule_reschedule';
     title: string;
     message: string;
     created_at: string;
@@ -219,6 +219,10 @@ export default function NotificationPanel({
                 icon = <Check size={16} color={COLORS.green400} />;
                 bgColor = styles.notificationAccepted;
                 break;
+            case 'schedule_reschedule':
+                icon = <Calendar size={16} color={COLORS.orange400} />;
+                bgColor = styles.notificationReschedule;
+                break;
         }
 
         const handleNotificationPress = () => {
@@ -239,6 +243,13 @@ export default function NotificationPanel({
                 case 'schedule_confirmed':
                     if (item.metadata?.session_id) {
                         onNavigateToA2A(item.metadata.session_id);
+                    }
+                    break;
+                case 'schedule_reschedule':
+                    if (item.metadata?.session_id) {
+                        onNavigateToA2A(item.metadata.session_id);
+                    } else if (item.metadata?.thread_id) {
+                        onNavigateToA2A(item.metadata.thread_id);
                     }
                     break;
                 default:
@@ -563,6 +574,9 @@ const styles = StyleSheet.create({
     },
     notificationAccepted: {
         backgroundColor: COLORS.green50,
+    },
+    notificationReschedule: {
+        backgroundColor: COLORS.orange50,
     },
     unread: {
         // removed left border
