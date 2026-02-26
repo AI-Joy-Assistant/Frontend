@@ -1441,17 +1441,25 @@ const A2AScreen = () => {
         // A2AScreen에서 필요한 메시지 구독
         const unsubscribe = WebSocketService.subscribe(
             'A2AScreen',
-            ['a2a_request', 'a2a_rejected', 'a2a_message', 'a2a_status_changed'],
+            ['a2a_request', 'a2a_rejected', 'a2a_message', 'a2a_status_changed', 'reconnected'],
             async (data) => {
+                // [NEW] 재연결 시 전체 새로고침
+                if (data.type === 'reconnected') {
+                    console.log('[WS:A2A] 🔄 재연결 감지 - 전체 새로고침');
+                    dataCache.invalidate('a2a:sessions');
+                    fetchA2ALogs(false, false);
+                    return;
+                }
+
                 if (data.type === "a2a_request") {
                     console.log("[WS:A2A] 새 A2A 요청:", data.from_user);
-                    fetchA2ALogs(false);
+                    fetchA2ALogs(false, false); // [FIX] 캐시 무시
                 } else if (data.type === "a2a_rejected") {
                     console.log("[WS:A2A] 거절 알림:", data.rejected_by_name);
-                    fetchA2ALogs(false);
+                    fetchA2ALogs(false, false); // [FIX] 캐시 무시
                 } else if (data.type === "a2a_message") {
                     console.log("[WS:A2A] 새 협상 메시지:", data.sender_name, data.message);
-                    fetchA2ALogs(false);
+                    fetchA2ALogs(false, false); // [FIX] 캐시 무시
 
                     // [실시간 업데이트] 열린 모달의 세부 정보도 새로고침
                     const currentLog = selectedLogRef.current;
@@ -1478,7 +1486,7 @@ const A2AScreen = () => {
                     }
                 } else if (data.type === "a2a_status_changed") {
                     console.log("[WS:A2A] 상태 변경:", data.new_status);
-                    fetchA2ALogs(false);
+                    fetchA2ALogs(false, false); // [FIX] 캐시 무시
                 }
             }
         );

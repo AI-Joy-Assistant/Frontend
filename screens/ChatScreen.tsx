@@ -638,8 +638,16 @@ export default function ChatScreen() {
     // ChatScreen에서 필요한 메시지 구독
     const unsubscribe = WebSocketService.subscribe(
       'ChatScreen',
-      ['new_message', 'a2a_request'],
+      ['new_message', 'a2a_request', 'reconnected'],
       (data) => {
+        // [NEW] 재연결 시 채팅 히스토리 새로고침
+        if (data.type === 'reconnected') {
+          console.log('[WS:Chat] 🔄 재연결 감지 - 채팅 히스토리 새로고침');
+          loadChatHistory(false);
+          fetchSessions(false, false);
+          return;
+        }
+
         if (data.type === "new_message") {
           loadChatHistory(false);
           setTimeout(() => {

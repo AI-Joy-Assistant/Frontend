@@ -320,9 +320,17 @@ const FriendsScreen = () => {
     // FriendsScreen에서 필요한 메시지 구독
     const unsubscribe = WebSocketService.subscribe(
       'FriendsScreen',
-      ['friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'user_info_updated'],
+      ['friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'user_info_updated', 'reconnected'],
       (data) => {
         console.log(`[WS:Friends] Event: ${data.type}`);
+
+        // [NEW] 재연결 시 전체 새로고침
+        if (data.type === 'reconnected') {
+          console.log('[WS:Friends] 🔄 재연결 감지 - 전체 새로고침');
+          friendsStore.invalidate();
+          friendsStore.refresh();
+          return;
+        }
 
         // [DEBUG] 친구 삭제 이벤트 수신 확인용 Alert
         if (data.type === 'friend_deleted') {

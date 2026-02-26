@@ -370,9 +370,21 @@ export default function HomeScreen() {
     // HomeScreen에서 필요한 메시지만 구독
     const unsubscribe = WebSocketService.subscribe(
       'HomeScreen',
-      ['a2a_request', 'friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'notification', 'a2a_status_changed', 'user_info_updated'],
+      ['a2a_request', 'friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'notification', 'a2a_status_changed', 'user_info_updated', 'reconnected'],
       (data) => {
         console.log("[WS:Home] WS Event:", data.type);
+
+        // [NEW] 재연결 시 모든 데이터 강제 새로고침
+        if (data.type === 'reconnected') {
+          console.log('[WS:Home] 🔄 재연결 감지 - 전체 데이터 새로고침');
+          homeStore.invalidate();
+          homeStore.refresh();
+          friendsStore.invalidate();
+          friendsStore.refresh();
+          calendarService.invalidateEventsCache();
+          fetchSchedules(true);
+          return;
+        }
 
         // [FIX] 친구 삭제 시 즉시 로컬 상태 업데이트
         if (data.type === 'friend_deleted' && data.deleted_by) {
@@ -385,8 +397,8 @@ export default function HomeScreen() {
         friendsStore.invalidate();
         friendsStore.refresh();
 
-        // [FIX] A2A 상태 변경 시 캘린더 이벤트 캐시도 무효화 후 강제 갱신
-        if (data.type === 'a2a_status_changed' || data.type === 'a2a_request') {
+        // [FIX] 모든 A2A 관련 이벤트에서 캘린더도 갱신 (승인/거절/상태변경 모두)
+        if (data.type === 'a2a_status_changed' || data.type === 'a2a_request' || data.type === 'notification') {
           calendarService.invalidateEventsCache();
           fetchSchedules(true);
         }
@@ -1447,7 +1459,14 @@ export default function HomeScreen() {
           const scheduleInfo = responseData.schedule_info;
           console.log('[HomeScreen A2A Debug] Schedule info:', scheduleInfo);
 
-          if (scheduleInfo?.session_ids?.length > 0) {
+          if (responseData.a2a_started) {
+            // [FAST PATH] A2A가 백그라운드에서 실행 중 - 즉시 성공 처리
+            showAlert(
+              '일정 요청 완료',
+              responseData.ai_response || '참여자들에게 일정 요청이 전송되었습니다.',
+              () => navigation.navigate('A2A', { forceRefresh: true })
+            );
+          } else if (scheduleInfo?.session_ids?.length > 0) {
             const sessionId = scheduleInfo.session_ids[0];
             // 성공 피드백 후 A2A 화면으로 이동
             // 성공 피드백 후 A2A 화면으로 이동
