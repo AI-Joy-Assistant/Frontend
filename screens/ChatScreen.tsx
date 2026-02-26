@@ -632,8 +632,7 @@ export default function ChatScreen() {
   useEffect(() => {
     if (!userId) return;
 
-    // 싱글톤 서비스 연결 (이미 연결되어 있으면 스킵)
-    WebSocketService.connect(userId);
+    // [CHANGED] connect는 App.tsx에서 중앙 관리 — 여기서는 구독만
 
     // ChatScreen에서 필요한 메시지 구독
     const unsubscribe = WebSocketService.subscribe(

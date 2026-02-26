@@ -1164,86 +1164,47 @@ const A2AScreen = () => {
             }
 
 
-            if (useCache) {
-                const cached = dataCache.get<A2ALog[]>(cacheKey);
-                if (cached.exists && cached.data) {
-                    setLogs(cached.data);
-                    if (showLoading) setLoading(false);
+            // 시간 형식 변환 함수 (MM월 DD일 오전/오후 HH시 → YYYY-MM-DD HH:MM)
+            const formatTimeRange = (date: string | undefined, time: string | undefined): string => {
+                if (!date && !time) return "미정";
 
-                    if (!cached.isStale) return; // 신선하면 종료
-                    if (dataCache.isPending(cacheKey)) return; // 이미 요청 중
+                const now = new Date();
+                const currentYear = now.getFullYear();
+
+                let formattedDate = date || '';
+                let formattedTime = time || '';
+
+                // MM월 DD일 형식 → YYYY-MM-DD
+                if (date) {
+                    const koreanMatch = date.match(/(\d{1,2})월\s*(\d{1,2})일/);
+                    if (koreanMatch) {
+                        const month = String(koreanMatch[1]).padStart(2, '0');
+                        const day = String(koreanMatch[2]).padStart(2, '0');
+                        formattedDate = `${currentYear}-${month}-${day}`;
+                    }
                 }
-            }
 
-            // 중복 요청 방지
-            if (dataCache.isPending(cacheKey)) return;
-            dataCache.markPending(cacheKey);
-
-            const token = await AsyncStorage.getItem('accessToken');
-
-            const response = await fetch(`${API_BASE}/a2a/sessions`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                    'Cache-Control': 'no-cache', // 서버 캐시 무시
-                },
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-
-                // [DEBUG] 모든 세션의 날짜/시간 데이터 확인
-                console.log('[A2A DEBUG] 세션 수:', data.sessions?.length);
-                data.sessions?.forEach((session: any, index: number) => {
-                    const d = session.details || {};
-                    console.log(`[A2A DEBUG] 세션 ${index}:`, {
-                        id: session.id?.substring(0, 8),
-                        participant_names: session.participant_names,
-                        proposedDate: d.proposedDate,
-                        proposedTime: d.proposedTime,
-                        requestedDate: d.requestedDate,
-                        requestedTime: d.requestedTime,
-                        duration_nights: d.duration_nights,
-                        purpose: d.purpose,
-                    });
-                });
-
-                // 시간 형식 변환 함수 (MM월 DD일 오전/오후 HH시 → YYYY-MM-DD HH:MM)
-                const formatTimeRange = (date: string | undefined, time: string | undefined): string => {
-                    if (!date && !time) return "미정";
-
-                    const now = new Date();
-                    const currentYear = now.getFullYear();
-
-                    let formattedDate = date || '';
-                    let formattedTime = time || '';
-
-                    // MM월 DD일 형식 → YYYY-MM-DD
-                    if (date) {
-                        const koreanMatch = date.match(/(\d{1,2})월\s*(\d{1,2})일/);
-                        if (koreanMatch) {
-                            const month = String(koreanMatch[1]).padStart(2, '0');
-                            const day = String(koreanMatch[2]).padStart(2, '0');
-                            formattedDate = `${currentYear}-${month}-${day}`;
-                        }
+                // 오전/오후 HH시 → HH:MM
+                if (time) {
+                    const timeMatch = time.match(/(오전|오후)\s*(\d{1,2})시/);
+                    if (timeMatch) {
+                        let hour = parseInt(timeMatch[2]);
+                        if (timeMatch[1] === '오후' && hour !== 12) hour += 12;
+                        if (timeMatch[1] === '오전' && hour === 12) hour = 0;
+                        formattedTime = `${String(hour).padStart(2, '0')}:00`;
                     }
+                }
 
-                    // 오전/오후 HH시 → HH:MM
-                    if (time) {
-                        const timeMatch = time.match(/(오전|오후)\s*(\d{1,2})시/);
-                        if (timeMatch) {
-                            let hour = parseInt(timeMatch[2]);
-                            if (timeMatch[1] === '오후' && hour !== 12) hour += 12;
-                            if (timeMatch[1] === '오전' && hour === 12) hour = 0;
-                            formattedTime = `${String(hour).padStart(2, '0')}:00`;
-                        }
-                    }
+                return `${formattedDate} ${formattedTime}`.trim() || "미정";
+            };
 
-                    return `${formattedDate} ${formattedTime}`.trim() || "미정";
-                };
-
-                const mappedLogs: A2ALog[] = data.sessions
+            const mapSessionsToLogs = (sessions: any[]): A2ALog[] => {
+                return (sessions || [])
                     .filter((session: any) => {
+                        // 거절된 일정은 목록에서 완전히 제외
+                        const status = String(session?.status || '').toLowerCase();
+                        if (status === 'rejected') return false;
+
                         // left_participants에 현재 사용자가 포함되어 있으면 목록에서 제외
                         const leftParticipants = session.details?.left_participants || [];
                         const isCurrentUserLeft = leftParticipants.includes(currentUserId);
@@ -1257,9 +1218,8 @@ const A2AScreen = () => {
                             return {
                                 id: session.id,
                                 title: session.summary || session.title || session.details?.purpose || "일정 조율",
-                                status: session.status === 'completed' ? 'COMPLETED'
-                                    : session.status === 'rejected' ? 'REJECTED'
-                                        : 'IN_PROGRESS',
+                                // 상태를 축약하지 않고 그대로 보존 (pending_approval 즉시 반영)
+                                status: String(session.status || 'in_progress'),
                                 summary: session.participant_names?.join(', ') || "참여자 없음",
                                 details: (() => {
                                     try {
@@ -1269,27 +1229,73 @@ const A2AScreen = () => {
                                         const time = d.proposedTime || d.requestedTime || d.time || '';
                                         const endDate = d.proposedEndDate || d.endDate || '';
                                         const endTime = d.proposedEndTime || d.endTime || '';
+                                        const statusLower = String(session.status || '').toLowerCase();
+                                        const hasFinalizedTime = ['completed', 'pending_approval'].includes(statusLower);
+                                        const baseAttendees: any[] = (d.attendees && d.attendees.length > 0) ? d.attendees : (() => {
+                                            const attendees: any[] = [];
+                                            const proposerId = String(session.initiator_user_id || 'initiator');
+                                            const proposerName = d.proposer || '요청자';
+                                            const proposerAvatar = d.proposerAvatar || null;
+
+                                            attendees.push({
+                                                id: proposerId,
+                                                name: proposerName,
+                                                avatar: proposerAvatar,
+                                                isCurrentUser: currentUserId ? String(currentUserId) === proposerId : false,
+                                                // 제안자는 기본 승인 처리
+                                                is_approved: true
+                                            });
+
+                                            const names = session.participant_names || [];
+                                            names.forEach((name: string, idx: number) => {
+                                                if (!name || name === proposerName) return;
+                                                attendees.push({
+                                                    id: `temp_${idx}`,
+                                                    name,
+                                                    avatar: null,
+                                                    isCurrentUser: false,
+                                                    is_approved: false
+                                                });
+                                            });
+
+                                            return attendees;
+                                        })();
+
+                                        // 초기 렌더에서도 확정 대기가 비지 않도록 현재 사용자를 보정 추가
+                                        const attendees = (() => {
+                                            const arr = [...baseAttendees];
+                                            const hasCurrentUser = arr.some((a: any) =>
+                                                a?.isCurrentUser === true ||
+                                                (currentUserId && String(a?.id) === String(currentUserId))
+                                            );
+
+                                            if (!hasCurrentUser && currentUserId && statusLower !== 'completed') {
+                                                arr.push({
+                                                    id: String(currentUserId),
+                                                    name: '나',
+                                                    avatar: null,
+                                                    isCurrentUser: true,
+                                                    is_approved: false
+                                                });
+                                            }
+
+                                            if (statusLower === 'completed') {
+                                                return arr.map((a: any) => ({ ...a, is_approved: true }));
+                                            }
+
+                                            return arr;
+                                        })();
                                         return {
                                             ...d,
                                             proposedDate: String(date),
                                             proposedTime: String(time),
                                             proposedEndDate: String(endDate),
                                             proposedEndTime: String(endTime),
-                                            // [OPTIMIZATION-AGGRESSIVE] 리스트 API에 attendees가 없거나 빈 배열이면 이름/이미지로 합성하여 즉시 표시
-                                            attendees: (d.attendees && d.attendees.length > 0) ? d.attendees : (() => {
-                                                const names = session.participant_names || [];
-                                                return names.map((name: string, idx: number) => ({
-                                                    id: `temp_${idx}`,
-                                                    name: name,
-                                                    avatar: null,
-                                                    // [FIX] 완료된 일정이면 전원 승인 상태로 표시
-                                                    is_approved: session.status === 'completed' ? true : undefined
-                                                }));
-                                            })(),
-                                            // [OPTIMIZATION-AGGRESSIVE] 완료된 일정의 경우 agreedDate가 없으면 proposedDate로 백필 (확정 시간 즉시 표시용)
-                                            agreedDate: d.agreedDate || (session.status === 'completed' ? d.proposedDate || d.date : undefined),
-                                            agreedTime: d.agreedTime || (session.status === 'completed' ? d.proposedTime || d.time : undefined),
-                                            agreedEndTime: d.agreedEndTime || (session.status === 'completed' ? d.proposedEndTime || d.endTime : undefined),
+                                            attendees,
+                                            // [OPTIMIZATION] pending_approval/completed는 즉시 "협상 확정 시간" 카드가 보이도록 백필
+                                            agreedDate: d.agreedDate || (hasFinalizedTime ? d.proposedDate || d.date : undefined),
+                                            agreedTime: d.agreedTime || (hasFinalizedTime ? d.proposedTime || d.time : undefined),
+                                            agreedEndTime: d.agreedEndTime || (hasFinalizedTime ? d.proposedEndTime || d.endTime : undefined),
                                         };
                                     } catch (e) { return session.details || {}; }
                                 })(),
@@ -1331,7 +1337,7 @@ const A2AScreen = () => {
                                         const time = d.proposedTime || d.requestedTime || d.time || '';
                                         const endTime = d.proposedEndTime || d.endTime || '';
 
-                                        let timeStr = formatTimeRange(date, time); // This is safe as formatTimeRange handles errors? Let's hope.
+                                        let timeStr = formatTimeRange(date, time);
 
                                         // Append end time if available
                                         if (endTime && timeStr !== "\ubbf8\uc815" && !timeStr.includes('~')) {
@@ -1359,9 +1365,75 @@ const A2AScreen = () => {
                             return null;
                         }
                     })
-                    .filter((item): item is A2ALog => item !== null);
-                setLogs(mappedLogs);
-                dataCache.set(cacheKey, mappedLogs, 5 * 60 * 1000);
+                    .filter((item) => item !== null) as A2ALog[];
+            };
+
+            const filterVisibleLogs = (items: A2ALog[]): A2ALog[] =>
+                (items || []).filter((log: A2ALog) => String(log?.status || '').toLowerCase() !== 'rejected');
+
+            if (useCache) {
+                const cached = dataCache.get<any[]>(cacheKey);
+                if (cached.exists && cached.data) {
+                    const cachedData = cached.data;
+                    const normalizedCachedLogs = (() => {
+                        if (!Array.isArray(cachedData)) return [] as A2ALog[];
+                        const sample = cachedData[0];
+                        const looksLikeMappedLog = sample && typeof sample === 'object'
+                            && typeof sample.timeRange === 'string'
+                            && typeof sample.summary === 'string'
+                            && sample.details;
+                        return looksLikeMappedLog
+                            ? (cachedData as A2ALog[])
+                            : mapSessionsToLogs(cachedData);
+                    })();
+
+                    const visibleCachedLogs = filterVisibleLogs(normalizedCachedLogs);
+                    setLogs(visibleCachedLogs);
+                    dataCache.set(cacheKey, visibleCachedLogs, 5 * 60 * 1000);
+                    if (showLoading) setLoading(false);
+
+                    if (!cached.isStale) return; // 신선하면 종료
+                    if (dataCache.isPending(cacheKey)) return; // 이미 요청 중
+                }
+            }
+
+            // 중복 요청 방지
+            if (dataCache.isPending(cacheKey)) return;
+            dataCache.markPending(cacheKey);
+
+            const token = await AsyncStorage.getItem('accessToken');
+
+            const response = await fetch(`${API_BASE}/a2a/sessions`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache', // 서버 캐시 무시
+                },
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+
+                // [DEBUG] 모든 세션의 날짜/시간 데이터 확인
+                console.log('[A2A DEBUG] 세션 수:', data.sessions?.length);
+                data.sessions?.forEach((session: any, index: number) => {
+                    const d = session.details || {};
+                    console.log(`[A2A DEBUG] 세션 ${index}:`, {
+                        id: session.id?.substring(0, 8),
+                        participant_names: session.participant_names,
+                        proposedDate: d.proposedDate,
+                        proposedTime: d.proposedTime,
+                        requestedDate: d.requestedDate,
+                        requestedTime: d.requestedTime,
+                        duration_nights: d.duration_nights,
+                        purpose: d.purpose,
+                    });
+                });
+
+                const mappedLogs: A2ALog[] = mapSessionsToLogs(data.sessions || []);
+                const visibleLogs = filterVisibleLogs(mappedLogs);
+                setLogs(visibleLogs);
+                dataCache.set(cacheKey, visibleLogs, 5 * 60 * 1000);
             } else {
                 console.error("Failed to fetch sessions:", response.status);
             }
@@ -1409,11 +1481,11 @@ const A2AScreen = () => {
                 fetchA2ALogs();
             }
 
-            // [NEW] 폴링 백업: WebSocket이 불안정한 경우를 대비하여 15초마다 자동 새로고침
+            // [UPDATE] 폴링 백업: WebSocket이 메인이므로 60초마다 안전 백업용
             const pollingInterval = setInterval(() => {
-                console.log('[A2A] 폴링 새로고침');
+                console.log('[A2A] 폴링 새로고침 (백업)');
                 fetchA2ALogs(false, false); // 로딩 표시 없이, 캐시 무시
-            }, 15000); // 15초마다
+            }, 60000); // 60초마다 (WebSocket이 메인)
 
             return () => {
                 clearInterval(pollingInterval);
@@ -1435,8 +1507,7 @@ const A2AScreen = () => {
     useEffect(() => {
         if (!currentUserId) return;
 
-        // 싱글톤 서비스 연결 (이미 연결되어 있으면 스킵)
-        WebSocketService.connect(currentUserId);
+        // [CHANGED] connect는 App.tsx에서 중앙 관리 — 여기서는 구독만
 
         // A2AScreen에서 필요한 메시지 구독
         const unsubscribe = WebSocketService.subscribe(

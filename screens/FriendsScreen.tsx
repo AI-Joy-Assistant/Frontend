@@ -196,15 +196,7 @@ const FriendsScreen = () => {
   const loadingFriends = storeState.loadingFriends;
   const loadingRequests = storeState.loadingRequests;
 
-  // 화면 포커스 때마다 WebSocket 연결 확인 (연결 끊김 방지)
-  useFocusEffect(
-    useCallback(() => {
-      if (userInfo?.id) {
-        console.log('[FriendsScreen] Focus: Checking WS connection');
-        WebSocketService.connect(userInfo.id);
-      }
-    }, [userInfo?.id])
-  );
+  // [REMOVED] 화면 포커스 때마다 WebSocket 연결 확인 — App.tsx에서 중앙 관리로 이동
 
   // Delete Modal State
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
@@ -314,8 +306,7 @@ const FriendsScreen = () => {
   useEffect(() => {
     if (!currentUserId) return;
 
-    // 싱글톤 서비스 연결 (이미 연결되어 있으면 스킵)
-    WebSocketService.connect(currentUserId);
+    // [CHANGED] connect는 App.tsx에서 중앙 관리 — 여기서는 구독만
 
     // FriendsScreen에서 필요한 메시지 구독
     const unsubscribe = WebSocketService.subscribe(

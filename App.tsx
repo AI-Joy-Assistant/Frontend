@@ -1,6 +1,6 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import * as Linking from 'expo-linking';
 
 import A2AScreen from './screens/A2AScreen';
@@ -20,12 +20,59 @@ import { RootStackParamList } from './types';
 import { TutorialProvider } from './store/TutorialContext';
 import TutorialOverlay from './components/TutorialOverlay';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import WebSocketService from './services/WebSocketService';
+import { API_BASE } from './constants/config';
 
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
+  // [NEW] 중앙 WebSocket 연결 관리 - 앱 전체에서 한 번만 연결
+  const appState = useRef(AppState.currentState);
+
+  useEffect(() => {
+    // 앱 시작 시 WebSocket 연결 시도
+    const connectWebSocket = async () => {
+      try {
+        const token = await AsyncStorage.getItem('accessToken');
+        if (!token) return; // 로그인 안됨
+
+        // JWT 파싱(atob) 의존 대신 /auth/me로 사용자 확인 (RN 환경 호환성)
+        const res = await fetch(`${API_BASE}/auth/me`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Cache-Control': 'no-cache',
+          },
+        });
+        if (!res.ok) return;
+        const me = await res.json();
+        const userId = me?.id;
+        if (userId) {
+          console.log('[App] WebSocket 중앙 연결:', userId);
+          await WebSocketService.connect(userId);
+        }
+      } catch (e) {
+        console.warn('[App] WebSocket 연결 실패:', e);
+      }
+    };
+
+    connectWebSocket();
+
+    // 앱이 foreground로 돌아올 때 재연결
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (appState.current.match(/inactive|background/) && nextState === 'active') {
+        console.log('[App] 앱 foreground 복귀 - WebSocket 재연결');
+        connectWebSocket();
+      }
+      appState.current = nextState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
   React.useEffect(() => {
     if (Platform.OS === 'web') {
       // 기존 focus outline 제거 스타일

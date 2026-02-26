@@ -14,9 +14,9 @@ export const getBackendUrl = (): string => {
         return PRODUCTION_URL;
     }
 
-    // 2. 모바일 (개발 중에도 편의를 위해 운영 서버 사용 중)
+    // 2. 모바일 (로컬 백엔드 테스트 중)
     if (Platform.OS === 'ios' || Platform.OS === 'android') {
-        return PRODUCTION_URL;
+        return 'http://192.168.219.103:8000';  // 로컬 테스트용 (원래: PRODUCTION_URL)
     }
 
     // 3. 웹 개발 환경 (로컬 서버 사용)

@@ -103,6 +103,13 @@ interface Friend {
   created_at: string;
 }
 
+type SelectedParticipant = {
+  id: string;
+  name: string;
+  email?: string;
+  picture?: string;
+};
+
 type CalendarViewMode = 'CONDENSED' | 'STACKED' | 'DETAILED';
 
 export default function HomeScreen() {
@@ -149,6 +156,19 @@ export default function HomeScreen() {
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState<string[]>([]);
   const [viewedRequestIds, setViewedRequestIds] = useState<string[]>([]);
   const [viewedNotificationIds, setViewedNotificationIds] = useState<string[]>([]);
+  const [hasRealtimeNotificationDot, setHasRealtimeNotificationDot] = useState<boolean>(false);
+
+  const refreshHomeRealtime = useCallback(async () => {
+    try {
+      homeStore.invalidate();
+      await Promise.allSettled([
+        homeStore.fetchPendingRequests(true),
+        homeStore.fetchNotifications(true),
+      ]);
+    } catch (e) {
+      console.warn('[Home] 실시간 동기화 실패:', e);
+    }
+  }, []);
 
   // Load dismissed request IDs and viewed count from AsyncStorage on mount
   useEffect(() => {
@@ -360,12 +380,33 @@ export default function HomeScreen() {
     }, [])
   );
 
-  // WebSocket for real-time A2A notifications (using singleton service)
+  // WebSocket 끊김/지연 대비 백업 동기화
   useEffect(() => {
     if (!currentUserId) return;
 
-    // 싱글톤 서비스 연결 (이미 연결되어 있으면 스킵)
-    WebSocketService.connect(currentUserId);
+    const interval = setInterval(() => {
+      if (AppState.currentState !== 'active') return;
+
+      if (!WebSocketService.isConnected()) {
+        WebSocketService.connect(currentUserId).catch((e) => {
+          console.warn('[WS:Home] 주기적 재연결 실패:', e);
+        });
+      }
+
+      refreshHomeRealtime();
+    }, 8000);
+
+    return () => clearInterval(interval);
+  }, [currentUserId, refreshHomeRealtime]);
+
+  // WebSocket for real-time A2A notifications (using singleton service)
+  useEffect(() => {
+    // [CHANGED] 기본은 App.tsx에서 중앙 관리, Home에서는 보조 재연결
+    if (currentUserId && !WebSocketService.isConnected()) {
+      WebSocketService.connect(currentUserId).catch((e) => {
+        console.warn('[WS:Home] 보조 재연결 실패:', e);
+      });
+    }
 
     // HomeScreen에서 필요한 메시지만 구독
     const unsubscribe = WebSocketService.subscribe(
@@ -373,6 +414,9 @@ export default function HomeScreen() {
       ['a2a_request', 'friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'notification', 'a2a_status_changed', 'user_info_updated'],
       (data) => {
         console.log("[WS:Home] WS Event:", data.type);
+        if (['a2a_request', 'friend_request', 'notification', 'a2a_status_changed'].includes(data.type)) {
+          setHasRealtimeNotificationDot(true);
+        }
 
         // [FIX] 친구 삭제 시 즉시 로컬 상태 업데이트
         if (data.type === 'friend_deleted' && data.deleted_by) {
@@ -380,8 +424,7 @@ export default function HomeScreen() {
         }
 
         // WebSocket 이벤트 시 캐시 무효화 후 새로고침
-        homeStore.invalidate();
-        homeStore.refresh();
+        refreshHomeRealtime();
         friendsStore.invalidate();
         friendsStore.refresh();
 
@@ -396,7 +439,7 @@ export default function HomeScreen() {
     return () => {
       unsubscribe();
     };
-  }, [currentUserId]);
+  }, [currentUserId, refreshHomeRealtime]);
 
   // ---------------------------------------------------------
   // [추가] 튜토리얼 액션 콜백 (친구 탭, 채팅 탭 이동 처리)
@@ -461,11 +504,29 @@ export default function HomeScreen() {
   // Participant & Location State (A2A Integration)
   // friends 데이터는 friendsState.friends에서 가져옴
   const friends = friendsState.friends;
-  const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
+  const [selectedParticipants, setSelectedParticipants] = useState<SelectedParticipant[]>([]);
+  const [pickerSelectedParticipants, setPickerSelectedParticipants] = useState<SelectedParticipant[]>([]);
+  const effectiveSelectedParticipants = useMemo(
+    () => (selectedParticipants.length > 0 ? selectedParticipants : pickerSelectedParticipants),
+    [selectedParticipants, pickerSelectedParticipants]
+  );
+  const selectedFriendIds = useMemo(
+    () => effectiveSelectedParticipants.map(p => p.id),
+    [effectiveSelectedParticipants]
+  );
   const [showFriendPicker, setShowFriendPicker] = useState(false);
+  const wasFriendPickerOpenRef = useRef(false);
   const [friendSearchQuery, setFriendSearchQuery] = useState('');
   const [formLocation, setFormLocation] = useState('');
   const [isSubmittingA2A, setIsSubmittingA2A] = useState(false);
+
+  // 모바일에서 선택 완료 버튼 이벤트가 누락되더라도, 피커가 닫힐 때 최신 선택값을 항상 커밋
+  useEffect(() => {
+    if (wasFriendPickerOpenRef.current && !showFriendPicker) {
+      setSelectedParticipants(pickerSelectedParticipants);
+    }
+    wasFriendPickerOpenRef.current = showFriendPicker;
+  }, [showFriendPicker, pickerSelectedParticipants]);
 
   // Custom Alert Modal State
   const [customAlertVisible, setCustomAlertVisible] = useState(false);
@@ -1232,20 +1293,50 @@ export default function HomeScreen() {
 
   // [REMOVED] fetchFriends - friendsStore.fetchAll()로 대체됨
 
-  // 친구 선택 토글
-  const toggleFriendSelection = (friendUserId: string) => {
-    setSelectedFriendIds(prev => {
-      if (prev.includes(friendUserId)) {
-        return prev.filter(id => id !== friendUserId);
-      } else {
-        return [...prev, friendUserId];
+  const openFriendPicker = () => {
+    setPickerSelectedParticipants(selectedParticipants);
+    setShowFriendPicker(true);
+  };
+
+  // 친구 선택 토글 (picker 내부 임시 상태)
+  const toggleFriendSelection = (friendUserId: string, friendInfo?: SelectedParticipant) => {
+    setPickerSelectedParticipants(prev => {
+      const exists = prev.some(p => String(p.id) === String(friendUserId));
+      if (exists) {
+        return prev.filter(p => String(p.id) !== String(friendUserId));
       }
+      if (friendInfo) {
+        return [...prev, friendInfo];
+      }
+      const friend = friends.find(f => String(f.friend.id) === String(friendUserId))?.friend;
+      if (!friend) return prev;
+      return [...prev, friend];
     });
   };
 
   // 선택된 친구 정보 가져오기
-  const getSelectedFriends = () => {
-    return friends.filter(f => selectedFriendIds.includes(f.friend.id));
+  // [FIX] 선택 ID를 기준으로 렌더용 목록을 강제 재구성해 모바일에서 칩 누락을 방지
+  const getSelectedFriends = (): SelectedParticipant[] => {
+    const byId = new Map<string, SelectedParticipant>();
+    for (const p of selectedParticipants) byId.set(String(p.id), p);
+    for (const p of pickerSelectedParticipants) {
+      const key = String(p.id);
+      if (!byId.has(key)) byId.set(key, p);
+    }
+    for (const f of friends) {
+      const key = String(f.friend.id);
+      if (!byId.has(key)) byId.set(key, f.friend);
+    }
+
+    return selectedFriendIds.map((id) => {
+      const key = String(id);
+      return (
+        byId.get(key) || {
+          id: key,
+          name: `참여자 ${key.slice(0, 4)}`,
+        }
+      );
+    });
   };
 
   // 친구 검색 필터
@@ -1264,7 +1355,8 @@ export default function HomeScreen() {
     setIsAllDay(false);
     setShowDeleteConfirm(false);
     // 참여자 및 장소 초기화
-    setSelectedFriendIds([]);
+    setSelectedParticipants([]);
+    setPickerSelectedParticipants([]);
     setFormLocation('');
     setFriendSearchQuery('');
     // 친구 목록 새로고침 (캐시 기반)
@@ -1364,28 +1456,12 @@ export default function HomeScreen() {
           return;
         }
 
-        // 날짜/시간 문자열 생성
-        const dateStr = formStartDate; // YYYY-MM-DD
-        const [year, month, day] = dateStr.split('-').map(Number);
-        const formattedDate = `${month}월 ${day}일`;
-
-        let dateRangeStr = formattedDate;
-        if (formEndDate && formEndDate !== formStartDate) {
-          const [eYear, eMonth, eDay] = formEndDate.split('-').map(Number);
-          dateRangeStr = `${formattedDate}부터 ${eMonth}월 ${eDay}일까지`;
-        }
-
-        // 시간 범위 문자열 생성 (시작~종료)
-        const timeStr = isAllDay ? '종일' : (formEndTime && formEndTime !== formStartTime
-          ? `${formStartTime}~${formEndTime}`
-          : `${formStartTime}`);
-        const locationStr = formLocation ? ` ${formLocation}에서` : '';
-
-        // A2A 요청 메시지 생성
-        const scheduleMessage = `${dateRangeStr} ${timeStr}에${locationStr} "${formTitle}" 일정 잡아줘`;
-
         // 날짜 차이(duration_nights) 계산
-        let durationParams = {};
+        let durationParams: { duration_nights: number; start_date: string; end_date: string } = {
+          duration_nights: 0,
+          start_date: formStartDate,
+          end_date: formStartDate
+        };
         if (formEndDate && formEndDate !== formStartDate) {
           const start = new Date(formStartDate);
           const end = new Date(formEndDate);
@@ -1398,37 +1474,53 @@ export default function HomeScreen() {
           };
         } else {
           durationParams = {
+            duration_nights: 0,
             start_date: formStartDate,
             end_date: formStartDate
           };
         }
 
+        const calcDurationMinutes = () => {
+          if (isAllDay) {
+            const days = (durationParams.duration_nights || 0) + 1;
+            return 1440 * days;
+          }
+          if (!formStartTime || !formEndTime) return 60;
+          const [sh, sm] = formStartTime.split(':').map(Number);
+          const [eh, em] = formEndTime.split(':').map(Number);
+          let mins = (eh * 60 + em) - (sh * 60 + sm);
+          if (mins <= 0) mins += 24 * 60;
+          return mins > 0 ? mins : 60;
+        };
+        const durationMinutes = calcDurationMinutes();
+
         console.log('[HomeScreen A2A Debug] Sending request:', {
-          message: scheduleMessage,
-          date: formStartDate,
+          title: formTitle,
           start_time: formStartTime,
           end_time: formEndTime,
           selected_friends: selectedFriendIds,
-          is_all_day: isAllDay,  // ✅ 디버그용 추가
+          is_all_day: isAllDay,
+          duration_minutes: durationMinutes,
           ...durationParams
         });
 
-        const response = await fetch(`${API_BASE}/chat/chat`, {
+        const response = await fetch(`${API_BASE}/a2a/session/quick-create`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            message: scheduleMessage,
-            date: formStartDate,
-            selected_friends: selectedFriendIds,
-            title: formTitle,  // 제목 별도 전달
-            location: formLocation || undefined,  // 장소 별도 전달
-            start_time: isAllDay ? undefined : formStartTime,  // 시작 시간
-            end_time: isAllDay ? undefined : formEndTime,      // 종료 시간
-            is_all_day: isAllDay,  // ✅ 종일 여부 추가
-            ...durationParams  // ✅ 다박 정보 추가
+            participant_user_ids: selectedFriendIds,
+            title: formTitle,
+            location: formLocation || undefined,
+            start_date: formStartDate,
+            end_date: durationParams.end_date,
+            start_time: isAllDay ? '00:00' : formStartTime,
+            end_time: isAllDay ? '23:59' : formEndTime,
+            is_all_day: isAllDay,
+            duration_minutes: durationMinutes,
+            duration_nights: durationParams.duration_nights,
           }),
         });
 
@@ -1443,32 +1535,85 @@ export default function HomeScreen() {
           // 성공 처리
           setShowScheduleModal(false);
 
-          // A2A 세션이 생성되었으면 A2A 화면으로 이동
-          const scheduleInfo = responseData.schedule_info;
-          console.log('[HomeScreen A2A Debug] Schedule info:', scheduleInfo);
-
-          if (scheduleInfo?.session_ids?.length > 0) {
-            const sessionId = scheduleInfo.session_ids[0];
-            // 성공 피드백 후 A2A 화면으로 이동
-            // 성공 피드백 후 A2A 화면으로 이동
+          const createdSessionIds: string[] = responseData.session_ids || [];
+          if (createdSessionIds.length > 0) {
+            const sessionId = createdSessionIds[0];
+            dataCache.invalidate('a2a:sessions');
             showAlert(
               '일정 요청 완료',
               '참여자들에게 일정 요청이 전송되었습니다.',
-              () => navigation.navigate('A2A', { initialLogId: sessionId })
+              () => navigation.navigate('A2A', { initialLogId: sessionId, forceRefresh: true })
             );
           } else {
-            // scheduleInfo가 없거나 session_ids가 없어도 요청이 성공했으면 알림
-            console.log('[HomeScreen A2A Debug] No session_ids in response, but request succeeded');
-            console.log('[HomeScreen A2A Debug] scheduleInfo:', JSON.stringify(scheduleInfo, null, 2));
-            console.log('[HomeScreen A2A Debug] responseData:', JSON.stringify(responseData, null, 2));
-            showAlert('오류', 'A2A 세션이 생성되지 않았습니다. 콘솔을 확인해주세요.');
+            showAlert('오류', '세션 생성 응답이 올바르지 않습니다.');
           }
 
           // 상태 초기화
-          setSelectedFriendIds([]);
+          setSelectedParticipants([]);
+          setPickerSelectedParticipants([]);
           setFormLocation('');
           fetchSchedules();
         } else {
+          if (response.status === 404 || response.status === 405) {
+            console.warn('[HomeScreen A2A Debug] quick-create unavailable, fallback to /chat/chat');
+
+            const fallbackMessage = isAllDay
+              ? `${formStartDate}부터 ${durationParams.end_date}까지 ${formTitle} 일정 잡아줘`
+              : `${formStartDate} ${formStartTime}부터 ${durationParams.end_date} ${formEndTime}까지 ${formTitle} 일정 잡아줘`;
+
+            const fallbackResponse = await fetch(`${API_BASE}/chat/chat`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                message: fallbackMessage,
+                session_id: null,
+                selected_friends: selectedFriendIds,
+                title: formTitle,
+                location: formLocation || null,
+                duration_nights: durationParams.duration_nights,
+                start_date: formStartDate,
+                end_date: durationParams.end_date,
+                start_time: isAllDay ? '00:00' : formStartTime,
+                end_time: isAllDay ? '23:59' : formEndTime,
+                duration_minutes: durationMinutes,
+              }),
+            });
+
+            if (fallbackResponse.ok) {
+              const fallbackData = await fallbackResponse.json();
+              const parsed = fallbackData.data || fallbackData;
+              const fallbackSessionIds: string[] =
+                parsed?.schedule_info?.session_ids || parsed?.session_ids || [];
+
+              setShowScheduleModal(false);
+              dataCache.invalidate('a2a:sessions');
+
+              if (fallbackSessionIds.length > 0) {
+                const sessionId = fallbackSessionIds[0];
+                showAlert(
+                  '일정 요청 완료',
+                  '참여자들에게 일정 요청이 전송되었습니다.',
+                  () => navigation.navigate('A2A', { initialLogId: sessionId, forceRefresh: true })
+                );
+              } else {
+                showAlert('일정 요청 완료', '참여자들에게 일정 요청이 전송되었습니다.');
+              }
+
+              setSelectedParticipants([]);
+              setPickerSelectedParticipants([]);
+              setFormLocation('');
+              fetchSchedules();
+              return;
+            }
+
+            const fallbackErrorData = await fallbackResponse.json().catch(() => ({}));
+            showAlert('오류', fallbackErrorData.detail || '일정 요청 전송에 실패했습니다.');
+            return;
+          }
+
           const errorData = await response.json().catch(() => ({}));
           console.log('[HomeScreen A2A Debug] Error response:', errorData);
           showAlert('오류', errorData.detail || '일정 요청 전송에 실패했습니다.');
@@ -1707,8 +1852,13 @@ export default function HomeScreen() {
 
                 <TouchableOpacity
                   onPress={() => {
+                    // 패널은 즉시 열고, 최신 동기화는 백그라운드로 수행
                     setShowNotificationPanel(true);
+                    setHasRealtimeNotificationDot(false);
                     markNotificationsAsViewed();
+                    refreshHomeRealtime().catch((e) => {
+                      console.warn('[Home] 알림 패널 백그라운드 동기화 실패:', e);
+                    });
                   }}
                   style={styles.iconButton}
                   ref={(r) => { if (r) registerTarget('btn_notification', r); }}
@@ -1726,7 +1876,7 @@ export default function HomeScreen() {
                     });
                     const newNotificationCount = visibleNotifications.filter(n => !viewedNotificationIds.includes(n.id)).length;
 
-                    const hasNotifications = (newRequestCount + newNotificationCount) > 0;
+                    const hasNotifications = hasRealtimeNotificationDot || (newRequestCount + newNotificationCount) > 0;
 
                     return (
                       <>
@@ -2224,50 +2374,78 @@ export default function HomeScreen() {
                 {!editingScheduleId && (
                   <View style={styles.formGroup}>
                     <Text style={styles.label}>참여자 (선택)</Text>
-                    <TouchableOpacity
-                      style={styles.participantSelector}
-                      onPress={() => setShowFriendPicker(true)}
-                    >
-                      {selectedFriendIds.length > 0 ? (
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flex: 1 }}>
-                            <View style={styles.selectedParticipantsRow}>
-                              {getSelectedFriends().map((f) => (
-                                <View key={f.friend.id} style={styles.participantChip}>
-                                  {f.friend.picture ? (
-                                    <Image
-                                      source={{ uri: f.friend.picture }}
-                                      style={styles.participantAvatarImage}
-                                    />
-                                  ) : (
-                                    <View style={[styles.participantAvatar, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0' }]}>
-                                      <UserIcon size={14} color={COLORS.primaryMain} />
-                                    </View>
-                                  )}
-                                  <Text style={styles.participantName}>{f.friend.name}</Text>
-                                  <TouchableOpacity
-                                    onPress={(e) => {
-                                      e.stopPropagation();
-                                      setSelectedFriendIds(prev => prev.filter(id => id !== f.friend.id));
-                                    }}
-                                    style={styles.participantRemoveButton}
-                                  >
-                                    <X size={14} color={COLORS.neutral400} />
-                                  </TouchableOpacity>
-                                </View>
-                              ))}
+                    <View style={styles.participantSelector}>
+                      {(() => {
+                        const selectedFriends = getSelectedFriends();
+                        if (selectedFriendIds.length === 0) {
+                          return (
+                            <View style={styles.addParticipantRow}>
+                              <Users size={18} color={COLORS.neutral400} />
+                              <Text style={styles.placeholderText}>친구를 초대하여 일정을 조율하세요</Text>
+                              <TouchableOpacity onPress={openFriendPicker} style={{ marginLeft: 'auto', padding: 2 }}>
+                                <UserPlus size={18} color={COLORS.primaryMain} />
+                              </TouchableOpacity>
                             </View>
-                          </ScrollView>
-                          <UserPlus size={18} color={COLORS.primaryMain} style={{ marginLeft: 8 }} />
-                        </View>
-                      ) : (
-                        <View style={styles.addParticipantRow}>
-                          <Users size={18} color={COLORS.neutral400} />
-                          <Text style={styles.placeholderText}>친구를 초대하여 일정을 조율하세요</Text>
-                          <UserPlus size={18} color={COLORS.primaryMain} style={{ marginLeft: 'auto' }} />
-                        </View>
-                      )}
-                    </TouchableOpacity>
+                          );
+                        }
+
+                        // 방어 렌더링: 모바일에서 선택 ID만 남아 이름 목록이 비는 경우에도 선택 상태를 표시
+                        if (selectedFriends.length === 0) {
+                          return (
+                            <View style={styles.addParticipantRow}>
+                              <Users size={18} color={COLORS.primaryMain} />
+                              <Text style={[styles.placeholderText, { color: COLORS.primaryMain }]}>
+                                참여자 {selectedFriendIds.length}명 선택됨
+                              </Text>
+                              <TouchableOpacity onPress={openFriendPicker} style={{ marginLeft: 'auto', padding: 2 }}>
+                                <UserPlus size={18} color={COLORS.primaryMain} />
+                              </TouchableOpacity>
+                            </View>
+                          );
+                        }
+
+                        return (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%' }}>
+                            <ScrollView
+                              horizontal
+                              showsHorizontalScrollIndicator={false}
+                              style={{ flex: 1, minHeight: 44 }}
+                              contentContainerStyle={styles.selectedParticipantsRow}
+                            >
+                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                {selectedFriends.map((f) => (
+                                  <View key={f.id} style={styles.participantChip}>
+                                    {f.picture ? (
+                                      <Image
+                                        source={{ uri: f.picture }}
+                                        style={styles.participantAvatarImage}
+                                      />
+                                    ) : (
+                                      <View style={[styles.participantAvatar, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0' }]}>
+                                        <UserIcon size={14} color={COLORS.primaryMain} />
+                                      </View>
+                                    )}
+                                    <Text style={styles.participantName}>{f.name}</Text>
+                                    <TouchableOpacity
+                                      onPress={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedParticipants(prev => prev.filter(p => String(p.id) !== String(f.id)));
+                                      }}
+                                      style={styles.participantRemoveButton}
+                                    >
+                                      <X size={14} color={COLORS.neutral400} />
+                                    </TouchableOpacity>
+                                  </View>
+                                ))}
+                              </View>
+                            </ScrollView>
+                            <TouchableOpacity onPress={openFriendPicker} style={{ marginLeft: 8, padding: 2 }}>
+                              <UserPlus size={18} color={COLORS.primaryMain} />
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })()}
+                    </View>
                   </View>
                 )}
 
@@ -2420,98 +2598,99 @@ export default function HomeScreen() {
               </View>
             </ScrollView>
 
-            {/* Friend Picker Modal - rendered inside Schedule Modal */}
-            <Modal
-              visible={showFriendPicker}
-              transparent={true}
-              animationType="slide"
-              onRequestClose={() => setShowFriendPicker(false)}
-            >
-              <View style={styles.friendPickerOverlay}>
-                <View style={styles.friendPickerContainer}>
-                  <View style={styles.friendPickerHandle} />
-                  <View style={styles.friendPickerHeader}>
-                    <View>
-                      <Text style={styles.friendPickerTitle}>참여자 선택</Text>
-                      <Text style={styles.friendPickerSubtitle}>일정에 초대할 친구를 선택해주세요</Text>
+            {/* Friend Picker - View overlay instead of nested Modal (fixes mobile re-render issue) */}
+            {showFriendPicker && (
+              <View style={[StyleSheet.absoluteFill, { zIndex: 9999 }]}>
+                <View style={styles.friendPickerOverlay}>
+                  <View style={styles.friendPickerContainer}>
+                    <View style={styles.friendPickerHandle} />
+                    <View style={styles.friendPickerHeader}>
+                      <View>
+                        <Text style={styles.friendPickerTitle}>참여자 선택</Text>
+                        <Text style={styles.friendPickerSubtitle}>일정에 초대할 친구를 선택해주세요</Text>
+                      </View>
+                      <TouchableOpacity onPress={() => setShowFriendPicker(false)}>
+                        <X size={24} color={COLORS.neutralGray} />
+                      </TouchableOpacity>
                     </View>
-                    <TouchableOpacity onPress={() => setShowFriendPicker(false)}>
-                      <X size={24} color={COLORS.neutralGray} />
-                    </TouchableOpacity>
-                  </View>
 
-                  <View style={styles.friendSearchContainer}>
-                    <Search size={18} color={COLORS.neutral400} />
-                    <TextInput
-                      style={styles.friendSearchInput}
-                      value={friendSearchQuery}
-                      onChangeText={setFriendSearchQuery}
-                      placeholder="이름 또는 이메일로 검색"
-                      placeholderTextColor={COLORS.neutral400}
-                    />
-                  </View>
+                    <View style={styles.friendSearchContainer}>
+                      <Search size={18} color={COLORS.neutral400} />
+                      <TextInput
+                        style={styles.friendSearchInput}
+                        value={friendSearchQuery}
+                        onChangeText={setFriendSearchQuery}
+                        placeholder="이름 또는 이메일로 검색"
+                        placeholderTextColor={COLORS.neutral400}
+                      />
+                    </View>
 
-                  <FlatList
-                    data={filteredFriends}
-                    keyExtractor={(item) => item.friend.id}
-                    style={styles.friendList}
-                    renderItem={({ item, index }) => {
-                      const isSelected = selectedFriendIds.includes(item.friend.id);
-                      return (
-                        <TouchableOpacity
-                          style={styles.friendItem}
-                          onPress={() => toggleFriendSelection(item.friend.id)}
-                        >
-                          {item.friend.picture ? (
-                            <Image
-                              source={{ uri: item.friend.picture }}
-                              style={styles.friendItemAvatarImage}
-                            />
-                          ) : (
-                            <View style={[styles.friendItemAvatar, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' }]}>
-                              <UserIcon size={20} color={COLORS.primaryMain} />
+                    <FlatList
+                      data={filteredFriends}
+                      keyExtractor={(item) => item.friend.id}
+                      style={styles.friendList}
+                      renderItem={({ item, index }) => {
+                        const isSelectedInPicker = pickerSelectedParticipants.some(
+                          p => String(p.id) === String(item.friend.id)
+                        );
+                        return (
+                          <TouchableOpacity
+                            style={styles.friendItem}
+                            onPress={() => toggleFriendSelection(item.friend.id, item.friend)}
+                          >
+                            {item.friend.picture ? (
+                              <Image
+                                source={{ uri: item.friend.picture }}
+                                style={styles.friendItemAvatarImage}
+                              />
+                            ) : (
+                              <View style={[styles.friendItemAvatar, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' }]}>
+                                <UserIcon size={20} color={COLORS.primaryMain} />
+                              </View>
+                            )}
+                            <View style={styles.friendItemInfo}>
+                              <Text style={[styles.friendItemName, isSelectedInPicker && { color: COLORS.primaryMain }]}>{item.friend.name}</Text>
                             </View>
-                          )}
-                          <View style={styles.friendItemInfo}>
-                            <Text style={[styles.friendItemName, isSelected && { color: COLORS.primaryMain }]}>{item.friend.name}</Text>
+                            <View style={[
+                              styles.friendItemCheckbox,
+                              {
+                                backgroundColor: isSelectedInPicker ? COLORS.primaryMain : 'transparent',
+                                borderColor: isSelectedInPicker ? COLORS.primaryMain : 'rgba(148, 163, 184, 0.4)'
+                              }
+                            ]}>
+                              {isSelectedInPicker && <Check size={14} color="white" />}
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      }}
+                      ListEmptyComponent={
+                        friends.length === 0 ? (
+                          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 }}>
+                            <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 8 }}>친구가 없습니다.</Text>
+                            <Text style={{ fontSize: 12, color: COLORS.neutralGray }}>'친구' 탭에서 새로운 친구를 추가해보세요!</Text>
                           </View>
-                          <View style={[
-                            styles.friendItemCheckbox,
-                            {
-                              backgroundColor: isSelected ? COLORS.primaryMain : 'transparent',
-                              borderColor: isSelected ? COLORS.primaryMain : 'rgba(148, 163, 184, 0.4)'
-                            }
-                          ]}>
-                            {isSelected && <Check size={14} color="white" />}
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    }}
-                    ListEmptyComponent={
-                      friends.length === 0 ? (
-                        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 }}>
-                          <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 8 }}>친구가 없습니다.</Text>
-                          <Text style={{ fontSize: 12, color: COLORS.neutralGray }}>'친구' 탭에서 새로운 친구를 추가해보세요!</Text>
-                        </View>
-                      ) : (
-                        <Text style={styles.emptyFriendsText}>검색 결과가 없습니다.</Text>
-                      )
-                    }
-                  />
+                        ) : (
+                          <Text style={styles.emptyFriendsText}>검색 결과가 없습니다.</Text>
+                        )
+                      }
+                    />
 
-                  <View style={styles.friendPickerFooter}>
-                    <TouchableOpacity
-                      style={styles.friendPickerButton}
-                      onPress={() => setShowFriendPicker(false)}
-                    >
-                      <Text style={styles.friendPickerButtonText}>
-                        선택 완료 ({selectedFriendIds.length}명)
-                      </Text>
-                    </TouchableOpacity>
+                    <View style={styles.friendPickerFooter}>
+                      <TouchableOpacity
+                        style={styles.friendPickerButton}
+                        onPress={() => {
+                          setShowFriendPicker(false);
+                        }}
+                      >
+                        <Text style={styles.friendPickerButtonText}>
+                          선택 완료 ({pickerSelectedParticipants.length}명)
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
               </View>
-            </Modal>
+            )}
             {/* Validation/Error Alert Overlay inside ScheduleModal */}
             {customAlertVisible && (
               <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }]}>

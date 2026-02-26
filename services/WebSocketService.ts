@@ -19,6 +19,7 @@ class WebSocketService {
     private userId: string | null = null;
     private subscriptions: Subscription[] = [];
     private reconnectTimeout: NodeJS.Timeout | null = null;
+    private pingInterval: NodeJS.Timeout | null = null;  // [NEW] heartbeat
     private isConnecting: boolean = false;
     private connectionPromise: Promise<void> | null = null;
 
@@ -35,6 +36,7 @@ class WebSocketService {
      * WebSocket 연결 초기화 (앱 시작 시 한 번만 호출)
      */
     async connect(userId: string): Promise<void> {
+        const previousUserId = this.userId;
         // 이미 같은 유저로 연결되어 있거나 연결 중이면 스킵
         if (this.ws && this.userId === userId) {
             const state = this.ws.readyState;
@@ -55,14 +57,28 @@ class WebSocketService {
 
         this.connectionPromise = new Promise((resolve, reject) => {
             try {
-                // 기존 연결 정리 (CLOSED 또는 CLOSING 상태인 경우)
+                // 기존 연결 정리
                 if (this.ws) {
-                    const state = this.ws.readyState;
-                    if (state === WebSocket.CLOSED || state === WebSocket.CLOSING) {
+                    let state = this.ws.readyState;
+                    // 사용자 변경 시에는 기존 소켓을 재사용하지 않음
+                    if (previousUserId && previousUserId !== userId && (state === WebSocket.OPEN || state === WebSocket.CONNECTING)) {
+                        console.log(`[WS:Global] 사용자 변경 감지 (${previousUserId} -> ${userId}), 기존 연결 종료`);
                         this.ws.onclose = null;
                         this.ws.onopen = null;
                         this.ws.onerror = null;
                         this.ws.onmessage = null;
+                        this.ws.close();
+                        this.ws = null;
+                        state = WebSocket.CLOSED;
+                    }
+
+                    if (state === WebSocket.CLOSED || state === WebSocket.CLOSING) {
+                        if (this.ws) {
+                            this.ws.onclose = null;
+                            this.ws.onopen = null;
+                            this.ws.onerror = null;
+                            this.ws.onmessage = null;
+                        }
                         this.ws = null;
                     } else {
                         // OPEN 또는 CONNECTING 상태면 그대로 사용
@@ -84,11 +100,23 @@ class WebSocketService {
                 ws.onopen = () => {
                     console.log('[WS:Global] ✅ 연결 성공');
                     this.isConnecting = false;
+
+                    // [NEW] 25초마다 ping 전송 - 모바일 연결 유지
+                    if (this.pingInterval) clearInterval(this.pingInterval);
+                    this.pingInterval = setInterval(() => {
+                        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                            this.ws.send('ping');
+                        }
+                    }, 25000);
+
                     resolve();
                 };
 
                 ws.onmessage = (event) => {
                     try {
+                        // [FIX] heartbeat pong 응답은 JSON이 아니므로 무시
+                        if (event.data === 'pong') return;
+
                         const data = JSON.parse(event.data);
                         console.log('[WS:Global] 메시지 수신:', data.type);
 
@@ -109,7 +137,14 @@ class WebSocketService {
 
                 ws.onerror = (error) => {
                     console.error('[WS:Global] 오류:', error);
-                    // 오류 시에도 isConnecting은 유지 - onclose에서 처리
+                    // 일부 환경에서 onclose가 오지 않는 케이스를 대비해 종료 유도
+                    if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) {
+                        try {
+                            ws.close();
+                        } catch {
+                            // noop
+                        }
+                    }
                 };
 
                 ws.onclose = () => {
@@ -118,14 +153,20 @@ class WebSocketService {
                     this.isConnecting = false;
                     this.connectionPromise = null;
 
-                    // 재연결 (5초 후) - 모바일 환경에서 더 빠른 복구
+                    // [NEW] heartbeat 정리
+                    if (this.pingInterval) {
+                        clearInterval(this.pingInterval);
+                        this.pingInterval = null;
+                    }
+
+                    // 재연결 (3초 후) - 모바일 환경에서 더 빠른 복구
                     if (this.userId) {
                         this.reconnectTimeout = setTimeout(() => {
                             if (this.userId) {
                                 console.log('[WS:Global] 재연결 시도...');
                                 this.connect(this.userId);
                             }
-                        }, 5000);
+                        }, 3000);
                     }
                 };
 

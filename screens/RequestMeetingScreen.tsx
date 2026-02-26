@@ -708,6 +708,8 @@ const RequestMeetingScreen = () => {
 
             // Calculate duration in minutes
             const totalDurationMinutes = (durationHour * 60) + durationMinute;
+            const safeDurationMinutes = totalDurationMinutes > 0 ? totalDurationMinutes : 60;
+            const backendBase = getBackendUrl();
 
             // Build the schedule request message
             let scheduleDescription = '';
@@ -730,31 +732,67 @@ const RequestMeetingScreen = () => {
                 end_date: endDate,
                 start_time: startTime,
                 end_time: endTime,
-                duration_minutes: (durationHour * 60) + durationMinute,
+                duration_minutes: safeDurationMinutes,
             };
             console.log('🚀 [RequestMeeting] 전송 데이터:', JSON.stringify(requestBody, null, 2));
 
-            // Call the chat API which handles A2A session creation
-            const response = await fetch(`${getBackendUrl()}/chat/chat`, {
+            // 빠른 생성 API 우선 사용 (지연 최소화)
+            const quickResponse = await fetch(`${backendBase}/a2a/session/quick-create`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(requestBody),
+                body: JSON.stringify({
+                    participant_user_ids: selectedFriends,
+                    title: title,
+                    location: location || undefined,
+                    start_date: startDate,
+                    end_date: endDate,
+                    start_time: startTime,
+                    end_time: endTime,
+                    is_all_day: false,
+                    duration_minutes: safeDurationMinutes,
+                    duration_nights: durationNights,
+                }),
             });
 
-            if (response.ok) {
+            if (quickResponse.ok) {
                 // ✅ 전송 성공 시 저장된 폼 상태 초기화
-                // await AsyncStorage.removeItem('requestMeetingFormState'); // Removed, handled by reset() if needed, or keep state? Usually reset on success.
                 reset();
                 setIsSent(true);
-            } else {
-                const error = await response.text();
-                console.error('Failed to send request:', error);
+                return;
             }
+
+            // 구버전 백엔드(quick-create 미지원) 폴백
+            if (quickResponse.status === 404 || quickResponse.status === 405) {
+                const response = await fetch(`${backendBase}/chat/chat`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody),
+                });
+
+                if (response.ok) {
+                    reset();
+                    setIsSent(true);
+                    return;
+                }
+
+                const fallbackError = await response.text();
+                console.error('Failed to send request (fallback):', fallbackError);
+                showCustomAlert('오류', '일정 요청 전송에 실패했습니다.', 'error');
+                return;
+            }
+
+            const quickError = await quickResponse.text();
+            console.error('Failed to send request (quick-create):', quickError);
+            showCustomAlert('오류', '일정 요청 전송에 실패했습니다.', 'error');
         } catch (error) {
             console.error('Error sending schedule request:', error);
+            showCustomAlert('오류', '일정 요청 전송에 실패했습니다.', 'error');
         } finally {
             setIsSending(false);  // 로딩 종료
         }
