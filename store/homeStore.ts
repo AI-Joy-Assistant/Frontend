@@ -112,9 +112,13 @@ export const homeStore = {
 
             if (response.ok) {
                 const data = await response.json();
+                // [FIX] 거절된 요청은 클라이언트에서도 즉시 필터링 (리로드 시 잠깐 노출 방지)
+                const filteredRequests = (data.requests || []).filter(
+                    (r: PendingRequest) => r.status?.toLowerCase() !== 'rejected'
+                );
                 state = {
                     ...state,
-                    pendingRequests: data.requests || [],
+                    pendingRequests: filteredRequests,
                     loadingPending: false,
                     lastFetchedAt: Date.now(),
                 };

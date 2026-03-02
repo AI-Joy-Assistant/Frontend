@@ -900,7 +900,7 @@ const A2AScreen = () => {
     const handleSubmitReschedule = async () => {
         // [NEW] 튜토리얼 모드일 때는 API 호출 없이 UI만 처리
         if (isTutorialActive && currentStep === 'RESPOND_TO_REQUEST') {
-            console.log('[Tutorial] Intercepting reschedule submit - no API call');
+            if (__DEV__) console.log('[Tutorial] Intercepting reschedule submit - no API call');
             setIsRescheduling(false); // Close reschedule view
 
             // 하드코딩된 성공 처리
@@ -1070,7 +1070,7 @@ const A2AScreen = () => {
 
     // Fetch logs (GET /a2a/sessions)
     const fetchA2ALogs = useCallback(async (showLoading = true, useCache = true) => {
-        const cacheKey = 'a2a:sessions';
+        const cacheKey = 'a2a:sessions:v2'; // [FIX] 캐시 키를 변경하여 이전 잘못된 summary가 저장된 캐시 무효화
         if (showLoading) setLoading(true);
         try {
             // 튜토리얼 모드일 경우 가짜 데이터 주입
@@ -1185,28 +1185,14 @@ const A2AScreen = () => {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
-                    'Cache-Control': 'no-cache', // 서버 캐시 무시
                 },
             });
 
             if (response.ok) {
                 const data = await response.json();
 
-                // [DEBUG] 모든 세션의 날짜/시간 데이터 확인
-                console.log('[A2A DEBUG] 세션 수:', data.sessions?.length);
-                data.sessions?.forEach((session: any, index: number) => {
-                    const d = session.details || {};
-                    console.log(`[A2A DEBUG] 세션 ${index}:`, {
-                        id: session.id?.substring(0, 8),
-                        participant_names: session.participant_names,
-                        proposedDate: d.proposedDate,
-                        proposedTime: d.proposedTime,
-                        requestedDate: d.requestedDate,
-                        requestedTime: d.requestedTime,
-                        duration_nights: d.duration_nights,
-                        purpose: d.purpose,
-                    });
-                });
+
+
 
                 // 시간 형식 변환 함수 (MM월 DD일 오전/오후 HH시 → YYYY-MM-DD HH:MM)
                 const formatTimeRange = (date: string | undefined, time: string | undefined): string => {
@@ -1248,7 +1234,7 @@ const A2AScreen = () => {
                         const leftParticipants = session.details?.left_participants || [];
                         const isCurrentUserLeft = leftParticipants.includes(currentUserId);
                         if (isCurrentUserLeft) {
-                            console.log(`[A2A] 사용자가 나간 세션 필터링: ${session.id}`);
+
                         }
                         return !isCurrentUserLeft;
                     })
@@ -1256,7 +1242,7 @@ const A2AScreen = () => {
                         try {
                             return {
                                 id: session.id,
-                                title: session.summary || session.title || session.details?.purpose || "일정 조율",
+                                title: session.title || session.details?.purpose || session.summary || "일정 조율",
                                 status: session.status === 'completed' ? 'COMPLETED'
                                     : session.status === 'rejected' ? 'REJECTED'
                                         : 'IN_PROGRESS',
@@ -1394,42 +1380,21 @@ const A2AScreen = () => {
         useCallback(() => {
             fetchCurrentUser();
 
-            // [NEW] forceRefresh가 true면 캐시 무효화하고 즉시 새로고침
+            // forceRefresh가 true면 캐시 무효화하고 즉시 새로고침
             if (forceRefresh) {
-                console.log('[A2A] forceRefresh 감지 - 캐시 무효화하고 새로고침');
-                // 1. 캐시 완전 무효화
                 dataCache.invalidate('a2a:sessions');
-                // 2. 파라미터 리셋 (먼저 리셋하여 중복 방지)
                 navigation.setParams({ forceRefresh: undefined });
-                // 3. 약간의 딜레이 후 로드 (백엔드에서 데이터가 준비될 시간 확보)
                 setTimeout(() => {
-                    fetchA2ALogs(true, false); // 로딩 표시 O, 캐시 무시
+                    fetchA2ALogs(true, false);
                 }, 500);
             } else {
                 fetchA2ALogs();
             }
-
-            // [NEW] 폴링 백업: WebSocket이 불안정한 경우를 대비하여 15초마다 자동 새로고침
-            const pollingInterval = setInterval(() => {
-                console.log('[A2A] 폴링 새로고침');
-                fetchA2ALogs(false, false); // 로딩 표시 없이, 캐시 무시
-            }, 15000); // 15초마다
-
-            return () => {
-                clearInterval(pollingInterval);
-            };
+            // [PERF] 15초 폴링 제거 - WebSocket이 실시간 업데이트를 담당함
         }, [fetchA2ALogs, forceRefresh, navigation])
     );
 
-    // currentUserId가 설정된 후에 로그 불러오기 (필터링에 필요)
-    // currentUserId가 설정된 후에 로그 불러오기 (필터링에 필요)
-    useFocusEffect(
-        useCallback(() => {
-            if (currentUserId) {
-                fetchA2ALogs();
-            }
-        }, [currentUserId, fetchA2ALogs])
-    );
+    // [PERF] 중복 useFocusEffect 제거됨 - 위의 useFocusEffect에서 통합 처리
 
     // WebSocket for real-time A2A updates (using singleton service)
     useEffect(() => {
@@ -1444,19 +1409,16 @@ const A2AScreen = () => {
             ['a2a_request', 'a2a_rejected', 'a2a_message', 'a2a_status_changed'],
             async (data) => {
                 if (data.type === "a2a_request") {
-                    console.log("[WS:A2A] 새 A2A 요청:", data.from_user);
                     fetchA2ALogs(false);
                 } else if (data.type === "a2a_rejected") {
-                    console.log("[WS:A2A] 거절 알림:", data.rejected_by_name);
                     fetchA2ALogs(false);
                 } else if (data.type === "a2a_message") {
-                    console.log("[WS:A2A] 새 협상 메시지:", data.sender_name, data.message);
                     fetchA2ALogs(false);
 
                     // [실시간 업데이트] 열린 모달의 세부 정보도 새로고침
                     const currentLog = selectedLogRef.current;
                     if (currentLog && data.session_id === currentLog.id) {
-                        console.log("[WS:A2A] 열린 모달 세부 정보 새로고침:", currentLog.id);
+
                         try {
                             const token = await AsyncStorage.getItem('accessToken');
                             const res = await fetch(`${API_BASE}/a2a/session/${currentLog.id}`, {
@@ -1477,7 +1439,6 @@ const A2AScreen = () => {
                         }
                     }
                 } else if (data.type === "a2a_status_changed") {
-                    console.log("[WS:A2A] 상태 변경:", data.new_status);
                     fetchA2ALogs(false);
                 }
             }
@@ -1581,6 +1542,8 @@ const A2AScreen = () => {
     const formatExactTime = (dateString: string) => {
         if (!dateString) return '';
         const date = new Date(dateString);
+        // [FIX] Invalid Date 방어 (NaN-NaN-NaN 표시 방지)
+        if (isNaN(date.getTime())) return '';
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, '0');
         const day = String(date.getDate()).padStart(2, '0');
@@ -1612,7 +1575,7 @@ const A2AScreen = () => {
         selectedLogRef.current = initialLog;
 
         const startTime = Date.now();
-        console.log('⏱️ [Modal] 상세 정보 표시 (로컬 데이터)');
+
 
         // [FIX] 튜토리얼용 로그는 API 호출 건너뛰기
         if (log.id?.startsWith('tutorial_')) {
@@ -1652,8 +1615,6 @@ const A2AScreen = () => {
                         setSelectedLog(updatedLog);
                         selectedLogRef.current = updatedLog;
 
-                        const totalTime = Date.now() - startTime;
-                        console.log(`⏱️ [Modal] 데이터 업데이트 완료: ${totalTime}ms`);
                     }
                 } else {
                     console.error("Failed to fetch sessions:", res.status);
@@ -1692,7 +1653,7 @@ const A2AScreen = () => {
         }
 
         if (!selectedLog) return;
-        console.log('승인 버튼 클릭 - session_id:', selectedLog.id);
+
         try {
             const token = await AsyncStorage.getItem('accessToken');
             const res = await fetch(`${API_BASE}/a2a/session/${selectedLog.id}/approve`, {
@@ -1701,9 +1662,8 @@ const A2AScreen = () => {
                     'Authorization': `Bearer ${token}`,
                 }
             });
-            console.log('승인 API 응답 상태:', res.status);
+
             const data = await res.json();
-            console.log('승인 API 응답 데이터:', data);
 
             if (res.ok) {
                 // 승인 이후 홈 캘린더가 캐시로 남아있지 않도록 즉시 무효화
@@ -1711,7 +1671,7 @@ const A2AScreen = () => {
 
                 // 전원 승인 완료 시 일정 확정 화면 표시
                 if (data.all_approved) {
-                    console.log(' 전원 승인 완료 - 일정 확정 화면 표시');
+
                     setConfirmationType('official');
                     setIsConfirmed(true);
                 } else {
@@ -1773,7 +1733,7 @@ const A2AScreen = () => {
             });
 
             const data = await res.json();
-            console.log('🔴 거절 API 응답:', data);
+
 
             if (res.ok) {
                 // [수정] 즉시 로컬 상태에서 해당 카드 제거
@@ -1836,7 +1796,7 @@ const A2AScreen = () => {
     };
 
     const handleDeleteLog = (logId: string) => {
-        console.log("Delete triggered for:", logId);
+
         // [수정] 커스텀 모달로 변경
         setDeleteTargetLogId(logId);
         setShowDeleteConfirm(true);
@@ -1983,7 +1943,7 @@ const A2AScreen = () => {
                         {(item.status?.toLowerCase() === 'completed' || item.status?.toLowerCase() === 'rejected') && (
                             <TouchableOpacity
                                 onPress={(e) => {
-                                    console.log("Trash icon pressed");
+
                                     e.stopPropagation();
                                     handleDeleteLog(item.id);
                                 }}
@@ -1997,7 +1957,7 @@ const A2AScreen = () => {
                 </View>
 
                 <View style={styles.logSummary}>
-                    <Text style={styles.logSummaryText}>👥 {item.summary}</Text>
+                    <Text style={styles.logSummaryText}>👥 {(item.details?.attendees && item.details.attendees.length > 0) ? item.details.attendees.map((a: any) => a.name).filter(Boolean).join(', ') : item.summary}</Text>
                 </View>
 
                 <View style={styles.logFooter}>
@@ -2496,7 +2456,7 @@ const A2AScreen = () => {
                                     <ScrollView style={styles.detailContent}>
                                         {selectedLog?.details && (
                                             <>
-                                                {console.log('🔍 [DEBUG] selectedLog.status:', selectedLog.status, 'toLowerCase:', selectedLog.status?.toLowerCase?.())}
+
                                                 {/* Proposer */}
                                                 <View style={styles.proposerCard}>
                                                     {isValidAvatar(selectedLog.details.proposerAvatar) ? (
@@ -2768,7 +2728,10 @@ const A2AScreen = () => {
                                                                             ]}>[{step.step}]</Text>
                                                                             {step.created_at && (
                                                                                 <Text style={{ fontSize: 10, color: COLORS.neutral400 }}>
-                                                                                    {new Date(step.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                                                                                    {(() => {
+                                                                                        const d = new Date(step.created_at);
+                                                                                        return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+                                                                                    })()}
                                                                                 </Text>
                                                                             )}
                                                                         </View>
@@ -2810,14 +2773,25 @@ const A2AScreen = () => {
                                             {/* 모달이 닫히는 중이 아닐 때만 버튼 표시 */}
                                             {!isModalClosing && (
                                                 <>
-                                                    <TouchableOpacity
-                                                        onPress={handleRescheduleClick}
-                                                        style={styles.rescheduleButton}
-                                                        ref={(r) => registerTarget('btn_reschedule', r)}
-                                                        testID="btn_reschedule"
-                                                    >
-                                                        <Text style={styles.rescheduleButtonText}>재조율</Text>
-                                                    </TouchableOpacity>
+                                                    {/* [FIX] 재조율 버튼: 활성 참여자 2명 이상 + completed/rejected 아닐 때만 표시 */}
+                                                    {(() => {
+                                                        const attendees = (selectedLog?.details as any)?.attendees || [];
+                                                        const leftParticipants = (selectedLog?.details as any)?.left_participants || [];
+                                                        const activeAttendees = attendees.filter((a: any) => !leftParticipants.includes(a.id));
+                                                        const status = selectedLog?.status?.toLowerCase() || '';
+                                                        const showReschedule = activeAttendees.length >= 2 && !['rejected'].includes(status);
+
+                                                        return showReschedule ? (
+                                                            <TouchableOpacity
+                                                                onPress={handleRescheduleClick}
+                                                                style={styles.rescheduleButton}
+                                                                ref={(r) => registerTarget('btn_reschedule', r)}
+                                                                testID="btn_reschedule"
+                                                            >
+                                                                <Text style={styles.rescheduleButtonText}>재조율</Text>
+                                                            </TouchableOpacity>
+                                                        ) : null;
+                                                    })()}
 
                                                     {/* 승인/거절 버튼: initiator_user_id는 리스트에서 이미 가져옴 (API 대기 불필요) */}
                                                     {selectedLog?.status?.toLowerCase() !== 'completed' && (() => {

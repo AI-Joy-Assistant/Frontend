@@ -119,12 +119,16 @@ export const a2aStore = {
                 const data = await response.json();
                 const mappedLogs: A2ALog[] = data.sessions
                     .filter((session: any) => {
+                        // [FIX] 거절된 세션은 즉시 필터링 (리로드 시 잠깐 노출 방지)
+                        const status = session.status?.toLowerCase?.() || '';
+                        if (status === 'rejected') return false;
+
                         const leftParticipants = session.details?.left_participants || [];
                         return !leftParticipants.includes(state.currentUserId);
                     })
                     .map((session: any) => ({
                         id: session.id,
-                        title: session.summary || session.title || session.details?.purpose || "일정 조율",
+                        title: session.title || session.details?.purpose || session.summary || "일정 조율",
                         status: session.status === 'completed' ? 'COMPLETED'
                             : session.status === 'rejected' ? 'REJECTED'
                                 : 'IN_PROGRESS',
