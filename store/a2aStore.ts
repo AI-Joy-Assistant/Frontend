@@ -119,12 +119,11 @@ export const a2aStore = {
                 const data = await response.json();
                 const mappedLogs: A2ALog[] = data.sessions
                     .filter((session: any) => {
-                        // [FIX] 거절된 세션은 즉시 필터링 (리로드 시 잠깐 노출 방지)
-                        const status = session.status?.toLowerCase?.() || '';
-                        if (status === 'rejected') return false;
-
+                        // left_participants에 현재 사용자가 포함되어 있으면 목록에서 제외
+                        // (거절한 사람은 left_participants에 추가되므로, 거절자 본인에게만 숨겨짐)
+                        // 주최자는 left_participants에 없으므로 '거절됨' 뱃지와 함께 카드가 노출됨
                         const leftParticipants = session.details?.left_participants || [];
-                        return !leftParticipants.includes(state.currentUserId);
+                        return !leftParticipants.some((lp: any) => String(lp) === String(state.currentUserId));
                     })
                     .map((session: any) => ({
                         id: session.id,

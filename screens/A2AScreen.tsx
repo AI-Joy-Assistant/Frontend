@@ -1231,11 +1231,10 @@ const A2AScreen = () => {
                 const mappedLogs: A2ALog[] = data.sessions
                     .filter((session: any) => {
                         // left_participants에 현재 사용자가 포함되어 있으면 목록에서 제외
+                        // (거절한 사람은 left_participants에 추가되므로, 거절자 본인에게만 숨겨짐)
+                        // 주최자는 left_participants에 없으므로 '거절됨' 뱃지와 함께 카드가 노출됨
                         const leftParticipants = session.details?.left_participants || [];
-                        const isCurrentUserLeft = leftParticipants.includes(currentUserId);
-                        if (isCurrentUserLeft) {
-
-                        }
+                        const isCurrentUserLeft = leftParticipants.some((lp: any) => String(lp) === String(currentUserId));
                         return !isCurrentUserLeft;
                     })
                     .map((session: any) => {
@@ -1382,7 +1381,7 @@ const A2AScreen = () => {
 
             // forceRefresh가 true면 캐시 무효화하고 즉시 새로고침
             if (forceRefresh) {
-                dataCache.invalidate('a2a:sessions');
+                dataCache.invalidate('a2a:sessions:v2'); // [FIX] 캐시 키 v2로 통일
                 navigation.setParams({ forceRefresh: undefined });
                 setTimeout(() => {
                     fetchA2ALogs(true, false);
@@ -1736,9 +1735,11 @@ const A2AScreen = () => {
 
 
             if (res.ok) {
-                // [수정] 즉시 로컬 상태에서 해당 카드 제거
+                // [수정] 즉시 로컬 상태에서 해당 카드 제거 (낙관적 업데이트)
                 setRejectedLogTitle(selectedLog.title || '일정');
                 setLogs(prevLogs => prevLogs.filter(log => log.id !== selectedLog.id));
+                // [FIX] 캐시도 즉시 무효화하여 다음 fetch 때 rejected 세션이 돌아오지 않도록
+                dataCache.invalidate('a2a:sessions:v2');
                 // 처리가 완료되면 모달 닫기
                 setShowRejectConfirm(false);
                 handleClose();
@@ -2773,13 +2774,14 @@ const A2AScreen = () => {
                                             {/* 모달이 닫히는 중이 아닐 때만 버튼 표시 */}
                                             {!isModalClosing && (
                                                 <>
-                                                    {/* [FIX] 재조율 버튼: 활성 참여자 2명 이상 + completed/rejected 아닐 때만 표시 */}
+                                                    {/* [FIX] 재조율 버튼: 나 외 활성 참여자 1명 이상 + rejected 아닐 때만 표시 */}
                                                     {(() => {
                                                         const attendees = (selectedLog?.details as any)?.attendees || [];
                                                         const leftParticipants = (selectedLog?.details as any)?.left_participants || [];
                                                         const activeAttendees = attendees.filter((a: any) => !leftParticipants.includes(a.id));
+                                                        const otherActiveAttendees = activeAttendees.filter((a: any) => !a.isCurrentUser);
                                                         const status = selectedLog?.status?.toLowerCase() || '';
-                                                        const showReschedule = activeAttendees.length >= 2 && !['rejected'].includes(status);
+                                                        const showReschedule = otherActiveAttendees.length >= 1 && !['rejected'].includes(status);
 
                                                         return showReschedule ? (
                                                             <TouchableOpacity
