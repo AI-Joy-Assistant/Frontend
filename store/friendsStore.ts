@@ -81,7 +81,7 @@ export const friendsStore = {
 
     // 친구 목록 조회
     fetchFriends: async (force = false): Promise<Friend[]> => {
-        if (!force && isCacheValid() && state.friends.length > 0 && state.initialLoadDone) {
+        if (!force && isCacheValid() && state.initialLoadDone) {
             console.log('[FriendsStore] 캐시 히트 - friends');
             return state.friends;
         }
@@ -121,7 +121,7 @@ export const friendsStore = {
 
     // 친구 요청 목록 조회
     fetchFriendRequests: async (force = false): Promise<FriendRequest[]> => {
-        if (!force && isCacheValid() && state.friendRequests !== undefined && state.initialLoadDone) {
+        if (!force && isCacheValid() && state.initialLoadDone) {
             console.log('[FriendsStore] 캐시 히트 - friendRequests');
             return state.friendRequests;
         }

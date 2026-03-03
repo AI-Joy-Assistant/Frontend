@@ -304,10 +304,6 @@ const FriendsScreen = () => {
 
   // WebSocket for real-time friend request notifications (using singleton service)
   useEffect(() => {
-    if (!currentUserId) return;
-
-    // [CHANGED] connect는 App.tsx에서 중앙 관리 — 여기서는 구독만
-
     // FriendsScreen에서 필요한 메시지 구독
     const unsubscribe = WebSocketService.subscribe(
       'FriendsScreen',
@@ -315,27 +311,25 @@ const FriendsScreen = () => {
       (data) => {
         console.log(`[WS:Friends] Event: ${data.type}`);
 
-        // [DEBUG] 친구 삭제 이벤트 수신 확인용 Alert
-        if (data.type === 'friend_deleted') {
-          console.log(`[WS:Friends] ⚡ friend_deleted 수신! deleted_by=${data.deleted_by}`);
-          Alert.alert('디버그', `친구 삭제 이벤트 수신: ${data.deleted_by}`);
-
-          if (data.deleted_by) {
-            console.log(`[WS:Friends] Removing friend locally: ${data.deleted_by}`);
-            friendsStore.removeFriend(data.deleted_by);
-          }
+        if (data.type === 'friend_deleted' && data.deleted_by) {
+          friendsStore.removeFriend(data.deleted_by);
         }
 
-        // WebSocket 이벤트 시 캐시 무효화 후 새로고침
-        friendsStore.invalidate();
-        friendsStore.refresh();
+        // WebSocket 이벤트 시 강제 새로고침 (캐시 무시)
+        friendsStore.fetchAll(true);
       }
     );
 
+    // [FIX] 항상 폴링으로 친구 데이터 동기화 (WS가 작동하지 않을 수 있으므로)
+    const pollingInterval = setInterval(() => {
+      friendsStore.fetchAll(true);
+    }, 5000);
+
     return () => {
       unsubscribe();
+      clearInterval(pollingInterval);
     };
-  }, [currentUserId]);
+  }, []);
 
   const handleAddFriend = async () => {
     if (!searchTerm.trim()) {
@@ -484,12 +478,20 @@ const FriendsScreen = () => {
 
     try {
       const token = await AsyncStorage.getItem('accessToken');
-      if (!token) return;
+      if (!token) {
+        console.log('🔴 [REJECT] 토큰 없음! 거절 API 호출 안 함');
+        return;
+      }
 
-      const response = await fetch(`${getBackendUrl()}/friends/requests/${requestId}/reject`, {
+      const url = `${getBackendUrl()}/friends/requests/${requestId}/reject`;
+      console.log(`🔴 [REJECT] API 호출: ${url}`);
+
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
       });
+
+      console.log(`🔴 [REJECT] 응답 status: ${response.status}`);
 
       if (response.ok) {
         // [FIX] 거절 시 빨간색 X와 빨간 버튼 표시, 제목 '거절' 추가
@@ -500,6 +502,7 @@ const FriendsScreen = () => {
         showAlert('오류', '요청 거절에 실패했습니다.', 'error');
       }
     } catch (e) {
+      console.log(`🔴 [REJECT] 에러 발생:`, e);
       // 오류 시 요청 목록 다시 불러오기
       friendsStore.refresh();
       showAlert('오류', '요청 처리 중 오류가 발생했습니다.', 'error');

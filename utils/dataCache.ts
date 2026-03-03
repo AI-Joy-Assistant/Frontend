@@ -15,7 +15,7 @@ type CacheEntry<T> = {
 
 class DataCache {
     private cache: Map<string, CacheEntry<any>> = new Map();
-    private pendingRequests: Set<string> = new Set(); // 중복 요청 방지
+    private pendingRequests: Map<string, number> = new Map(); // 중복 요청 방지 (timestamp 포함)
 
     /**
      * 캐시에 데이터 저장
@@ -49,16 +49,24 @@ class DataCache {
 
     /**
      * 요청이 이미 진행 중인지 확인 (중복 요청 방지)
+     * 10초 이상 pending이면 타임아웃으로 자동 해제 (교착 방지)
      */
     isPending(key: string): boolean {
-        return this.pendingRequests.has(key);
+        const startedAt = this.pendingRequests.get(key);
+        if (startedAt === undefined) return false;
+        // 10초 이상 pending이면 타임아웃으로 해제
+        if (Date.now() - startedAt > 10000) {
+            this.pendingRequests.delete(key);
+            return false;
+        }
+        return true;
     }
 
     /**
      * 요청 시작 마킹
      */
     markPending(key: string): void {
-        this.pendingRequests.add(key);
+        this.pendingRequests.set(key, Date.now());
     }
 
     /**
@@ -78,7 +86,7 @@ class DataCache {
                 this.cache.delete(key);
             }
         }
-        for (const key of this.pendingRequests) {
+        for (const key of this.pendingRequests.keys()) {
             if (key.startsWith(prefix)) {
                 this.pendingRequests.delete(key);
             }

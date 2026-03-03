@@ -380,24 +380,27 @@ export default function HomeScreen() {
     }, [])
   );
 
-  // WebSocket 끊김/지연 대비 백업 동기화
+  // [FIX] 항상 폴링으로 데이터 동기화 (WS가 작동하지 않을 수 있으므로)
   useEffect(() => {
     if (!currentUserId) return;
 
     const interval = setInterval(() => {
       if (AppState.currentState !== 'active') return;
 
+      // WS 재연결 시도
       if (!WebSocketService.isConnected()) {
         WebSocketService.connect(currentUserId).catch((e) => {
           console.warn('[WS:Home] 주기적 재연결 실패:', e);
         });
       }
 
-      refreshHomeRealtime();
-    }, 8000);
+      // 항상 데이터 리프레시 (캐시 무효화 + 강제 새로고침)
+      homeStore.fetchPendingRequests(true);
+      homeStore.fetchNotifications(true);
+    }, 5000);
 
     return () => clearInterval(interval);
-  }, [currentUserId, refreshHomeRealtime]);
+  }, [currentUserId]);
 
   // WebSocket for real-time A2A notifications (using singleton service)
   useEffect(() => {
@@ -423,10 +426,10 @@ export default function HomeScreen() {
           friendsStore.removeFriend(data.deleted_by);
         }
 
-        // WebSocket 이벤트 시 캐시 무효화 후 새로고침
-        refreshHomeRealtime();
-        friendsStore.invalidate();
-        friendsStore.refresh();
+        // [FIX] WebSocket 이벤트 시 강제 새로고침 (캐시 + pending 무시)
+        homeStore.fetchPendingRequests(true);
+        homeStore.fetchNotifications(true);
+        friendsStore.fetchAll(true);
 
         // [FIX] A2A 상태 변경 시 캘린더 이벤트 캐시도 무효화 후 강제 갱신
         if (data.type === 'a2a_status_changed' || data.type === 'a2a_request') {
@@ -439,7 +442,7 @@ export default function HomeScreen() {
     return () => {
       unsubscribe();
     };
-  }, [currentUserId, refreshHomeRealtime]);
+  }, [currentUserId]);
 
   // ---------------------------------------------------------
   // [추가] 튜토리얼 액션 콜백 (친구 탭, 채팅 탭 이동 처리)
@@ -469,8 +472,11 @@ export default function HomeScreen() {
   const visibleRequest = pendingRequests.find(req => !dismissedRequestIds.includes(req.id));
   const showRequest = !!visibleRequest;
 
-  console.log('📋 visibleRequest:', visibleRequest);
-  console.log('📋 showRequest:', showRequest);
+
+  if (__DEV__) {
+    console.log('📋 visibleRequest:', visibleRequest);
+    console.log('📋 showRequest:', showRequest);
+  }
 
   const [isCalendarExpanded, setIsCalendarExpanded] = useState(false);
 
@@ -831,37 +837,50 @@ export default function HomeScreen() {
   const mapEventsToSchedules = (events: any[]): ScheduleItem[] => {
     const mappedSchedules: ScheduleItem[] = events.map(event => {
       // Check if it's an all-day event (has date but no dateTime)
-      const isAllDayEvent = event.start?.date && !event.start?.dateTime;
+      // [FIX] 앱 자체 캘린더(source='app')인 경우 00:00~23:59 또는 00:00~다음날 00:00면 종일로 처리
+      const isAppAllDay = event.source === 'app' &&
+        event.start?.dateTime?.includes('T00:00') &&
+        (event.end?.dateTime?.includes('T23:59') || event.end?.dateTime?.includes('T00:00'));
+
+      const isAllDayEvent = (event.start?.date && !event.start?.dateTime) || isAppAllDay;
 
       let date: string;
       let endDateStr: string;
       let startTime: string;
       let endTime: string;
 
+      // [FIX] toISOString() 대신 로컬 시간대 기반 날짜 추출
+      const formatLocalDate = (d: Date) => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+
       if (isAllDayEvent) {
-        // For all-day events, use the date directly
-        date = event.start.date!;
-        // Google Calendar's all-day event end date is exclusive (next day)
-        // So we need to subtract 1 day for display
-        const endDateObj = new Date(event.end.date + 'T00:00:00');
-        endDateObj.setDate(endDateObj.getDate() - 1);
-        const endYear = endDateObj.getFullYear();
-        const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
-        const endDay = String(endDateObj.getDate()).padStart(2, '0');
-        endDateStr = `${endYear}-${endMonth}-${endDay}`;
-        startTime = '종일';
-        endTime = '';
+        if (isAppAllDay) {
+          // [App Internal Calendar] Use dateTime
+          const start = new Date(event.start?.dateTime || '');
+          const end = new Date(event.end?.dateTime || '');
+          date = formatLocalDate(start);
+          endDateStr = formatLocalDate(end);
+          startTime = '종일';
+          endTime = '';
+        } else {
+          // [Google Calendar] Use date field
+          date = event.start.date!;
+          const endDateObj = new Date(event.end.date + 'T00:00:00');
+          endDateObj.setDate(endDateObj.getDate() - 1);
+          const endYear = endDateObj.getFullYear();
+          const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
+          const endDay = String(endDateObj.getDate()).padStart(2, '0');
+          endDateStr = `${endYear}-${endMonth}-${endDay}`;
+          startTime = '종일';
+          endTime = '';
+        }
       } else {
         const start = new Date(event.start?.dateTime || event.start?.date || '');
         const end = new Date(event.end?.dateTime || event.end?.date || '');
-
-        // [FIX] toISOString() 대신 로컬 시간대 기반 날짜 추출
-        const formatLocalDate = (d: Date) => {
-          const year = d.getFullYear();
-          const month = String(d.getMonth() + 1).padStart(2, '0');
-          const day = String(d.getDate()).padStart(2, '0');
-          return `${year}-${month}-${day}`;
-        };
 
         date = formatLocalDate(start);
         endDateStr = formatLocalDate(end);
@@ -951,10 +970,10 @@ export default function HomeScreen() {
 
       let mappedSchedules: ScheduleItem[] = events.map(event => {
         // Check if it's an all-day event (has date but no dateTime)
-        // [FIX] 앱 자체 캘린더(source='app')인 경우 00:00~23:59면 종일로 처리
+        // [FIX] 앱 자체 캘린더(source='app')인 경우 00:00~23:59 또는 00:00~다음날 00:00면 종일로 처리
         const isAppAllDay = event.source === 'app' &&
           event.start.dateTime?.includes('T00:00') &&
-          event.end.dateTime?.includes('T23:59');
+          (event.end.dateTime?.includes('T23:59') || event.end.dateTime?.includes('T00:00'));
 
         const isAllDayEvent = (event.start.date && !event.start.dateTime) || isAppAllDay;
 
@@ -1876,7 +1895,7 @@ export default function HomeScreen() {
                     });
                     const newNotificationCount = visibleNotifications.filter(n => !viewedNotificationIds.includes(n.id)).length;
 
-                    const hasNotifications = hasRealtimeNotificationDot || (newRequestCount + newNotificationCount) > 0;
+                    const hasNotifications = (newRequestCount + newNotificationCount) > 0;
 
                     return (
                       <>

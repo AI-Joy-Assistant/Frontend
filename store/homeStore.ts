@@ -85,7 +85,7 @@ export const homeStore = {
 
     // Pending 요청 조회
     fetchPendingRequests: async (force = false): Promise<PendingRequest[]> => {
-        if (!force && isCacheValid() && state.pendingRequests !== undefined && state.initialLoadDone) {
+        if (!force && isCacheValid() && state.initialLoadDone) {
             console.log('[HomeStore] 캐시 히트 - pendingRequests');
             return state.pendingRequests;
         }
@@ -131,7 +131,7 @@ export const homeStore = {
 
     // 알림 조회
     fetchNotifications: async (force = false): Promise<Notification[]> => {
-        if (!force && isCacheValid() && state.notifications !== undefined && state.initialLoadDone) {
+        if (!force && isCacheValid() && state.initialLoadDone) {
             console.log('[HomeStore] 캐시 히트 - notifications');
             return state.notifications;
         }

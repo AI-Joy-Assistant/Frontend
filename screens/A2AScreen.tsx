@@ -1070,7 +1070,7 @@ const A2AScreen = () => {
 
     // Fetch logs (GET /a2a/sessions)
     const fetchA2ALogs = useCallback(async (showLoading = true, useCache = true) => {
-        const cacheKey = 'a2a:sessions';
+        const cacheKey = 'a2a:sessions:v2';
         if (showLoading) setLoading(true);
         try {
             // 튜토리얼 모드일 경우 가짜 데이터 주입
@@ -1407,28 +1407,15 @@ const A2AScreen = () => {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
-                    'Cache-Control': 'no-cache', // 서버 캐시 무시
                 },
             });
 
             if (response.ok) {
                 const data = await response.json();
 
-                // [DEBUG] 모든 세션의 날짜/시간 데이터 확인
-                console.log('[A2A DEBUG] 세션 수:', data.sessions?.length);
-                data.sessions?.forEach((session: any, index: number) => {
-                    const d = session.details || {};
-                    console.log(`[A2A DEBUG] 세션 ${index}:`, {
-                        id: session.id?.substring(0, 8),
-                        participant_names: session.participant_names,
-                        proposedDate: d.proposedDate,
-                        proposedTime: d.proposedTime,
-                        requestedDate: d.requestedDate,
-                        requestedTime: d.requestedTime,
-                        duration_nights: d.duration_nights,
-                        purpose: d.purpose,
-                    });
-                });
+                if (__DEV__) {
+                    console.log('[A2A DEBUG] 세션 수:', data.sessions?.length);
+                }
 
                 const mappedLogs: A2ALog[] = mapSessionsToLogs(data.sessions || []);
                 const visibleLogs = filterVisibleLogs(mappedLogs);
@@ -1468,39 +1455,32 @@ const A2AScreen = () => {
 
             // [NEW] forceRefresh가 true면 캐시 무효화하고 즉시 새로고침
             if (forceRefresh) {
-                console.log('[A2A] forceRefresh 감지 - 캐시 무효화하고 새로고침');
+                if (__DEV__) console.log('[A2A] forceRefresh 감지 - 캐시 무효화하고 새로고침');
                 // 1. 캐시 완전 무효화
-                dataCache.invalidate('a2a:sessions');
+                dataCache.invalidate('a2a:sessions:v2');
                 // 2. 파라미터 리셋 (먼저 리셋하여 중복 방지)
                 navigation.setParams({ forceRefresh: undefined });
                 // 3. 약간의 딜레이 후 로드 (백엔드에서 데이터가 준비될 시간 확보)
                 setTimeout(() => {
                     fetchA2ALogs(true, false); // 로딩 표시 O, 캐시 무시
                 }, 500);
-            } else {
+            } else if (currentUserId) {
+                // [FIX] P2: 중복 useFocusEffect 통합 - currentUserId가 있을 때만 fetch
                 fetchA2ALogs();
             }
 
-            // [UPDATE] 폴링 백업: WebSocket이 메인이므로 60초마다 안전 백업용
+            // [FIX] P1: WebSocket이 연결되어 있으면 폴링 안함, 끊겼을 때만 60초 백업
             const pollingInterval = setInterval(() => {
-                console.log('[A2A] 폴링 새로고침 (백업)');
-                fetchA2ALogs(false, false); // 로딩 표시 없이, 캐시 무시
-            }, 60000); // 60초마다 (WebSocket이 메인)
+                if (!WebSocketService.isConnected()) {
+                    if (__DEV__) console.log('[A2A] WS 미연결 - 폴링 백업 새로고침');
+                    fetchA2ALogs(false, false);
+                }
+            }, 60000);
 
             return () => {
                 clearInterval(pollingInterval);
             };
-        }, [fetchA2ALogs, forceRefresh, navigation])
-    );
-
-    // currentUserId가 설정된 후에 로그 불러오기 (필터링에 필요)
-    // currentUserId가 설정된 후에 로그 불러오기 (필터링에 필요)
-    useFocusEffect(
-        useCallback(() => {
-            if (currentUserId) {
-                fetchA2ALogs();
-            }
-        }, [currentUserId, fetchA2ALogs])
+        }, [fetchA2ALogs, forceRefresh, navigation, currentUserId])
     );
 
     // WebSocket for real-time A2A updates (using singleton service)
@@ -1516,13 +1496,17 @@ const A2AScreen = () => {
             async (data) => {
                 if (data.type === "a2a_request") {
                     console.log("[WS:A2A] 새 A2A 요청:", data.from_user);
-                    fetchA2ALogs(false);
+                    // [FIX] 캐시 무시하고 강제 새로고침
+                    dataCache.invalidate('a2a:sessions:v2');
+                    fetchA2ALogs(true, false);
                 } else if (data.type === "a2a_rejected") {
                     console.log("[WS:A2A] 거절 알림:", data.rejected_by_name);
-                    fetchA2ALogs(false);
+                    dataCache.invalidate('a2a:sessions:v2');
+                    fetchA2ALogs(true, false);
                 } else if (data.type === "a2a_message") {
                     console.log("[WS:A2A] 새 협상 메시지:", data.sender_name, data.message);
-                    fetchA2ALogs(false);
+                    dataCache.invalidate('a2a:sessions:v2');
+                    fetchA2ALogs(true, false);
 
                     // [실시간 업데이트] 열린 모달의 세부 정보도 새로고침
                     const currentLog = selectedLogRef.current;
@@ -1549,7 +1533,8 @@ const A2AScreen = () => {
                     }
                 } else if (data.type === "a2a_status_changed") {
                     console.log("[WS:A2A] 상태 변경:", data.new_status);
-                    fetchA2ALogs(false);
+                    dataCache.invalidate('a2a:sessions:v2');
+                    fetchA2ALogs(true, false);
                 }
             }
         );
@@ -1669,6 +1654,63 @@ const A2AScreen = () => {
         return true;
     };
 
+    // [FIX] 모달이 열려있을 때 세션 상세 정보를 주기적으로 폴링 (실시간 협상 로그 업데이트)
+    useEffect(() => {
+        if (!selectedLog || !selectedLog.id || selectedLog.id.startsWith('tutorial_')) return;
+
+        // 완료/거절 상태면 폴링 불필요 (pending_approval은 폴링 유지)
+        const status = selectedLog.status?.toLowerCase?.() || '';
+        if (['completed', 'rejected'].includes(status)) return;
+
+        console.log(`🔄 [POLL] 폴링 시작: session=${selectedLog.id}, status=${status}`);
+
+        const pollInterval = setInterval(async () => {
+            try {
+                const token = await AsyncStorage.getItem('accessToken');
+                if (!token) return;
+
+                const res = await fetch(`${API_BASE}/a2a/session/${selectedLog.id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    const newDetails = data.details || {};
+                    const newStatus = data.status;
+
+                    console.log(`🔄 [POLL] 응답: process=${newDetails.process?.length || 0}개, status=${newStatus}`);
+
+                    if (selectedLogRef.current?.id === selectedLog.id) {
+                        setSelectedLog(prev => {
+                            if (!prev || prev.id !== selectedLog.id) return prev;
+                            const prevDetails = (prev.details || {}) as any;
+                            return {
+                                ...prev,
+                                status: newStatus || prev.status,
+                                details: {
+                                    ...prevDetails,
+                                    // [FIX] 폴링에서는 process만 업데이트 - 나머지 모든 데이터는 기존 유지
+                                    process: newDetails.process?.length > 0 ? newDetails.process : prevDetails.process || [],
+                                }
+                            };
+                        });
+                        // ref도 업데이트
+                        if (selectedLogRef.current?.id === selectedLog.id) {
+                            selectedLogRef.current = {
+                                ...selectedLogRef.current,
+                                status: newStatus || selectedLogRef.current.status,
+                            };
+                        }
+                    }
+                }
+            } catch (e) {
+                // 폴링 실패 시 무시
+            }
+        }, 3000);
+
+        return () => clearInterval(pollInterval);
+    }, [selectedLog?.id, selectedLog?.status]);
+
     const handleLogClick = (log: any) => {
         // 모달 열기 전 닫힘 상태 리셋
         setIsModalClosing(false);
@@ -1706,6 +1748,14 @@ const A2AScreen = () => {
                     if (newDetails.proposer === "알 수 없음" && log.details?.proposer) {
                         newDetails.proposer = log.details.proposer;
                     }
+                    // [FIX] 프로필 아바타도 보존
+                    if ((!newDetails.proposerAvatar || newDetails.proposerAvatar.includes('picsum')) && (log.details as any)?.proposerAvatar) {
+                        newDetails.proposerAvatar = (log.details as any).proposerAvatar;
+                    }
+
+                    // 디버그: 리스트 vs 상세 API 데이터 비교
+                    console.log(`📊 [Detail API] attendees: ${newDetails.attendees?.length || 0}개, list attendees: ${(log.details as any)?.attendees?.length || 0}개`);
+                    console.log(`📊 [Detail API] proposer: ${newDetails.proposer}, avatar: ${newDetails.proposerAvatar?.substring(0, 30)}`);
 
                     // 현재 보고 있는 로그가 여전히 같은 로그일 때만 업데이트
                     if (selectedLogRef.current?.id === log.id) {
@@ -1715,6 +1765,15 @@ const A2AScreen = () => {
                             details: {
                                 ...(log.details || {}),
                                 ...newDetails,
+                                // [FIX] attendees: 리스트 API 데이터가 더 좋으면 보존
+                                attendees: (newDetails.attendees?.length >= ((log.details as any)?.attendees?.length || 0))
+                                    ? newDetails.attendees
+                                    : (log.details as any)?.attendees || newDetails.attendees || [],
+                                // [FIX] proposerAvatar: 리스트 데이터가 더 좋으면 보존
+                                proposerAvatar: (newDetails.proposerAvatar && !newDetails.proposerAvatar.includes('picsum'))
+                                    ? newDetails.proposerAvatar
+                                    : (log.details as any)?.proposerAvatar || newDetails.proposerAvatar,
+                                // 충돌 정보는 리스트 데이터에서 보존
                                 has_conflict: (log.details as any)?.has_conflict,
                                 conflicting_sessions: (log.details as any)?.conflicting_sessions,
                                 process: newDetails.process?.length > 0 ? newDetails.process : (log.details as any)?.process || []
@@ -1889,20 +1948,28 @@ const A2AScreen = () => {
     };
 
     const confirmDeleteLog = async (logId: string) => {
+        // [FIX] 즉시 UI에서 제거 (낙관적 업데이트)
+        setLogs(prev => prev.filter(log => log.id !== logId));
+        // 상세 모달이 열려있으면 닫기
+        if (selectedLog?.id === logId) {
+            handleClose();
+        }
+
         try {
             const token = await AsyncStorage.getItem('accessToken');
             const res = await fetch(`${API_BASE}/a2a/session/${logId}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            if (res.ok) {
-                fetchA2ALogs();
-            } else {
+            if (!res.ok) {
+                // 실패 시 다시 불러오기
                 alert("삭제에 실패했습니다.");
+                fetchA2ALogs();
             }
         } catch (e) {
             console.error("Delete error", e);
             alert("오류가 발생했습니다.");
+            fetchA2ALogs();
         }
     };
 
@@ -1914,11 +1981,13 @@ const A2AScreen = () => {
     };
 
     const executeDelete = async () => {
-        if (deleteTargetLogId) {
-            await confirmDeleteLog(deleteTargetLogId);
-        }
+        const targetId = deleteTargetLogId;
+        // [FIX] 팝업 즉시 닫기
         setShowDeleteConfirm(false);
         setDeleteTargetLogId(null);
+        if (targetId) {
+            confirmDeleteLog(targetId);  // await 없이 백그라운드 실행
+        }
     };
 
     // ✅ [NEW] 튜토리얼 액션 콜백 등록

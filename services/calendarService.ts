@@ -267,7 +267,14 @@ class CalendarService {
             // Google 연동 상태에서, DB에만 남은 고아(원격 삭제) Google 이벤트는 숨김
             const appGoogleEventId = (e?.google_event_id || '').trim();
             const isGoogleBackedAppRow = !!appGoogleEventId && !appGoogleEventId.startsWith('app_');
+
+            // 1. 구글에 삭제된 이벤트 버림
             if (isGoogleBackedAppRow && !googleEventIdSet.has(appGoogleEventId)) {
+              return false;
+            }
+
+            // 2. 구글에서 가져온 원본 이벤트가 있으면 중복이므로 버림 (구글 쪽 데이터를 우선 표출)
+            if (isGoogleBackedAppRow && googleEventIdSet.has(appGoogleEventId)) {
               return false;
             }
 
