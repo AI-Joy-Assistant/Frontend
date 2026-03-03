@@ -4,7 +4,6 @@ import {
     Text,
     TouchableOpacity,
     StyleSheet,
-    SafeAreaView,
     ScrollView,
     Image,
     TextInput,
@@ -15,7 +14,9 @@ import {
     Alert,
     Animated, // Added Animated
     Dimensions, // Added Dimensions
+    RefreshControl
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
     Clock,
     ArrowRight,
@@ -44,6 +45,8 @@ import { RootStackParamList, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
 import { getBackendUrl } from '../utils/environment';
 import { useTutorial } from '../store/TutorialContext';
+import { useRefresh } from '../hooks/useRefresh';
+import { useRequestMeetingStore } from '../store/requestMeetingStore';
 
 const COLORS = {
     primaryMain: '#3730A3',
@@ -96,29 +99,35 @@ const RequestMeetingScreen = () => {
         ghostFriend,
         tutorialFriendAdded,
         registerTarget,
-        unregisterTarget
+        unregisterTarget,
+        registerActionCallback,
+        unregisterActionCallback
     } = useTutorial();
 
     const [friends, setFriends] = useState<Friend[]>([]);
     const [loadingFriends, setLoadingFriends] = useState(true);
-    const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
     const [currentUserId, setCurrentUserId] = useState<string>('');  // ✅ 현재 사용자 ID
 
-    // Request details state
-    const [title, setTitle] = useState('');
-    const [location, setLocation] = useState('');
+    // Store State
+    const {
+        title, setTitle,
+        location, setLocation,
+        selectedFriends, setSelectedFriends,
+        startDate, setStartDate,
+        endDate, setEndDate,
+        startTime, setStartTime,
+        endTime, setEndTime,
+        durationNights, setDurationNights,
+        durationHour, setDurationHour,
+        durationMinute, setDurationMinute,
+        reset
+    } = useRequestMeetingStore();
 
     const [showFriendModal, setShowFriendModal] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
 
-    // Get today's date in YYYY-MM-DD format
+    // Get today's date in YYYY-MM-DD format (for local helpers)
     const today = new Date();
-    const todayStr = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
-
-    const [startDate, setStartDate] = useState(todayStr);
-    const [endDate, setEndDate] = useState(todayStr);
-    const [startTime, setStartTime] = useState('09:00');
-    const [endTime, setEndTime] = useState('18:00');
 
     const [activePicker, setActivePicker] = useState<'startDate' | 'endDate' | 'startTime' | 'endTime' | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -128,6 +137,19 @@ const RequestMeetingScreen = () => {
     const [appliedRecIndex, setAppliedRecIndex] = useState<number | null>(null);
     const [recommendations, setRecommendations] = useState<any[]>([]);
     const [showResetModal, setShowResetModal] = useState(false);
+
+    // Custom Alert Modal State
+    const [customAlertVisible, setCustomAlertVisible] = useState(false);
+    const [customAlertTitle, setCustomAlertTitle] = useState('');
+    const [customAlertMessage, setCustomAlertMessage] = useState('');
+    const [customAlertType, setCustomAlertType] = useState<'success' | 'error' | 'info'>('info');
+
+    const showCustomAlert = (title: string, message: string, type: 'success' | 'error' | 'info' = 'info') => {
+        setCustomAlertTitle(title);
+        setCustomAlertMessage(message);
+        setCustomAlertType(type);
+        setCustomAlertVisible(true);
+    };
 
     // Calendar state
     const [calendarYear, setCalendarYear] = useState(today.getFullYear());
@@ -140,10 +162,12 @@ const RequestMeetingScreen = () => {
 
     // Duration picker state
     const [showDurationPicker, setShowDurationPicker] = useState(false);
-    const [durationHour, setDurationHour] = useState(1);
-    const [durationMinute, setDurationMinute] = useState(0);
     const [tempDurationHour, setTempDurationHour] = useState(1);
     const [tempDurationMinute, setTempDurationMinute] = useState(0);
+
+    // selectedFriends 최신 값을 useEffect 클로저 내에서 읽기 위한 ref
+    const selectedFriendsRef = useRef<string[]>(selectedFriends);
+    useEffect(() => { selectedFriendsRef.current = selectedFriends; }, [selectedFriends]);
 
     const totalParticipants = selectedFriends.length + 1;
     const hours = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
@@ -151,9 +175,6 @@ const RequestMeetingScreen = () => {
     const durationHours = [0, 1, 2, 3, 4, 5, 6];
     const durationMinutes = [0, 15, 30, 45];
     const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
-
-    // Duration Nights State
-    const [durationNights, setDurationNights] = useState(0);
 
     // ScrollView ref for auto-scroll during tutorial
     const scrollViewRef = useRef<ScrollView>(null);
@@ -223,7 +244,11 @@ const RequestMeetingScreen = () => {
     const handleDateSelect = (day: number, isCurrentMonth: boolean) => {
         if (!isCurrentMonth) return;
         const dateStr = `${calendarYear}-${calendarMonth.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-        if (activePicker === 'startDate') setStartDate(dateStr);
+        if (activePicker === 'startDate') {
+            setStartDate(dateStr);
+            // [FIX] 시작날짜 선택 시 종료날짜도 자동으로 동일하게 설정
+            setEndDate(dateStr);
+        }
         else if (activePicker === 'endDate') setEndDate(dateStr);
         setActivePicker(null);
         setHasAnalyzed(false);
@@ -234,20 +259,6 @@ const RequestMeetingScreen = () => {
         return `${parseInt(month)}월 ${parseInt(day)}일`;
     };
 
-    // Tutorial: 친구 성공적 추가 시 다음 단계로 이동
-    useEffect(() => {
-        if (isTutorialActive && currentStep === 'CREATE_REQUEST' && currentSubStep?.id === 'select_friend') {
-            // 친구가 선택되어 있으면 모달 닫고 다음 단계로
-            if (selectedFriends.includes(ghostFriend.id)) {
-                // 먼저 모달 닫기
-                setShowFriendModal(false);
-                // 모달 닫힌 후 충분한 딜레이 후에 다음 단계로
-                setTimeout(() => {
-                    nextSubStep();
-                }, 500);
-            }
-        }
-    }, [selectedFriends, isTutorialActive, currentStep, currentSubStep, ghostFriend.id, nextSubStep]);
 
     // ✅ [NEW] 튜토리얼: explain_analyze 단계에서 분석 버튼으로 자동 스크롤
     useEffect(() => {
@@ -259,9 +270,61 @@ const RequestMeetingScreen = () => {
         }
     }, [isTutorialActive, currentStep, currentSubStep]);
 
+    // ✅ [NEW] 튜토리얼 액션 콜백 등록
+    useEffect(() => {
+        if (!isTutorialActive) return;
+
+        // "참여자 추가" 버튼 클릭 콜백 - 조이너 가이드 자동 추가
+        registerActionCallback('btn_add_participant', () => {
+            // 모달 열기
+            setShowFriendModal(true);
+            // 잠시 후 조이너 가이드 자동 선택 + 모달 닫기 + 다음 단계
+            setTimeout(() => {
+                // ref로 최신 selectedFriends 읽기 (클로저 stale 문제 방지)
+                const current = selectedFriendsRef.current;
+                if (!current.includes(ghostFriend.id)) {
+                    setSelectedFriends([...current, ghostFriend.id]);
+                }
+                setHasAnalyzed(false);
+                setTimeout(() => {
+                    setShowFriendModal(false);
+                    setTimeout(() => nextSubStep(), 300);
+                }, 500);
+            }, 500);
+        });
+
+        // "AI 분석" 버튼 클릭 콜백
+        registerActionCallback('btn_analyze_schedule', () => {
+            handleAnalyzeWithTutorial();
+        });
+
+        // "추천 일정 선택" 콜백
+        registerActionCallback('section_ai_recommendations', () => {
+            if (recommendations.length > 0) {
+                handleApplyRecommendation(0);
+                setTimeout(() => {
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                    nextSubStep();
+                }, 500);
+            }
+        });
+
+        // "요청 보내기" 버튼 클릭 콜백
+        registerActionCallback('btn_send_request', () => {
+            handleSendWithTutorial();
+        });
+
+        return () => {
+            unregisterActionCallback('btn_add_participant');
+            unregisterActionCallback('btn_analyze_schedule');
+            unregisterActionCallback('section_ai_recommendations');
+            unregisterActionCallback('btn_send_request');
+        };
+    }, [isTutorialActive, selectedFriends, ghostFriend.id, recommendations, registerActionCallback, unregisterActionCallback, nextSubStep]);
+
     const openTimePicker = (type: 'startTime' | 'endTime') => {
         // [NEW] 튜토리얼: 시간 선택 시 자동 설정
-        if (isTutorialActive && currentStep === 'CREATE_REQUEST' && currentSubStep?.id === 'select_time') {
+        if (isTutorialActive && currentStep === 'CREATE_REQUEST' && currentSubStep?.id === 'explain_time_window') {
             setStartTime('18:30');
             setEndTime('20:30');
             setDurationHour(2);
@@ -352,17 +415,21 @@ const RequestMeetingScreen = () => {
     useEffect(() => {
         if (isTutorialActive && currentStep === 'CREATE_REQUEST') {
             // 튜토리얼 진입 시 선택된 친구가 있다면 초기화 (단, 이미 사용자가 선택 작업을 진행 중인 경우는 제외해야 함)
-            // 여기서는 currentSubStep이 'select_friend' 이전이거나 초반일 때만 초기화
-            if (currentSubStep?.id === 'go_to_request' || currentSubStep?.id === 'select_friend') {
+            // 여기서는 최초 진입 단계(go_to_request)에서만 초기화
+            // add_participant 단계에서 초기화하면 가이드 추가 직후 리셋되는 버그 발생
+            if (currentSubStep?.id === 'go_to_request' || currentSubStep?.id === 'request_page_intro') {
                 // 강제로 초기화하여 "이미 선택됨" 버그 방지
                 // 단, 무한 루프 주의. selectedFriends가 비어있지 않을 때만.
-                setSelectedFriends(prev => prev.length > 0 ? [] : prev);
+                if (selectedFriends.length > 0) setSelectedFriends([]);
             }
         } else if (!isTutorialActive) {
             // 튜토리얼이 아닐 때 가이드 계정이 선택되어 있다면 제거
-            setSelectedFriends(prev => prev.filter(id => id !== 'tutorial_guide_joyner'));
+            const filtered = selectedFriends.filter(id => id !== 'tutorial_guide_joyner');
+            if (filtered.length !== selectedFriends.length) {
+                setSelectedFriends(filtered);
+            }
         }
-    }, [isTutorialActive, currentStep, currentSubStep?.id]);
+    }, [isTutorialActive, currentStep, currentSubStep?.id, selectedFriends, setSelectedFriends]);
 
     // ✅ [NEW] 튜토리얼: 자동 제목 입력
     useEffect(() => {
@@ -389,7 +456,7 @@ const RequestMeetingScreen = () => {
     const buttonScale = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
-        if (isTutorialActive && currentStep === 'CREATE_REQUEST' && currentSubStep?.id === 'select_friend') {
+        if (isTutorialActive && currentStep === 'CREATE_REQUEST' && currentSubStep?.id === 'add_participant') {
             const pulse = Animated.loop(
                 Animated.sequence([
                     Animated.timing(buttonScale, {
@@ -410,6 +477,26 @@ const RequestMeetingScreen = () => {
             buttonScale.setValue(1);
         }
     }, [isTutorialActive, currentStep, currentSubStep?.id]);
+    // ✅ [NEW] 로딩 게이지 애니메이션
+    const loadingProgress = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        if (isSending) {
+            loadingProgress.setValue(0);
+            Animated.timing(loadingProgress, {
+                toValue: 0.9, // 90%까지 천천히
+                duration: 10000, // 10초 동안 (더 천천히)
+                useNativeDriver: false,
+            }).start();
+        } else if (isSent) {
+            // 완료 시 100%로 꽉 채우기
+            Animated.timing(loadingProgress, {
+                toValue: 1,
+                duration: 300,
+                useNativeDriver: false,
+            }).start();
+        }
+    }, [isSending, isSent]);
 
     // Fetch friends from API
     const fetchFriends = async () => {
@@ -464,8 +551,16 @@ const RequestMeetingScreen = () => {
         }, [])
     );
 
+    // Pull-to-refresh
+    const { refreshing, onRefresh } = useRefresh(async () => {
+        await fetchFriends();
+    });
+
     const toggleFriendSelection = (id: string) => {
-        setSelectedFriends(prev => prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]);
+        const newSelection = selectedFriends.includes(id)
+            ? selectedFriends.filter(f => f !== id)
+            : [...selectedFriends, id];
+        setSelectedFriends(newSelection);
         setHasAnalyzed(false);
         setAppliedRecIndex(null);
     };
@@ -543,17 +638,17 @@ const RequestMeetingScreen = () => {
                 setRecommendations(recs);
 
                 if (recs.length === 0) {
-                    Alert.alert('알림', '조건에 맞는 추천 일정을 찾을 수 없습니다.');
+                    showCustomAlert('오류', '조건에 맞는 추천 일정을 찾을 수 없습니다.', 'error');
                 }
                 setHasAnalyzed(true);
             } else {
                 const errorText = await response.text();
                 console.error('Failed to analyze:', errorText);
-                Alert.alert('오류', '일정 분석 중 문제가 발생했습니다.\n' + errorText);
+                showCustomAlert('오류', '일정 분석 중 문제가 발생했습니다.\n' + errorText, 'error');
             }
         } catch (error) {
             console.error('Error analyzing schedules:', error);
-            Alert.alert('오류', '서버 연결에 실패했습니다.');
+            showCustomAlert('오류', '서버 연결에 실패했습니다.', 'error');
         } finally {
             setIsAnalyzing(false);
         }
@@ -561,6 +656,8 @@ const RequestMeetingScreen = () => {
 
     // 튜토리얼용 가짜 분석 함수
     const handleAnalyzeWithTutorial = async () => {
+        if (isAnalyzing) return; // 중복 실행 방지
+
         if (isTutorialActive && currentStep === 'CREATE_REQUEST') {
             setIsAnalyzing(true);
             setTimeout(() => {
@@ -577,14 +674,15 @@ const RequestMeetingScreen = () => {
                         const endM = endTotalMinutes % 60;
                         return `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
                     })(),
-                    availableCount: selectedFriends.length + 1,
-                    availableIds: [currentUserId, ...selectedFriends],
+                    availableCount: 2,
+                    availableIds: [currentUserId, ghostFriend.id],
                     unavailableIds: []
                 }];
                 setRecommendations(fakeRecs);
                 setIsAnalyzing(false);
                 setHasAnalyzed(true);
-                setHasAnalyzed(true);
+                // 결과 확인을 위해 스크롤 아래로 이동
+                setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
                 nextSubStep(); // 분석 완료 후 다음 단계로
             }, 1500);
             return;
@@ -596,7 +694,7 @@ const RequestMeetingScreen = () => {
         if (selectedFriends.length === 0) return;
 
         if (!title.trim()) {
-            Alert.alert('알림', '일정 제목을 입력해주세요.');
+            showCustomAlert('알림', '일정 제목을 입력해주세요.', 'info');
             return;
         }
 
@@ -648,7 +746,8 @@ const RequestMeetingScreen = () => {
 
             if (response.ok) {
                 // ✅ 전송 성공 시 저장된 폼 상태 초기화
-                await AsyncStorage.removeItem('requestMeetingFormState');
+                // await AsyncStorage.removeItem('requestMeetingFormState'); // Removed, handled by reset() if needed, or keep state? Usually reset on success.
+                reset();
                 setIsSent(true);
             } else {
                 const error = await response.text();
@@ -682,25 +781,12 @@ const RequestMeetingScreen = () => {
 
     const confirmReset = async () => {
         setShowResetModal(false);
-        setTitle('');
-        setLocation('');
-        setSelectedFriends([]);
-        setDurationNights(0);
-        setStartDate(todayStr);
-        setEndDate(todayStr);
-        setStartTime('09:00');
-        setEndTime('18:00');
-        setDurationHour(1);
-        setDurationMinute(0);
+        reset();
         setAppliedRecIndex(null);
         setRecommendations([]);
         setIsAnalyzing(false);
         setHasAnalyzed(false);
-        try {
-            await AsyncStorage.removeItem('requestMeetingFormState');
-        } catch (e) {
-            console.error(e);
-        }
+        // await AsyncStorage.removeItem('requestMeetingFormState'); 
     };
 
     const filteredFriends = friends.filter(f => f.name.includes(searchTerm) || f.email.includes(searchTerm));
@@ -759,6 +845,9 @@ const RequestMeetingScreen = () => {
                 style={styles.scrollView}
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                }
             >
                 {/* Participants */}
                 <View style={styles.section}>
@@ -768,51 +857,60 @@ const RequestMeetingScreen = () => {
                             <RotateCw size={16} color={COLORS.neutralGray} />
                         </TouchableOpacity>
                     </View>
-                    <View style={styles.participantsContainer}>
-                        {selectedFriends.map(id => {
-                            const friend = displayedFriends.find(f => f.id === id);
-                            if (!friend) return null;
-                            return (
-                                <View key={id} style={styles.participantChip}>
-                                    {friend.avatar ? (
-                                        <Image source={{ uri: friend.avatar }} style={styles.participantAvatar} />
-                                    ) : (
-                                        <View style={[styles.participantAvatar, { backgroundColor: COLORS.neutral100, alignItems: 'center', justifyContent: 'center' }]}>
-                                            <User size={16} color={COLORS.neutralGray} />
-                                        </View>
-                                    )}
-                                    <Text style={styles.participantName}>{friend.name}</Text>
-                                    <TouchableOpacity onPress={() => toggleFriendSelection(id)} style={styles.participantRemove}>
-                                        <X size={14} color={COLORS.neutralGray} />
-                                    </TouchableOpacity>
-                                </View>
-                            );
-                        })}
-                        <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
-                            <TouchableOpacity
-                                onPress={() => setShowFriendModal(true)}
-                                style={[
-                                    styles.addParticipantButton,
-                                    isTutorialActive && currentSubStep?.id === 'select_friend' && {
-                                        borderColor: COLORS.primaryMain,
-                                        borderWidth: 2,
-                                        backgroundColor: '#EDE9FE', // Light purple bg
-                                        shadowColor: COLORS.primaryMain,
-                                        shadowOffset: { width: 0, height: 0 },
-                                        shadowOpacity: 0.5,
-                                        shadowRadius: 8,
-                                        elevation: 5
-                                    }
-                                ]}
-                                testID="btn_add_participant"
-                            >
-                                <Plus
-                                    size={24}
-                                    color={isTutorialActive && currentSubStep?.id === 'select_friend' ? COLORS.primaryMain : COLORS.neutralGray}
-                                />
-                            </TouchableOpacity>
-                        </Animated.View>
-                    </View>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}>
+                        <View style={styles.participantsContainer}>
+                            {selectedFriends.map(id => {
+                                const friend = displayedFriends.find(f => f.id === id);
+                                if (!friend) return null;
+                                return (
+                                    <View key={id} style={styles.participantChip}>
+                                        {friend.avatar ? (
+                                            <Image source={typeof friend.avatar === 'string' ? { uri: friend.avatar } : friend.avatar} style={styles.participantAvatar} />
+                                        ) : (
+                                            <View style={[styles.participantAvatar, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' }]}>
+                                                <User size={16} color={COLORS.primaryMain} />
+                                            </View>
+                                        )}
+                                        <Text style={styles.participantName}>{friend.name}</Text>
+                                        <TouchableOpacity onPress={() => toggleFriendSelection(id)} style={styles.participantRemove}>
+                                            <X size={14} color={COLORS.neutralGray} />
+                                        </TouchableOpacity>
+                                    </View>
+                                );
+                            })}
+                            <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        setShowFriendModal(true);
+                                        // 튜토리얼 중 직접 클릭 시에도 다음 단계로 진행
+                                        if (isTutorialActive && currentSubStep?.id === 'add_participant') {
+                                            setTimeout(() => nextSubStep(), 300);
+                                        }
+                                    }}
+                                    style={[
+                                        styles.addParticipantButton,
+                                        isTutorialActive && currentSubStep?.id === 'add_participant' && {
+                                            borderColor: COLORS.primaryMain,
+                                            borderWidth: 2,
+                                            backgroundColor: '#EDE9FE', // Light purple bg
+                                            shadowColor: COLORS.primaryMain,
+                                            shadowOffset: { width: 0, height: 0 },
+                                            shadowOpacity: 0.5,
+                                            shadowRadius: 8,
+                                            elevation: 5
+                                        }
+                                    ]}
+                                    ref={(r) => registerTarget('btn_add_participant', r)}
+                                    testID="btn_add_participant"
+                                >
+                                    <Plus
+                                        size={24}
+                                        color={isTutorialActive && currentSubStep?.id === 'add_participant' ? COLORS.primaryMain : COLORS.neutralGray}
+                                    />
+                                </TouchableOpacity>
+                            </Animated.View>
+                        </View>
+                    </ScrollView>
                 </View>
 
                 {/* Settings Card */}
@@ -970,7 +1068,7 @@ const RequestMeetingScreen = () => {
                                     <Text style={styles.dateValue}>{formatDisplayDate(startDate)}</Text>
                                 </View>
                             </TouchableOpacity>
-                            <ArrowRight size={18} color={COLORS.neutralGray} style={{ opacity: 0.4 }} />
+                            <Text style={{ fontSize: 20, color: COLORS.neutralGray, fontWeight: '600', marginHorizontal: 4 }}>~</Text>
                             <TouchableOpacity
                                 onPress={() => { setActivePicker(activePicker === 'endDate' ? null : 'endDate'); setHasAnalyzed(false); }}
                                 style={[styles.dateButton, activePicker === 'endDate' && styles.dateButtonActive]}
@@ -997,7 +1095,7 @@ const RequestMeetingScreen = () => {
                                 <Text style={{ fontSize: 11, color: COLORS.primaryMain, fontWeight: 'bold' }}>여행 모드는 종일 설정됨</Text>
                             )}
                         </View>
-                        <View style={styles.timeContainer}>
+                        <View style={[styles.timeContainer, { alignItems: 'center' }]}>
                             <TouchableOpacity
                                 onPress={() => openTimePicker('startTime')}
                                 style={[styles.timeButton, activePicker === 'startTime' && styles.timeButtonActive]}
@@ -1005,6 +1103,7 @@ const RequestMeetingScreen = () => {
                                 <Clock size={16} color={COLORS.primaryLight} />
                                 <Text style={styles.timeValue}>{startTime}</Text>
                             </TouchableOpacity>
+                            <Text style={{ fontSize: 20, color: COLORS.neutralGray, fontWeight: '600', marginHorizontal: 4 }}>~</Text>
                             <TouchableOpacity
                                 onPress={() => openTimePicker('endTime')}
                                 style={[styles.timeButton, activePicker === 'endTime' && styles.timeButtonActive]}
@@ -1041,8 +1140,8 @@ const RequestMeetingScreen = () => {
                     {!hasAnalyzed ? (
                         <TouchableOpacity
                             onPress={handleAnalyzeWithTutorial}
-                            disabled={selectedFriends.length === 0 || isAnalyzing}
-                            style={[styles.analyzeButton, selectedFriends.length === 0 && styles.analyzeButtonDisabled]}
+                            disabled={selectedFriends.length === 0 || !title.trim() || isAnalyzing}
+                            style={[styles.analyzeButton, (selectedFriends.length === 0 || !title.trim()) && styles.analyzeButtonDisabled]}
                             testID="btn_analyze_schedule"
                             ref={(r) => { if (r) registerTarget('btn_analyze_schedule', r); }}
                         >
@@ -1058,11 +1157,14 @@ const RequestMeetingScreen = () => {
                             )}
                         </TouchableOpacity>
                     ) : (
-                        <View style={styles.resultsContainer}>
+                        <View
+                            style={styles.resultsContainer}
+                            collapsable={false}
+                            testID="section_ai_recommendations"
+                            ref={(r) => { if (r) registerTarget('section_ai_recommendations', r); }}
+                        >
                             <View
                                 style={styles.resultsHeader}
-                                testID="section_ai_recommendations"
-                                ref={(r) => { if (r) registerTarget('section_ai_recommendations', r); }}
                             >
                                 <Text style={styles.resultsTitle}>AI 추천 일정</Text>
                             </View>
@@ -1139,12 +1241,18 @@ const RequestMeetingScreen = () => {
                                                     )}
 
                                                     {rec.availableIds.map((id: string) => {
-                                                        const friend = friends.find(f => f.id === id);
+                                                        const friend = displayedFriends.find(f => f.id === id);
                                                         if (!friend) return null;
                                                         return (
                                                             <View key={id} style={styles.participantCardAvailable}>
                                                                 <View style={styles.friendAvatarContainer}>
-                                                                    <Image source={{ uri: friend.avatar }} style={styles.friendAvatarSmall} />
+                                                                    {friend.avatar ? (
+                                                                        <Image source={{ uri: friend.avatar }} style={styles.friendAvatarSmall} />
+                                                                    ) : (
+                                                                        <View style={[styles.friendAvatarSmall, { backgroundColor: 'transparent', borderWidth: 1, borderColor: 'rgba(55, 48, 163, 0.1)', justifyContent: 'center', alignItems: 'center' }]}>
+                                                                            <User size={16} color={COLORS.primaryMain} />
+                                                                        </View>
+                                                                    )}
                                                                     <View style={styles.checkBadge}><Check size={8} color={COLORS.white} strokeWidth={4} /></View>
                                                                 </View>
                                                                 <Text style={styles.participantCardName}>{friend.name}</Text>
@@ -1153,12 +1261,21 @@ const RequestMeetingScreen = () => {
                                                     })}
 
                                                     {rec.unavailableIds.map((id: string) => {
-                                                        const friend = friends.find(f => f.id === id);
+                                                        const friend = displayedFriends.find(f => f.id === id);
                                                         if (!friend) return null;
                                                         return (
                                                             <View key={id} style={styles.participantCardUnavailable}>
                                                                 <View style={styles.friendAvatarContainer}>
-                                                                    <Image source={{ uri: friend.avatar }} style={[styles.friendAvatarSmall, { opacity: 0.5 }]} />
+                                                                    {friend.avatar ? (
+                                                                        <Image
+                                                                            source={typeof friend.avatar === 'string' ? { uri: friend.avatar } : friend.avatar}
+                                                                            style={[styles.friendAvatarSmall, { opacity: 0.5 }]}
+                                                                        />
+                                                                    ) : (
+                                                                        <View style={[styles.friendAvatarSmall, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center', opacity: 0.5 }]}>
+                                                                            <User size={16} color={COLORS.primaryMain} />
+                                                                        </View>
+                                                                    )}
                                                                     <View style={styles.xBadge}><X size={8} color={COLORS.white} strokeWidth={4} /></View>
                                                                 </View>
                                                                 <Text style={styles.participantCardNameGray}>{friend.name}</Text>
@@ -1193,15 +1310,16 @@ const RequestMeetingScreen = () => {
                             disabled={
                                 isTutorialActive
                                     ? ((!isSent && recommendations.length > 0 && appliedRecIndex === null) || isSending)
-                                    : (selectedFriends.length === 0 || isSending)
+                                    : (selectedFriends.length === 0 || !title.trim() || recommendations.length === 0 || isSending)
                             }
                             style={[
                                 styles.sendButton,
                                 (isTutorialActive
                                     ? ((!isSent && recommendations.length > 0 && appliedRecIndex === null) || isSending)
-                                    : (selectedFriends.length === 0 || isSending)) && styles.sendButtonDisabled
+                                    : (selectedFriends.length === 0 || !title.trim() || recommendations.length === 0 || isSending)) && styles.sendButtonDisabled
                             ]}
                             testID="btn_send_request"
+                            ref={(r) => { if (r) registerTarget('btn_send_request', r); }}
                         >
                             {isSending ? (
                                 <>
@@ -1397,8 +1515,8 @@ const RequestMeetingScreen = () => {
                         </TouchableOpacity>
                         <View style={styles.bottomModalHeader}>
                             <View>
-                                <Text style={styles.modalTitle}>친구 선택</Text>
-                                <Text style={styles.modalSubtitle}>조율에 참여할 친구를 추가하세요.</Text>
+                                <Text style={[styles.modalTitle, { fontSize: 18, marginBottom: 0 }]}>참여자 선택</Text>
+                                <Text style={styles.modalSubtitle}>일정에 초대할 친구를 선택해주세요</Text>
                             </View>
                             <TouchableOpacity onPress={() => setShowFriendModal(false)}><X size={24} color={COLORS.neutralGray} /></TouchableOpacity>
                         </View>
@@ -1423,8 +1541,8 @@ const RequestMeetingScreen = () => {
                             <View style={{ flex: 1 }}>
                                 {displayedFriends.length === 0 ? (
                                     <View style={styles.emptyContainer}>
-                                        <Text style={styles.emptyText}>과거의 친구가 없습니다</Text>
-                                        <Text style={styles.emptySubtext}>'친구' 탭에서 새로운 친구를 추가해보세요.</Text>
+                                        <Text style={styles.emptyText}>친구가 없습니다.</Text>
+                                        <Text style={styles.emptySubtext}>'친구' 탭에서 새로운 친구를 추가해보세요!</Text>
                                     </View>
                                 ) : (
                                     <FlatList
@@ -1438,18 +1556,20 @@ const RequestMeetingScreen = () => {
                                                     style={[styles.friendItem, isSelected && styles.friendItemSelected]}
                                                     onPress={() => toggleFriendSelection(item.id)}
                                                     testID={item.id === ghostFriend.id ? 'checkbox_friend_select' : undefined}
+                                                    ref={(r) => { if (item.id === ghostFriend.id && r) registerTarget('checkbox_friend_select', r); }}
                                                 >
                                                     <View style={styles.friendItemLeft}>
                                                         {item.avatar ? (
-                                                            <Image source={{ uri: item.avatar }} style={styles.friendItemAvatar} />
+                                                            <Image source={typeof item.avatar === 'string' ? { uri: item.avatar } : item.avatar}
+                                                                style={styles.friendItemAvatar}
+                                                            />
                                                         ) : (
-                                                            <View style={[styles.friendItemAvatar, { backgroundColor: COLORS.neutral100, alignItems: 'center', justifyContent: 'center' }]}>
-                                                                <User size={20} color={COLORS.neutralGray} />
+                                                            <View style={[styles.friendItemAvatar, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' }]}>
+                                                                <User size={20} color={COLORS.primaryMain} />
                                                             </View>
                                                         )}
                                                         <View>
                                                             <Text style={[styles.friendItemName, isSelected && { color: COLORS.primaryMain }]}>{item.name}</Text>
-                                                            <Text style={styles.friendItemEmail}>{item.email}</Text>
                                                         </View>
                                                     </View>
                                                     <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
@@ -1505,6 +1625,52 @@ const RequestMeetingScreen = () => {
                 </View>
             </Modal>
 
+            {/* Sending Loading Modal */}
+            <Modal visible={isSending} transparent animationType="fade">
+                <View style={[styles.modalOverlay, { backgroundColor: 'rgba(255, 255, 255, 0.95)', justifyContent: 'center', alignItems: 'center' }]}>
+                    <View style={{ alignItems: 'center', justifyContent: 'center', width: '100%', marginBottom: 100 }}>
+                        <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 24 }}>
+                            요청을 보내고 있습니다...
+                        </Text>
+
+                        {/* Progress Gauge */}
+                        <View style={{ width: '50%', height: 6, backgroundColor: COLORS.neutral100, borderRadius: 3, overflow: 'hidden' }}>
+                            <Animated.View
+                                style={{
+                                    height: '100%',
+                                    backgroundColor: COLORS.primaryMain,
+                                    width: loadingProgress.interpolate({
+                                        inputRange: [0, 1],
+                                        outputRange: ['0%', '100%']
+                                    })
+                                }}
+                            />
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Custom Alert Modal */}
+            <Modal visible={customAlertVisible} transparent animationType="fade" onRequestClose={() => setCustomAlertVisible(false)}>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={[styles.modalIconContainer, { backgroundColor: COLORS.red50 }]}>
+                            <X size={28} color={COLORS.red400} />
+                        </View>
+                        <Text style={styles.modalTitle}>{customAlertTitle}</Text>
+                        <Text style={styles.modalMessage}>{customAlertMessage}</Text>
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                onPress={() => setCustomAlertVisible(false)}
+                                style={[styles.deleteButton, { backgroundColor: COLORS.red400 }]}
+                            >
+                                <Text style={styles.confirmButtonText}>확인</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
             {/* Success Modal */}
             <Modal visible={isSent} transparent animationType="fade" onRequestClose={() => { setIsSent(false); navigation.navigate('A2A', { forceRefresh: true }); }}>
                 <View style={styles.modalOverlay}>
@@ -1549,7 +1715,7 @@ const styles = StyleSheet.create({
     sectionHeader: { marginBottom: 10, paddingHorizontal: 4, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     sectionTitle: { fontSize: 12, fontWeight: 'bold', color: COLORS.neutralSlate, textTransform: 'uppercase', letterSpacing: 1.5 },
     sectionCount: { color: COLORS.primaryMain },
-    participantsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+    participantsContainer: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     participantChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, borderWidth: 1, borderColor: 'rgba(148, 163, 184, 0.3)', borderRadius: 16, paddingLeft: 6, paddingRight: 12, paddingVertical: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
     participantAvatar: { width: 32, height: 32, borderRadius: 16, marginRight: 8 },
     participantName: { fontSize: 12, fontWeight: 'bold', color: COLORS.neutralSlate },
@@ -1611,7 +1777,7 @@ const styles = StyleSheet.create({
     tipBoxIndigo: { padding: 12, backgroundColor: COLORS.indigo50, borderRadius: 12, borderWidth: 1, borderColor: COLORS.indigo100 },
     tipTextIndigo: { fontSize: 10, fontWeight: '500', color: COLORS.indigo700, lineHeight: 16 },
     tipBoxAmber: { padding: 12, backgroundColor: COLORS.amber50, borderRadius: 12, borderWidth: 1, borderColor: COLORS.amber100 },
-    emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
+    emptyContainer: { flex: 1, justifyContent: 'flex-start', alignItems: 'center', paddingVertical: 60 },
     emptyText: { fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 8 },
     emptySubtext: { fontSize: 12, color: COLORS.neutralGray },
     friendItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, marginHorizontal: 0, marginBottom: 0, borderRadius: 0, borderWidth: 0, borderBottomWidth: 1, borderBottomColor: COLORS.neutral100, borderColor: 'transparent', backgroundColor: COLORS.white },

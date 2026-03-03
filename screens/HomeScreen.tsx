@@ -13,7 +13,9 @@ import {
   Alert,
   Switch,
   FlatList,
-  Image
+  Image,
+  RefreshControl,
+  AppState
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -62,11 +64,12 @@ import TimePickerModal from '../components/TimePickerModal';
 import { API_BASE } from '../constants/config';
 import WebSocketService from '../services/WebSocketService';
 import NotificationPanel from '../components/NotificationPanel';
-import { badgeStore } from '../store/badgeStore';
+
 import { useTutorial } from '../store/TutorialContext';
 import { FAKE_CONFIRMED_SCHEDULE } from '../constants/tutorialData';
 import { dataCache, CACHE_KEYS } from '../utils/dataCache';
 import { homeStore } from '../store/homeStore';
+import { useMultiRefresh } from '../hooks/useRefresh';
 import { friendsStore } from '../store/friendsStore';
 
 // Pending 요청 타입 정의
@@ -81,6 +84,7 @@ interface PendingRequest {
   participant_count: number;
   proposed_date?: string;
   proposed_time?: string;
+  location?: string;
   status: string;
   created_at: string;
   reschedule_requested_at?: string; // 재조율 요청 시간
@@ -110,8 +114,16 @@ export default function HomeScreen() {
     fakeSchedule,
     registerTarget,
     currentSubStep,
-    nextSubStep
+    nextSubStep,
+    registerActionCallback,
+    unregisterActionCallback,
+    setAppReady,
   } = useTutorial();
+
+  // 앱이 Home 화면에 진입했음을 튜토리얼에 알림 (Splash/Login에서 오버레이 방지)
+  useEffect(() => {
+    setAppReady();
+  }, []);
 
   // homeStore에서 전역 상태 구독
   const homeState = useSyncExternalStore(
@@ -240,11 +252,11 @@ export default function HomeScreen() {
 
   // 캘린더 연동 상태 확인
   const checkCalendarLinkStatus = async () => {
-    console.log('[DEBUG] checkCalendarLinkStatus 호출됨');
+
     try {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) {
-        console.log('[DEBUG] checkCalendarLinkStatus - 토큰 없음');
+
         return;
       }
 
@@ -252,18 +264,18 @@ export default function HomeScreen() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
-      console.log('[DEBUG] calendar/link-status 응답:', response.status);
+
 
       if (response.ok) {
         const data = await response.json();
-        console.log('[DEBUG] link-status 데이터:', data);
+
         const linked = data.is_linked || false;
         setIsCalendarLinked(linked);
         // 캐시에 저장 (다음 화면 진입 시 깜빡임 방지)
         await AsyncStorage.setItem('isCalendarLinked', linked ? 'true' : 'false');
       } else {
         // API 호출 실패 시 (연동 안 됨으로 처리)
-        console.log('[DEBUG] API 실패 - isCalendarLinked = false');
+
         setIsCalendarLinked(false);
         await AsyncStorage.setItem('isCalendarLinked', 'false');
       }
@@ -341,8 +353,10 @@ export default function HomeScreen() {
       homeStore.fetchAll();
       friendsStore.fetchAll();
       fetchCurrentUser();
-      // 배지 폴링은 BottomNav에서 처리하므로 여기서는 제거
-      // Apple 캘린더 연동 상태 체크는 별도 useEffect에서 authProvider 변경 시 처리
+      // 캘린더 연동 상태 체크 (마이페이지에서 연동 후 돌아왔을 때 반영)
+      checkCalendarLinkStatus();
+      // 캘린더 일정 새로고침 (연동 후 돌아왔을 때 일정 반영)
+      fetchSchedulesWithCache();
     }, [])
   );
 
@@ -356,15 +370,30 @@ export default function HomeScreen() {
     // HomeScreen에서 필요한 메시지만 구독
     const unsubscribe = WebSocketService.subscribe(
       'HomeScreen',
-      ['a2a_request', 'friend_request', 'friend_accepted', 'notification', 'a2a_status_changed'],
+      ['a2a_request', 'friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'notification', 'a2a_status_changed', 'user_info_updated'],
       (data) => {
-        console.log("[WS:Home] WS Event:", data.type);
 
-        // WebSocket 이벤트 시 캐시 무효화 후 새로고침
-        homeStore.invalidate();
-        homeStore.refresh();
-        friendsStore.invalidate();
-        friendsStore.refresh();
+
+        // [FIX] 친구 삭제 시 즉시 로컬 상태 업데이트
+        if (data.type === 'friend_deleted' && data.deleted_by) {
+          friendsStore.removeFriend(data.deleted_by);
+        }
+
+        // [OPTIMIZATION] 이벤트 타입별 선택적 리페치 (불필요한 전체 재조회 방지)
+        if (['a2a_request', 'a2a_status_changed', 'notification'].includes(data.type)) {
+          homeStore.invalidate();
+          homeStore.refresh();
+        }
+        if (['friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'user_info_updated'].includes(data.type)) {
+          friendsStore.invalidate();
+          friendsStore.refresh();
+        }
+
+        // A2A 상태 변경 시 캘린더 이벤트 캐시도 무효화 후 강제 갱신
+        if (['a2a_status_changed', 'a2a_request'].includes(data.type)) {
+          calendarService.invalidateEventsCache();
+          fetchSchedules(true);
+        }
       }
     );
 
@@ -373,12 +402,35 @@ export default function HomeScreen() {
     };
   }, [currentUserId]);
 
+  // ---------------------------------------------------------
+  // [추가] 튜토리얼 액션 콜백 (친구 탭, 채팅 탭 이동 처리)
+  // ---------------------------------------------------------
+  useEffect(() => {
+    if (!isTutorialActive) return;
+
+    // 1. 친구 탭 이동
+    registerActionCallback('tab_friends', () => {
+      navigation.navigate('Friends');
+      setTimeout(() => nextSubStep(), 500);
+    });
+
+    // 2. 채팅 탭 이동 (여기서 처리됨)
+    registerActionCallback('tab_chat', () => {
+      navigation.navigate('Chat');
+      setTimeout(() => nextSubStep(), 500);
+    });
+
+    return () => {
+      unregisterActionCallback('tab_friends');
+      unregisterActionCallback('tab_chat');
+    };
+  }, [isTutorialActive, registerActionCallback, unregisterActionCallback, navigation, nextSubStep]);
+
   // 표시할 요청 필터링 (dismissed 제외, 첫 번째만 표시)
   const visibleRequest = pendingRequests.find(req => !dismissedRequestIds.includes(req.id));
   const showRequest = !!visibleRequest;
 
-  console.log('📋 visibleRequest:', visibleRequest);
-  console.log('📋 showRequest:', showRequest);
+
 
   const [isCalendarExpanded, setIsCalendarExpanded] = useState(false);
 
@@ -394,6 +446,8 @@ export default function HomeScreen() {
   // Modal & Edit State
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
+  const deletedScheduleKeysRef = useRef<Map<string, number>>(new Map());
+  const deletedEventIdsRef = useRef<Map<string, number>>(new Map());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [scheduleToDelete, setScheduleToDelete] = useState<ScheduleItem | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -453,6 +507,40 @@ export default function HomeScreen() {
     date.setHours(hours);
     date.setMinutes(minutes);
     return date;
+  };
+
+  const DELETED_SCHEDULE_TTL_MS = 60 * 1000;
+  const normalizeTitleKey = (title: string) => (title || '').replace(/[\s\u200b\u00a0]+/g, '');
+  const getScheduleKey = (s: Pick<ScheduleItem, 'title' | 'date' | 'time' | 'endDate'>) =>
+    `${normalizeTitleKey(s.title)}__${s.date}__${s.time}__${s.endDate || ''}`;
+  const isSameScheduleForImmediateHide = (a: ScheduleItem, b: ScheduleItem) => {
+    const keyMatched = getScheduleKey(a) === getScheduleKey(b);
+    const idMatched = !!a.id && !!b.id && a.id === b.id;
+    const linkedIdMatched =
+      (!!a.googleEventId && !!b.googleEventId && a.googleEventId === b.googleEventId) ||
+      (!!a.id && !!b.googleEventId && a.id === b.googleEventId) ||
+      (!!a.googleEventId && !!b.id && a.googleEventId === b.id);
+    return idMatched || linkedIdMatched || keyMatched;
+  };
+  const isRecentlyDeletedSchedule = (s: Pick<ScheduleItem, 'title' | 'date' | 'time' | 'endDate'>) => {
+    const now = Date.now();
+    for (const [key, expireAt] of deletedScheduleKeysRef.current.entries()) {
+      if (expireAt <= now) deletedScheduleKeysRef.current.delete(key);
+    }
+    const scheduleKey = getScheduleKey(s);
+    const expireAt = deletedScheduleKeysRef.current.get(scheduleKey);
+    return !!expireAt && expireAt > now;
+  };
+  const isRecentlyDeletedEventRaw = (event: any) => {
+    const now = Date.now();
+    for (const [key, expireAt] of deletedEventIdsRef.current.entries()) {
+      if (expireAt <= now) deletedEventIdsRef.current.delete(key);
+    }
+    const eventId = (event?.id || '').toString();
+    const googleEventId = (event?.google_event_id || '').toString();
+    const idExpire = eventId ? deletedEventIdsRef.current.get(eventId) : undefined;
+    const googleIdExpire = googleEventId ? deletedEventIdsRef.current.get(googleEventId) : undefined;
+    return (!!idExpire && idExpire > now) || (!!googleIdExpire && googleIdExpire > now);
   };
 
   const onStartDateChange = (event: any, selectedDate?: Date) => {
@@ -524,14 +612,14 @@ export default function HomeScreen() {
       const token = await AsyncStorage.getItem('accessToken');
 
       // 1. 캘린더 연동 전용 URL 가져오기 (Apple 로그인 사용자용)
-      console.log('Token for calendar link:', token ? 'exists' : 'null');
-      console.log('Backend URL:', BACKEND_URL);
+
+
 
       const authUrlRes = await fetch(`${BACKEND_URL}/calendar/link-url`, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
 
-      console.log('Auth URL response status:', authUrlRes.status);
+
 
       if (!authUrlRes.ok) {
         const errorBody = await authUrlRes.text();
@@ -547,8 +635,8 @@ export default function HomeScreen() {
         'frontend://calendar-linked'
       );
 
-      console.log('OAuth result type:', result.type);
-      console.log('OAuth result:', JSON.stringify(result));
+
+
 
       if (result.type === 'success' && result.url) {
         // 3. URL에서 success 또는 error 파라미터 확인
@@ -557,7 +645,7 @@ export default function HomeScreen() {
         const errorParam = url.searchParams.get('error');
         const returnedToken = url.searchParams.get('token');
 
-        console.log('Success:', success, 'Error:', errorParam, 'Token:', returnedToken);
+
 
         if (success === 'true') {
           // 새 /calendar/link-callback 방식 - 백엔드에서 이미 토큰 저장됨
@@ -569,7 +657,10 @@ export default function HomeScreen() {
           // 캐시에도 저장 (MyPageScreen에서 바로 반영되도록)
           await AsyncStorage.setItem('isCalendarLinked', 'true');
           dataCache.set('calendar:link-status', { is_linked: true }, 10 * 60 * 1000);
-          fetchSchedules();
+          // [FIX] 캘린더 연동 상태 캐시 및 이벤트 캐시 무효화 후 새로 불러오기
+          calendarService.clearLinkStatusCache();
+          calendarService.invalidateEventsCache();
+          await fetchSchedules();
         } else if (errorParam) {
           setCustomAlertTitle('오류');
           setCustomAlertMessage(`캘린더 연동 실패: ${errorParam}`);
@@ -585,7 +676,10 @@ export default function HomeScreen() {
           // 캐시에도 저장
           await AsyncStorage.setItem('isCalendarLinked', 'true');
           dataCache.set('calendar:link-status', { is_linked: true }, 10 * 60 * 1000);
-          fetchSchedules();
+          // [FIX] 캘린더 연동 상태 캐시 및 이벤트 캐시 무효화 후 새로 불러오기
+          calendarService.clearLinkStatusCache();
+          calendarService.invalidateEventsCache();
+          await fetchSchedules();
         } else {
           setCustomAlertTitle('알림');
           setCustomAlertMessage('연동이 완료되었습니다. 캘린더를 새로고침합니다.');
@@ -595,12 +689,15 @@ export default function HomeScreen() {
           // 캐시에도 저장
           await AsyncStorage.setItem('isCalendarLinked', 'true');
           dataCache.set('calendar:link-status', { is_linked: true }, 10 * 60 * 1000);
-          fetchSchedules();
+          // [FIX] 캘린더 연동 상태 캐시 및 이벤트 캐시 무효화 후 새로 불러오기
+          calendarService.clearLinkStatusCache();
+          calendarService.invalidateEventsCache();
+          await fetchSchedules();
         }
       } else if (result.type === 'cancel') {
-        console.log('User cancelled calendar auth');
+
       } else if (result.type === 'dismiss') {
-        console.log('Browser dismissed');
+
       }
     } catch (error) {
       console.error('Calendar link error:', error);
@@ -652,49 +749,197 @@ export default function HomeScreen() {
     return days;
   }, [viewYear, viewMonth]);
 
-  const fetchSchedules = async () => {
+  // 캐시 우선 로딩 (화면 진입 시 즉시 표시)
+  const fetchSchedulesWithCache = useCallback(() => {
+    const startOfMonth = new Date(viewYear, viewMonth - 1, 1);
+    const endOfMonth = new Date(viewYear, viewMonth + 2, 0);
+
+    // 1. 캐시에서 먼저 데이터 가져오기 (즉시 표시)
+    const cached = calendarService.getCachedEvents(startOfMonth, endOfMonth);
+    if (cached.exists && cached.data.length > 0) {
+
+      const mappedSchedules = mapEventsToSchedules(
+        cached.data.filter(e => !isRecentlyDeletedEventRaw(e))
+      ).filter(s => !isRecentlyDeletedSchedule(s));
+      const schedulesWithConflicts = detectScheduleConflicts(mappedSchedules);
+      setSchedules(schedulesWithConflicts);
+    }
+
+    // 2. 포커스 시에는 백그라운드 강제 동기화로 외부(Google) 변경도 즉시 반영
+    fetchSchedules(true);
+  }, [viewYear, viewMonth, isTutorialActive, currentStep]);
+
+  // 이벤트 데이터를 ScheduleItem으로 변환하는 공통 함수
+  const mapEventsToSchedules = (events: any[]): ScheduleItem[] => {
+    const mappedSchedules: ScheduleItem[] = events.map(event => {
+      // Check if it's an all-day event (has date but no dateTime)
+      const isAllDayEvent = event.start?.date && !event.start?.dateTime;
+
+      let date: string;
+      let endDateStr: string;
+      let startTime: string;
+      let endTime: string;
+
+      if (isAllDayEvent) {
+        // For all-day events, use the date directly
+        date = event.start.date!;
+        // Google Calendar's all-day event end date is exclusive (next day)
+        // So we need to subtract 1 day for display
+        const endDateObj = new Date(event.end.date + 'T00:00:00');
+        endDateObj.setDate(endDateObj.getDate() - 1);
+        const endYear = endDateObj.getFullYear();
+        const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
+        const endDay = String(endDateObj.getDate()).padStart(2, '0');
+        endDateStr = `${endYear}-${endMonth}-${endDay}`;
+        startTime = '종일';
+        endTime = '';
+      } else {
+        const start = new Date(event.start?.dateTime || event.start?.date || '');
+        const end = new Date(event.end?.dateTime || event.end?.date || '');
+
+        // [FIX] toISOString() 대신 로컬 시간대 기반 날짜 추출
+        const formatLocalDate = (d: Date) => {
+          const year = d.getFullYear();
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        };
+
+        date = formatLocalDate(start);
+        endDateStr = formatLocalDate(end);
+
+        startTime = start.toTimeString().slice(0, 5);
+        endTime = end.toTimeString().slice(0, 5);
+      }
+
+      // A2A 일정인지 확인 (백엔드에서 A2A 일정 생성 시 description에 마커 저장)
+      const description = event.description || '';
+      const hasA2AMarker = description.includes('A2A Agent') || description.includes('session_id:') || description.includes('[A2A]');
+      const isA2A = !!(event as any).session_id || hasA2AMarker;
+
+      // [NEW] A2A 일정의 경우 description에서 참여자 정보 파싱
+      let participants: string[] = event.attendees?.map((a: any) => a.displayName || a.email) || [];
+      if (isA2A && description.includes('[A2A_DATA]')) {
+        try {
+          const match = description.match(/\[A2A_DATA\](.*?)\[\/A2A_DATA\]/s);
+          if (match && match[1]) {
+            const a2aData = JSON.parse(match[1]);
+            if (a2aData.participants && Array.isArray(a2aData.participants)) {
+              participants = a2aData.participants;
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to parse A2A data from description:', e);
+        }
+      }
+
+      return {
+        id: event.id,
+        title: event.summary,
+        date: date,
+        endDate: date !== endDateStr ? endDateStr : undefined,
+        time: isAllDayEvent ? '종일' : `${startTime} - ${endTime}`,
+        participants: participants,
+        type: isA2A ? 'A2A' : 'NORMAL',
+        location: event.location,
+        source: (event as any).source,
+        googleEventId: (event as any).google_event_id || (event as any).id,
+        sessionId: (event as any).session_id,
+      };
+    });
+
+    // [NEW] 튜토리얼 중이고 'CHECK_HOME' 또는 'COMPLETE' 단계라면 가짜 확정 일정 추가
+    if (isTutorialActive && (currentStep === 'CHECK_HOME' || currentStep === 'COMPLETE')) {
+      console.log('📅 Injecting fake tutorial schedule');
+      mappedSchedules.push({
+        id: fakeSchedule.id,
+        title: fakeSchedule.title,
+        date: fakeSchedule.date,
+        time: fakeSchedule.time,
+        participants: fakeSchedule.participants,
+        type: 'A2A',
+        location: fakeSchedule.location,
+        hasConflict: false,
+        conflictWith: []
+      });
+    }
+
+    return mappedSchedules;
+  };
+
+  const fetchSchedules = async (forceRefresh = false) => {
     try {
-      setIsLoading(true);
       // Fetch for a wide range, e.g., current month +/- 1 month
       const startOfMonth = new Date(viewYear, viewMonth - 1, 1);
       const endOfMonth = new Date(viewYear, viewMonth + 2, 0);
 
-      const events = await calendarService.getCalendarEvents(startOfMonth, endOfMonth);
+      // [FIX] 강제 새로고침 시 캐시 무효화
+      if (forceRefresh) {
 
-      const mappedSchedules: ScheduleItem[] = events.map(event => {
+        calendarService.invalidateEventsCache();
+        homeStore.invalidate();
+        friendsStore.invalidate();
+        fetchCurrentUser(false);
+      }
+
+      // 캐시가 유효하면 로딩 표시 생략 (즉시 렌더링)
+      const cached = calendarService.getCachedEvents(startOfMonth, endOfMonth);
+      if (!forceRefresh && (!cached.exists || cached.isStale)) {
+        setIsLoading(true);
+      }
+
+      const events = (await calendarService.getCalendarEvents(startOfMonth, endOfMonth))
+        .filter(e => !isRecentlyDeletedEventRaw(e));
+
+      let mappedSchedules: ScheduleItem[] = events.map(event => {
         // Check if it's an all-day event (has date but no dateTime)
-        const isAllDayEvent = event.start.date && !event.start.dateTime;
+        // [FIX] 앱 자체 캘린더(source='app')인 경우 00:00~23:59면 종일로 처리
+        const isAppAllDay = event.source === 'app' &&
+          event.start.dateTime?.includes('T00:00') &&
+          event.end.dateTime?.includes('T23:59');
+
+        const isAllDayEvent = (event.start.date && !event.start.dateTime) || isAppAllDay;
 
         let date: string;
         let endDateStr: string;
         let startTime: string;
         let endTime: string;
 
+        // [FIX] toISOString() 대신 로컬 시간대 기반 날짜 추출
+        const formatLocalDate = (d: Date) => {
+          const year = d.getFullYear();
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        };
+
         if (isAllDayEvent) {
-          // For all-day events, use the date directly
-          date = event.start.date!;
-          // Google Calendar's all-day event end date is exclusive (next day)
-          // So we need to subtract 1 day for display
-          const endDateObj = new Date(event.end.date + 'T00:00:00');
-          endDateObj.setDate(endDateObj.getDate() - 1);
-          const endYear = endDateObj.getFullYear();
-          const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
-          const endDay = String(endDateObj.getDate()).padStart(2, '0');
-          endDateStr = `${endYear}-${endMonth}-${endDay}`;
-          startTime = '종일';
-          endTime = '';
+          if (isAppAllDay) {
+            // [App Internal Calendar] Use dateTime
+            const start = new Date(event.start.dateTime || '');
+            const end = new Date(event.end.dateTime || '');
+            date = formatLocalDate(start);
+            endDateStr = formatLocalDate(end);
+            startTime = '종일';
+            endTime = '';
+          } else {
+            // [Google Calendar] Use date field
+            // For all-day events, use the date directly
+            date = event.start.date!;
+            // Google Calendar's all-day event end date is exclusive (next day)
+            // So we need to subtract 1 day for display
+            const endDateObj = new Date(event.end.date + 'T00:00:00');
+            endDateObj.setDate(endDateObj.getDate() - 1);
+            const endYear = endDateObj.getFullYear();
+            const endMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
+            const endDay = String(endDateObj.getDate()).padStart(2, '0');
+            endDateStr = `${endYear}-${endMonth}-${endDay}`;
+            startTime = '종일';
+            endTime = '';
+          }
         } else {
           const start = new Date(event.start.dateTime || event.start.date || '');
           const end = new Date(event.end.dateTime || event.end.date || '');
-
-          // [FIX] toISOString() 대신 로컬 시간대 기반 날짜 추출
-          // toISOString()은 UTC로 변환하여 KST 오전 시간이 전날로 표시되는 문제 발생
-          const formatLocalDate = (d: Date) => {
-            const year = d.getFullYear();
-            const month = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
-          };
 
           date = formatLocalDate(start);
           endDateStr = formatLocalDate(end);
@@ -705,7 +950,8 @@ export default function HomeScreen() {
 
         // A2A 일정인지 확인 (백엔드에서 A2A 일정 생성 시 description에 마커 저장)
         const description = event.description || '';
-        const isA2A = description.includes('A2A Agent') || description.includes('session_id:') || description.includes('[A2A]');
+        const hasA2AMarker = description.includes('A2A Agent') || description.includes('session_id:') || description.includes('[A2A]');
+        const isA2A = !!(event as any).session_id || hasA2AMarker;
 
         // [NEW] A2A 일정의 경우 description에서 참여자 정보 파싱
         let participants: string[] = event.attendees?.map(a => a.displayName || a.email) || [];
@@ -731,8 +977,41 @@ export default function HomeScreen() {
           time: isAllDayEvent ? '종일' : `${startTime} - ${endTime}`,
           participants: participants,
           type: isA2A ? 'A2A' : 'NORMAL',
-          location: event.location
+          location: event.location,
+          source: (event as any).source,
+          googleEventId: (event as any).google_event_id || (event as any).id,
+          sessionId: (event as any).session_id,
         };
+      });
+
+      // [FIX] 동일 일정 중복 제거
+      // - 동일 키: 제목(공백 정규화) + 시작일 + 시간 + 종료일
+      // - 우선순위: A2A(구글) > A2A(app) > NORMAL
+      mappedSchedules = mappedSchedules.filter((sched, _index, self) => {
+        const normalizeTitle = (t: string) => t.replace(/[\s\u200b\u00a0]+/g, '');
+        const makeKey = (s: ScheduleItem) =>
+          `${normalizeTitle(s.title)}__${s.date}__${s.time}__${s.endDate || ''}`;
+        const key = makeKey(sched);
+        const duplicates = self.filter(s => makeKey(s) === key);
+
+        if (duplicates.length <= 1) return true;
+
+        const getPriority = (s: ScheduleItem) => {
+          if (s.type === 'A2A' && s.source !== 'app') return 3;
+          if (s.type === 'A2A') return 2;
+          return 1;
+        };
+
+        const best = [...duplicates].sort((a, b) => {
+          const byPriority = getPriority(b) - getPriority(a);
+          if (byPriority !== 0) return byPriority;
+          // sessionId가 있으면 A2A 정합성이 더 높다고 간주
+          const bySession = (b.sessionId ? 1 : 0) - (a.sessionId ? 1 : 0);
+          if (bySession !== 0) return bySession;
+          return a.id.localeCompare(b.id);
+        })[0];
+
+        return sched.id === best.id;
       });
 
       // [NEW] 튜토리얼 중이고 'CHECK_HOME' 또는 'COMPLETE' 단계라면 가짜 확정 일정 추가
@@ -751,6 +1030,9 @@ export default function HomeScreen() {
         });
       }
 
+      // 최근 삭제된 일정은 서버 동기화 지연 동안 임시 숨김 처리
+      mappedSchedules = mappedSchedules.filter(s => !isRecentlyDeletedSchedule(s));
+
       // 충돌(중복) 감지 로직
       const schedulesWithConflicts = detectScheduleConflicts(mappedSchedules);
       setSchedules(schedulesWithConflicts);
@@ -760,6 +1042,25 @@ export default function HomeScreen() {
       setIsLoading(false);
     }
   };
+
+  // [FIX] Pull-to-refresh Hook (데이터 갱신 함수들 연결)
+  const { refreshing: isRefreshing, onRefresh: handleRefresh } = useMultiRefresh([
+    async () => {
+
+      await fetchSchedules(true);
+    },
+    async () => {
+
+      await fetchCurrentUser(false);
+    },
+    async () => {
+
+      // homeStore, friendsStore는 내부적으로 캐시 무효화 후 API 호출
+      homeStore.invalidate();
+      friendsStore.invalidate();
+      await Promise.all([homeStore.refresh(), friendsStore.refresh()]);
+    }
+  ]);
 
   // 시간 겹침 감지 함수
   const detectScheduleConflicts = (schedules: ScheduleItem[]): ScheduleItem[] => {
@@ -826,8 +1127,22 @@ export default function HomeScreen() {
   };
 
   useEffect(() => {
-    fetchSchedules();
-  }, [viewYear, viewMonth, isTutorialActive, currentStep]);
+    // 월 전환 시 캐시 즉시 표시 + 강제 동기화
+    fetchSchedulesWithCache();
+  }, [fetchSchedulesWithCache]);
+
+  useEffect(() => {
+    // 앱 재개(active) 시 캐시 즉시 표시 + 강제 동기화
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        fetchSchedulesWithCache();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [fetchSchedulesWithCache]);
 
   // Helper: Get all events for a specific date
   const getEventsForDate = (dateStr: string) => {
@@ -1179,22 +1494,29 @@ export default function HomeScreen() {
       let endDateForEvent = formEndDate || formStartDate;
 
       // If all-day is selected, set time to full day
-      // Google Calendar expects all-day events to end at 00:00 of the NEXT day
       if (isAllDay) {
-        startTimeStr = '00:00';
-        endTimeStr = '00:00';
+        if (isCalendarLinked) {
+          // [Google Calendar] Ends at 00:00 of the NEXT day (exclusive)
+          startTimeStr = '00:00';
+          endTimeStr = '00:00';
 
-        // Calculate next day for end date (without UTC conversion)
-        // 종료 날짜가 있으면 그 날짜 + 1일, 없으면 시작 날짜 + 1일
-        const baseEndDate = formEndDate || formStartDate;
-        const [year, month, day] = baseEndDate.split('-').map(Number);
-        const endDateObj = new Date(year, month - 1, day);
-        endDateObj.setDate(endDateObj.getDate() + 1);
+          // Calculate next day for end date
+          const baseEndDate = formEndDate || formStartDate;
+          const [year, month, day] = baseEndDate.split('-').map(Number);
+          const endDateObj = new Date(year, month - 1, day);
+          endDateObj.setDate(endDateObj.getDate() + 1);
 
-        const nextYear = endDateObj.getFullYear();
-        const nextMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
-        const nextDay = String(endDateObj.getDate()).padStart(2, '0');
-        endDateForEvent = `${nextYear}-${nextMonth}-${nextDay}`;
+          const nextYear = endDateObj.getFullYear();
+          const nextMonth = String(endDateObj.getMonth() + 1).padStart(2, '0');
+          const nextDay = String(endDateObj.getDate()).padStart(2, '0');
+          endDateForEvent = `${nextYear}-${nextMonth}-${nextDay}`;
+        } else {
+          // [App Internal Calendar] Ends at 23:59 of the SAME day (inclusive)
+          startTimeStr = '00:00';
+          endTimeStr = '23:59';
+          // End date remains as selected (no +1 day)
+          endDateForEvent = formEndDate || formStartDate;
+        }
       }
 
       const startDateTimeStr = `${formStartDate}T${startTimeStr}:00`;
@@ -1215,7 +1537,12 @@ export default function HomeScreen() {
       };
 
       if (editingScheduleId) {
-        await calendarService.deleteCalendarEvent(editingScheduleId);
+        const editingSchedule = schedules.find(s => s.id === editingScheduleId);
+        await calendarService.deleteCalendarEvent(
+          editingScheduleId,
+          'primary',
+          editingSchedule?.source
+        );
       }
 
       await calendarService.createCalendarEvent(eventData);
@@ -1266,6 +1593,13 @@ export default function HomeScreen() {
   // 필터링된 요청 목록 (dismissed 제외)
   const visibleRequests = pendingRequests.filter(req => !dismissedRequestIds.includes(req.id));
 
+  // Pull-to-refresh
+  const { refreshing, onRefresh } = useMultiRefresh([
+    () => fetchSchedules(),
+    () => homeStore.fetchAll(),
+    () => friendsStore.fetchAll()
+  ]);
+
   return (
     <View style={styles.container}>
       <View style={styles.contentContainer}>
@@ -1288,6 +1622,14 @@ export default function HomeScreen() {
           style={styles.scrollView}
           contentContainerStyle={{ paddingBottom: 100 }}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              colors={[COLORS.primaryMain]}
+              tintColor={COLORS.primaryMain}
+            />
+          }
         >
 
           {/* Google Calendar Link Button - Apple 로그인 사용자에게만 표시, 연동 완료 시 숨김 */}
@@ -1890,38 +2232,36 @@ export default function HomeScreen() {
                       onPress={() => setShowFriendPicker(true)}
                     >
                       {selectedFriendIds.length > 0 ? (
-                        <View style={styles.selectedParticipantsRow}>
-                          {getSelectedFriends().slice(0, 4).map((f, idx) => (
-                            <View key={f.friend.id} style={[styles.participantChip, { marginLeft: idx > 0 ? -8 : 0 }]}>
-                              {f.friend.picture ? (
-                                <Image
-                                  source={{ uri: f.friend.picture }}
-                                  style={styles.participantAvatarImage}
-                                />
-                              ) : (
-                                <View style={[styles.participantAvatar, { backgroundColor: idx % 2 === 0 ? COLORS.primaryLight : COLORS.primaryMain }]}>
-                                  <Text style={styles.participantAvatarText}>{f.friend.name[0]}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flex: 1 }}>
+                            <View style={styles.selectedParticipantsRow}>
+                              {getSelectedFriends().map((f) => (
+                                <View key={f.friend.id} style={styles.participantChip}>
+                                  {f.friend.picture ? (
+                                    <Image
+                                      source={{ uri: f.friend.picture }}
+                                      style={styles.participantAvatarImage}
+                                    />
+                                  ) : (
+                                    <View style={[styles.participantAvatar, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0' }]}>
+                                      <UserIcon size={14} color={COLORS.primaryMain} />
+                                    </View>
+                                  )}
+                                  <Text style={styles.participantName}>{f.friend.name}</Text>
+                                  <TouchableOpacity
+                                    onPress={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedFriendIds(prev => prev.filter(id => id !== f.friend.id));
+                                    }}
+                                    style={styles.participantRemoveButton}
+                                  >
+                                    <X size={14} color={COLORS.neutral400} />
+                                  </TouchableOpacity>
                                 </View>
-                              )}
+                              ))}
                             </View>
-                          ))}
-                          {selectedFriendIds.length > 4 && (
-                            <View style={[styles.participantChip, { marginLeft: -8 }]}>
-                              <View style={[styles.participantAvatar, { backgroundColor: COLORS.neutral400 }]}>
-                                <Text style={styles.participantAvatarText}>+{selectedFriendIds.length - 4}</Text>
-                              </View>
-                            </View>
-                          )}
-                          <Text style={styles.participantCount}>{selectedFriendIds.length}명 선택됨</Text>
-                          <TouchableOpacity
-                            onPress={(e) => {
-                              e.stopPropagation();
-                              setSelectedFriendIds([]);
-                            }}
-                            style={styles.clearParticipantsButton}
-                          >
-                            <X size={18} color={COLORS.neutral500} />
-                          </TouchableOpacity>
+                          </ScrollView>
+                          <UserPlus size={18} color={COLORS.primaryMain} style={{ marginLeft: 8 }} />
                         </View>
                       ) : (
                         <View style={styles.addParticipantRow}>
@@ -2131,19 +2471,18 @@ export default function HomeScreen() {
                               style={styles.friendItemAvatarImage}
                             />
                           ) : (
-                            <View style={[styles.friendItemAvatar, { backgroundColor: COLORS.neutral100, alignItems: 'center', justifyContent: 'center' }]}>
-                              <UserIcon size={20} color={COLORS.neutral400} />
+                            <View style={[styles.friendItemAvatar, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' }]}>
+                              <UserIcon size={20} color={COLORS.primaryMain} />
                             </View>
                           )}
                           <View style={styles.friendItemInfo}>
-                            <Text style={styles.friendItemName}>{item.friend.name}</Text>
-                            <Text style={styles.friendItemEmail}>{item.friend.email}</Text>
+                            <Text style={[styles.friendItemName, isSelected && { color: COLORS.primaryMain }]}>{item.friend.name}</Text>
                           </View>
                           <View style={[
                             styles.friendItemCheckbox,
                             {
                               backgroundColor: isSelected ? COLORS.primaryMain : 'transparent',
-                              borderColor: isSelected ? COLORS.primaryMain : COLORS.neutral300
+                              borderColor: isSelected ? COLORS.primaryMain : 'rgba(148, 163, 184, 0.4)'
                             }
                           ]}>
                             {isSelected && <Check size={14} color="white" />}
@@ -2152,9 +2491,14 @@ export default function HomeScreen() {
                       );
                     }}
                     ListEmptyComponent={
-                      <Text style={styles.emptyFriendsText}>
-                        {friends.length === 0 ? '친구가 없습니다. 먼저 친구를 추가하세요!' : '검색 결과가 없습니다.'}
-                      </Text>
+                      friends.length === 0 ? (
+                        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 }}>
+                          <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 8 }}>친구가 없습니다.</Text>
+                          <Text style={{ fontSize: 12, color: COLORS.neutralGray }}>'친구' 탭에서 새로운 친구를 추가해보세요!</Text>
+                        </View>
+                      ) : (
+                        <Text style={styles.emptyFriendsText}>검색 결과가 없습니다.</Text>
+                      )
                     }
                   />
 
@@ -2171,6 +2515,69 @@ export default function HomeScreen() {
                 </View>
               </View>
             </Modal>
+            {/* Validation/Error Alert Overlay inside ScheduleModal */}
+            {customAlertVisible && (
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }]}>
+                <TouchableWithoutFeedback onPress={() => setCustomAlertVisible(false)}>
+                  <View style={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}>
+                    <TouchableWithoutFeedback>
+                      <View style={{
+                        backgroundColor: 'white',
+                        borderRadius: 20,
+                        padding: 24,
+                        width: '80%',
+                        maxWidth: 320,
+                        alignItems: 'center',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.25,
+                        shadowRadius: 10,
+                        elevation: 10,
+                      }}>
+                        <View style={[
+                          {
+                            width: 56,
+                            height: 56,
+                            borderRadius: 28,
+                            marginBottom: 20,
+                            backgroundColor: customAlertType === 'success' ? '#E0E7FF' : customAlertType === 'error' ? '#FEE2E2' : '#E0E7FF',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }
+                        ]}>
+                          {customAlertType === 'success' ? (
+                            <Check size={28} color={COLORS.primaryMain} />
+                          ) : customAlertType === 'error' ? (
+                            <X size={28} color="#DC2626" />
+                          ) : (
+                            <Info size={28} color={COLORS.primaryMain} />
+                          )}
+                        </View>
+                        <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 12, textAlign: 'center', color: '#111827' }}>{customAlertTitle}</Text>
+                        <Text style={{ fontSize: 16, lineHeight: 24, marginBottom: 24, textAlign: 'center', color: '#4B5563' }}>
+                          {customAlertMessage}
+                        </Text>
+                        <TouchableOpacity
+                          style={{
+                            backgroundColor: customAlertType === 'error' ? '#EF4444' : COLORS.primaryMain,
+                            width: '100%',
+                            paddingVertical: 14,
+                            borderRadius: 12,
+                            alignItems: 'center'
+                          }}
+                          onPress={() => {
+                            setCustomAlertVisible(false);
+                            if (onCustomAlertConfirm) onCustomAlertConfirm();
+                          }}
+                        >
+                          <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>확인</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </TouchableWithoutFeedback>
+                  </View>
+                </TouchableWithoutFeedback>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -2364,11 +2771,41 @@ export default function HomeScreen() {
                   if (scheduleToDelete) {
                     try {
                       console.log('[HomeScreen] 삭제 시도 중... eventId:', scheduleToDelete.id);
-                      await calendarService.deleteCalendarEvent(scheduleToDelete.id);
+                      const deleted = await calendarService.deleteCalendarEvent(
+                        scheduleToDelete.id,
+                        'primary',
+                        scheduleToDelete.source
+                      );
+                      if (!deleted) {
+                        throw new Error('삭제 응답이 실패로 반환되었습니다.');
+                      }
                       console.log('[HomeScreen] 삭제 성공!');
+
+                      // 삭제 직후 서버 반영 지연 대비: 동일 일정 키를 잠시 숨김 처리
+                      deletedScheduleKeysRef.current.set(
+                        getScheduleKey(scheduleToDelete),
+                        Date.now() + DELETED_SCHEDULE_TTL_MS
+                      );
+                      if (scheduleToDelete.id) {
+                        deletedEventIdsRef.current.set(
+                          scheduleToDelete.id,
+                          Date.now() + DELETED_SCHEDULE_TTL_MS
+                        );
+                      }
+                      if (scheduleToDelete.googleEventId) {
+                        deletedEventIdsRef.current.set(
+                          scheduleToDelete.googleEventId,
+                          Date.now() + DELETED_SCHEDULE_TTL_MS
+                        );
+                      }
+
+                      // 즉시 UI 반영 (네트워크 동기화 전 화면에서 먼저 제거)
+                      setSchedules(prev =>
+                        prev.filter(s => !isSameScheduleForImmediateHide(s, scheduleToDelete))
+                      );
                       setShowDetailModal(false);
                       setShowScheduleModal(false);
-                      fetchSchedules();
+                      fetchSchedules(true);
                     } catch (error) {
                       console.error('[HomeScreen] 일정 삭제 실패:', error);
                       Alert.alert('삭제 실패', '일정을 삭제할 수 없습니다. 다시 시도해주세요.');
@@ -3358,36 +3795,66 @@ const styles = StyleSheet.create({
   selectedParticipantsRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
   participantChip: {
-    zIndex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.3)',
+    borderRadius: 16,
+    paddingLeft: 4,
+    paddingRight: 10,
+    paddingVertical: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   participantAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'white',
   },
   participantAvatarImage: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: 'white',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  participantName: {
+    fontSize: 12,
+    fontWeight: 'bold' as const,
+    color: COLORS.neutralSlate,
+    marginLeft: 6,
+  },
+  participantRemoveButton: {
+    marginLeft: 6,
+  },
+  addParticipantButtonSmall: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderStyle: 'dashed' as const,
+    borderColor: COLORS.primaryMain,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    backgroundColor: COLORS.primaryBg,
   },
   participantAvatarText: {
     color: 'white',
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: 'bold' as const,
   },
   participantCount: {
     fontSize: 13,
     color: COLORS.neutral600,
     marginLeft: 12,
-    fontWeight: '500',
+    fontWeight: '500' as const,
     flex: 1,
   },
   clearParticipantsButton: {
@@ -3483,6 +3950,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.neutral100,
+    backgroundColor: COLORS.white,
   },
   friendItemAvatar: {
     width: 44,
@@ -3509,7 +3977,7 @@ const styles = StyleSheet.create({
   friendItemName: {
     fontSize: 15,
     fontWeight: '600',
-    color: COLORS.neutral900,
+    color: COLORS.neutralSlate,
   },
   friendItemEmail: {
     fontSize: 12,

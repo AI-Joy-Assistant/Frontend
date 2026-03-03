@@ -9,4 +9,7 @@ export interface ScheduleItem {
     hasConflict?: boolean;        // 다른 일정과 시간 겹침 여부
     conflictWith?: string[];      // 충돌하는 일정 ID 목록
     location?: string;
+    source?: string;
+    googleEventId?: string;
+    sessionId?: string;
 }

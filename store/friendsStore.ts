@@ -248,9 +248,11 @@ export const friendsStore = {
 
     // 친구 삭제
     removeFriend: (friendId: string): void => {
+        console.log(`[FriendsStore] Removing friend: ${friendId}`);
         state = {
             ...state,
-            friends: state.friends.filter(f => f.friend.id !== friendId),
+            // 안전하게 문자열로 변환하여 비교
+            friends: state.friends.filter(f => String(f.friend.id) !== String(friendId)),
         };
         emitChange();
     },

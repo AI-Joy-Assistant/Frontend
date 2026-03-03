@@ -14,7 +14,8 @@ import {
     Platform,
     Alert,
     LayoutAnimation,
-    UIManager
+    UIManager,
+    RefreshControl
 } from 'react-native';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -34,6 +35,13 @@ import {
     Trash2,
     AlertCircle,
     ChevronLeft,
+    User,
+    Info,
+    Sun,
+    Moon,
+    Minus,
+    Plus,
+    Plane,
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import TimePickerModal from '../components/TimePickerModal';
@@ -46,6 +54,7 @@ import { RootStackParamList, A2ALog, Tab } from '../types';
 import BottomNav from '../components/BottomNav';
 import { API_BASE } from '../constants/config';
 import WebSocketService from '../services/WebSocketService';
+import { calendarService } from '../services/calendarService';
 
 // Colors based on the provided React/Tailwind code
 const COLORS = {
@@ -76,6 +85,23 @@ const COLORS = {
     red100: '#FEE2E2',   // [NEW] 거절됨 테두리색
     approveBtn: '#0E004E'
 };
+
+// [UTIL] 한국어 시간 형식을 HH:MM으로 변환하는 유틸리티
+const normalizeTimeDisplay = (details: any, timeRange?: string): string => {
+    try {
+        if (timeRange && timeRange !== '') return timeRange;
+        const d = details || {};
+        let date = String(d.proposedDate || d.agreedDate || d.requestedDate || d.date || '');
+        let time = String(d.proposedTime || d.requestedTime || d.time || '');
+        if (!date && !time) return '미정';
+        const km = date.match(/(\d{1,2})월\s*(\d{1,2})일/);
+        if (km) date = `${new Date().getFullYear()}-${String(km[1]).padStart(2, '0')}-${String(km[2]).padStart(2, '0')}`;
+        const tm = time.match(/(오전|오후)\s*(\d{1,2})시/);
+        if (tm) { let h = parseInt(tm[2]); if (tm[1] === '오후' && h !== 12) h += 12; if (tm[1] === '오전' && h === 12) h = 0; time = `${String(h).padStart(2, '0')}:00`; }
+        return `${date} ${time}`.trim() || '미정';
+    } catch { return timeRange || '미정'; }
+};
+
 
 import { useTutorial } from '../store/TutorialContext';
 import { FAKE_A2A_REQUEST, FAKE_RECEIVED_REQUEST } from '../constants/tutorialData';
@@ -118,9 +144,14 @@ const A2AScreen = () => {
     const [lastProposalForDecision, setLastProposalForDecision] = useState<any>(null);
     const [isModalClosing, setIsModalClosing] = useState(false);  // 모달 닫힘 중 버튼 숨김용
     const [showRejectConfirm, setShowRejectConfirm] = useState(false);  // 거절 확인 팝업 상태
+    const [showRejectSuccess, setShowRejectSuccess] = useState(false);  // 거절 완료 배너
+    const [rejectedLogTitle, setRejectedLogTitle] = useState('');  // 거절된 일정 제목
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);  // 삭제 확인 팝업 상태
     const [deleteTargetLogId, setDeleteTargetLogId] = useState<string | null>(null);  // 삭제 대상 로그 ID
     const [showNegotiationIncompleteAlert, setShowNegotiationIncompleteAlert] = useState(false);  // 협상 미완료 알림
+
+    // Pull-to-refresh
+    const [refreshing, setRefreshing] = useState(false);
 
     // 재조율 시작시간/종료시간 상태
     const [startTimeExpanded, setStartTimeExpanded] = useState(true);
@@ -134,6 +165,8 @@ const A2AScreen = () => {
     // 오전/오후 선택 상태
     const [startPeriod, setStartPeriod] = useState<'AM' | 'PM' | null>(null);
     const [endPeriod, setEndPeriod] = useState<'AM' | 'PM' | null>(null);
+    // 박 수 (0 = 당일, 1 = 1박2일, ...)
+    const [durationNights, setDurationNights] = useState(0);
 
     // 바쁜 시간대 (캘린더 일정이 있는 시간)
     const [busyTimes, setBusyTimes] = useState<{ [date: string]: string[] }>({});
@@ -141,7 +174,18 @@ const A2AScreen = () => {
     // 참여자 이름 툴팁 상태 (index 추적)
     const [tooltipIndex, setTooltipIndex] = useState<number | null>(null);
 
-    // 날짜 선택 시 해당 날짜의 바쁜 시간대 조회
+    // [NEW] Custom Alert State
+    const [customAlertVisible, setCustomAlertVisible] = useState(false);
+    const [customAlertTitle, setCustomAlertTitle] = useState('');
+    const [customAlertMessage, setCustomAlertMessage] = useState('');
+
+    const showAlert = (title: string, message: string) => {
+        setCustomAlertTitle(title);
+        setCustomAlertMessage(message);
+        setCustomAlertVisible(true);
+    };
+
+
     const fetchBusyTimes = async (dateStr: string) => {
         try {
             const token = await AsyncStorage.getItem('accessToken');
@@ -484,8 +528,8 @@ const A2AScreen = () => {
         );
     };
 
-    // 달력 렌더링 (시작/종료 공용)
-    const renderScheduleCalendar = (selectedDateVal: string | null, onSelectDate: (date: string) => void, month: Date, onMonthChange: (dir: 'prev' | 'next') => void) => {
+    // 달력 렌더링 (시작/종료 공용) - [FIX] minDate 추가, rangeNights로 날짜 범위 표시
+    const renderScheduleCalendar = (selectedDateVal: string | null, onSelectDate: (date: string) => void, month: Date, onMonthChange: (dir: 'prev' | 'next') => void, minDateStr?: string | null, rangeNights?: number) => {
         const year = month.getFullYear();
         const monthNum = month.getMonth();
         const firstDay = new Date(year, monthNum, 1).getDay();
@@ -509,7 +553,17 @@ const A2AScreen = () => {
                 originalDate = originalDateRaw;
             }
         }
-        console.log('📅 [Calendar] originalDate:', originalDate, 'raw:', originalDateRaw);
+
+        // [NEW] 날짜 범위 계산 (rangeNights > 0 && selectedDateVal이 있을 때)
+        let rangeEndStr: string | null = null;
+        if (rangeNights && rangeNights > 0 && selectedDateVal) {
+            const rangeStart = new Date(selectedDateVal + 'T00:00:00');
+            rangeStart.setDate(rangeStart.getDate() + rangeNights);
+            const ry = rangeStart.getFullYear();
+            const rm = String(rangeStart.getMonth() + 1).padStart(2, '0');
+            const rd = String(rangeStart.getDate()).padStart(2, '0');
+            rangeEndStr = `${ry}-${rm}-${rd}`;
+        }
 
         const weeks: (number | null)[][] = [];
         let currentWeek: (number | null)[] = Array(firstDay).fill(null);
@@ -551,23 +605,43 @@ const A2AScreen = () => {
                             const dateStr = `${year}-${String(monthNum + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                             const isSelected = selectedDateVal === dateStr;
                             const isOriginalDate = dateStr === originalDate;  // 기존 약속 날짜
-                            const isPast = new Date(dateStr) < new Date(todayStr);
+
+                            // [NEW] 범위 내 날짜인지 체크
+                            const isInRange = (rangeEndStr && selectedDateVal && dateStr > selectedDateVal && dateStr <= rangeEndStr);
+                            const isRangeEnd = (rangeEndStr && dateStr === rangeEndStr);
+
+                            // [FIX] minDateStr이 있으면 그것보다 이전 날짜 비활성화, 없으면 오늘 이전 비활성화
+                            let isDisabled = false;
+                            if (minDateStr) {
+                                isDisabled = dateStr < minDateStr;
+                            } else {
+                                isDisabled = dateStr < todayStr;
+                            }
 
                             return (
                                 <TouchableOpacity
                                     key={dIdx}
-                                    onPress={() => !isPast && onSelectDate(dateStr)}
-                                    disabled={isPast}
+                                    onPress={() => !isDisabled && onSelectDate(dateStr)}
+                                    disabled={isDisabled}
                                     style={{ flex: 1, height: 40, justifyContent: 'center', alignItems: 'center' }}
                                 >
                                     <View style={{
                                         width: 32, height: 32, borderRadius: 16,
-                                        backgroundColor: isSelected ? COLORS.primaryMain : isOriginalDate ? COLORS.primaryBg : 'transparent',
+                                        backgroundColor: isSelected ? COLORS.primaryMain
+                                            : isRangeEnd ? '#818CF8'
+                                                : isInRange ? '#EEF2FF'
+                                                    : isOriginalDate ? COLORS.primaryBg
+                                                        : 'transparent',
                                         justifyContent: 'center', alignItems: 'center'
                                     }}>
                                         <Text style={{
-                                            color: isSelected ? 'white' : isPast ? COLORS.neutral300 : dIdx === 0 ? '#EF4444' : COLORS.neutralSlate,
-                                            fontSize: 14, fontWeight: isOriginalDate ? '700' : '400'
+                                            color: isSelected ? 'white'
+                                                : isRangeEnd ? 'white'
+                                                    : isInRange ? COLORS.primaryMain
+                                                        : isDisabled ? COLORS.neutral300
+                                                            : dIdx === 0 ? '#EF4444'
+                                                                : COLORS.neutralSlate,
+                                            fontSize: 14, fontWeight: (isOriginalDate || isInRange || isRangeEnd) ? '700' : '400'
                                         }}>{day}</Text>
                                     </View>
                                 </TouchableOpacity>
@@ -600,7 +674,7 @@ const A2AScreen = () => {
         let originalTimeDisplay = '미정';
         if (originalDate && originalStartTime) {
             const dateFormatted = formatDateShort(originalDate);
-            const endPart = originalEndTime ? `~${originalEndTime}` : '~미정';
+            const endPart = originalEndTime ? `~ ${originalEndTime}` : '~미정';
             originalTimeDisplay = `${dateFormatted} ${originalStartTime}${endPart}`;
         }
 
@@ -608,7 +682,7 @@ const A2AScreen = () => {
         let newTimeDisplay = '선택';
         if (startDate && startTime) {
             const dateFormatted = formatDateShort(startDate);
-            const endPart = endTime ? `~${endTime}` : '~미정';
+            const endPart = endTime ? `~ ${endTime}` : '~미정';
             newTimeDisplay = `${dateFormatted} ${startTime}${endPart}`;
         }
 
@@ -631,6 +705,69 @@ const A2AScreen = () => {
                     </View>
                 </View>
 
+                {/* 일정 총 기간 (박 수 설정) */}
+                <View style={{
+                    backgroundColor: COLORS.white, borderRadius: 16, padding: 16,
+                    marginBottom: 8, borderWidth: 1, borderColor: COLORS.neutral200
+                }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate }}>일정 총 기간</Text>
+                        <View style={{
+                            backgroundColor: '#EEF2FF',
+                            paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12
+                        }}>
+                            <Text style={{ color: COLORS.primaryMain, fontWeight: 'bold', fontSize: 12 }}>
+                                {durationNights === 0 ? '당일' : `${durationNights}박 ${durationNights + 1}일`}
+                            </Text>
+                        </View>
+                    </View>
+                    <View style={{
+                        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                        backgroundColor: COLORS.white, borderRadius: 16, padding: 8,
+                        borderWidth: 1, borderColor: COLORS.neutral200
+                    }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                            <View style={{
+                                width: 40, height: 40, borderRadius: 14,
+                                backgroundColor: durationNights === 0 ? COLORS.primaryMain : '#1E1B4B',
+                                alignItems: 'center', justifyContent: 'center'
+                            }}>
+                                {durationNights === 0 ? <Sun size={20} color="white" /> : <Moon size={20} color="white" />}
+                            </View>
+                            <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate }}>직접 설정하기</Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingRight: 8 }}>
+                            <TouchableOpacity onPress={() => setDurationNights(Math.max(0, durationNights - 1))} style={{ padding: 4 }}>
+                                <Minus size={20} color={COLORS.primaryMain} strokeWidth={3} />
+                            </TouchableOpacity>
+                            <Text style={{ fontSize: 16, fontWeight: 'bold', color: COLORS.neutralSlate, minWidth: 20, textAlign: 'center' }}>
+                                {durationNights}
+                            </Text>
+                            <TouchableOpacity onPress={() => setDurationNights(durationNights + 1)} style={{ padding: 4 }}>
+                                <Plus size={20} color={COLORS.primaryMain} strokeWidth={3} />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                    {durationNights > 0 && (
+                        <View style={{
+                            flexDirection: 'row', alignItems: 'center',
+                            backgroundColor: '#EEF2FF', borderRadius: 20,
+                            padding: 16, gap: 12, marginTop: 8
+                        }}>
+                            <View style={{
+                                width: 36, height: 36, borderRadius: 12,
+                                backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center'
+                            }}>
+                                <Plane size={18} color={COLORS.primaryMain} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 13, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 2 }}>여행 모드 활성화됨</Text>
+                                <Text style={{ fontSize: 11, color: COLORS.neutral500 }}>시작/종료 시간 대신 날짜 범위로 일정이 잡힙니다</Text>
+                            </View>
+                        </View>
+                    )}
+                </View>
+
                 {/* 시작시간 토글 */}
                 <TouchableOpacity
                     onPress={() => {
@@ -649,10 +786,15 @@ const A2AScreen = () => {
                         borderWidth: 1, borderColor: COLORS.neutral200
                     }}
                 >
-                    <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate }}>시작 시간</Text>
+                    <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate }}>
+                        {durationNights > 0 ? '시작 날짜' : '시작 시간'}
+                    </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                         <Text style={{ fontSize: 12, fontWeight: 'bold', color: COLORS.primaryMain, marginRight: 8 }}>
-                            {startDate && startTime ? `${startDate} ${startTime}` : '선택'}
+                            {durationNights > 0
+                                ? (startDate ? startDate : '선택')
+                                : (startDate && startTime ? `${startDate} ${startTime}` : '선택')
+                            }
                         </Text>
                         {startTimeExpanded ? <ChevronUp size={16} color={COLORS.neutral400} /> : <ChevronDown size={16} color={COLORS.neutral400} />}
                     </View>
@@ -660,12 +802,17 @@ const A2AScreen = () => {
 
                 {startTimeExpanded && (
                     <View style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: COLORS.neutral100 }}>
-                        {renderScheduleCalendar(startDate, setStartDate, startMonth, (dir) => {
+                        {renderScheduleCalendar(startDate, (date) => {
+                            setStartDate(date);
+                            // [FIX] 시작 날짜 선택 시 종료 날짜도 자동으로 동일하게 설정
+                            setEndDate(date);
+                        }, startMonth, (dir) => {
                             const newDate = new Date(startMonth);
                             newDate.setMonth(newDate.getMonth() + (dir === 'prev' ? -1 : 1));
                             setStartMonth(newDate);
-                        })}
-                        {startDate && renderTimeButtons(
+                        }, undefined, durationNights)}
+                        {/* 0박(당일)일 때만 시간 버튼 표시 */}
+                        {durationNights === 0 && startDate && renderTimeButtons(
                             startTime,
                             (time) => {
                                 setStartTime(time);
@@ -686,45 +833,65 @@ const A2AScreen = () => {
                             startPeriod,
                             setStartPeriod
                         )}
+                        {/* 1박 이상일 때 종일 안내 표시 */}
+                        {durationNights > 0 && startDate && (
+                            <View style={{
+                                flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                                backgroundColor: '#EEF2FF', borderRadius: 12, padding: 12, marginTop: 12, gap: 8
+                            }}>
+                                <Calendar size={16} color={COLORS.primaryMain} />
+                                <Text style={{ fontSize: 13, color: COLORS.primaryMain, fontWeight: '600' }}>
+                                    {startDate} ~ {(() => {
+                                        const d = new Date(startDate + 'T00:00:00');
+                                        d.setDate(d.getDate() + durationNights);
+                                        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                                    })()} ({durationNights}박 {durationNights + 1}일) 종일
+                                </Text>
+                            </View>
+                        )}
                     </View>
                 )}
 
-                {/* 종료시간 토글 */}
-                <TouchableOpacity
-                    onPress={() => {
-                        // [FIX] 커스텀 애니메이션 적용
-                        LayoutAnimation.configureNext({
-                            duration: 300,
-                            create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-                            update: { type: LayoutAnimation.Types.easeInEaseOut },
-                            delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity }
-                        });
-                        setEndTimeExpanded(!endTimeExpanded);
-                    }}
-                    style={{
-                        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-                        padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginBottom: 4,
-                        borderWidth: 1, borderColor: COLORS.neutral200
-                    }}
-                >
-                    <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate }}>종료 시간</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Text style={{ fontSize: 12, fontWeight: 'bold', color: COLORS.primaryMain, marginRight: 8 }}>
-                            {endDate && endTime ? `${endDate} ${endTime}` : '선택'}
-                        </Text>
-                        {endTimeExpanded ? <ChevronUp size={16} color={COLORS.neutral400} /> : <ChevronDown size={16} color={COLORS.neutral400} />}
-                    </View>
-                </TouchableOpacity>
+                {/* 종료시간 토글 - 여행 모드(durationNights > 0)일 때는 숨김 */}
+                {durationNights === 0 && (
+                    <>
+                        <TouchableOpacity
+                            onPress={() => {
+                                // [FIX] 커스텀 애니메이션 적용
+                                LayoutAnimation.configureNext({
+                                    duration: 300,
+                                    create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+                                    update: { type: LayoutAnimation.Types.easeInEaseOut },
+                                    delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity }
+                                });
+                                setEndTimeExpanded(!endTimeExpanded);
+                            }}
+                            style={{
+                                flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                                padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginBottom: 4,
+                                borderWidth: 1, borderColor: COLORS.neutral200
+                            }}
+                        >
+                            <Text style={{ fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate }}>종료 시간</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Text style={{ fontSize: 12, fontWeight: 'bold', color: COLORS.primaryMain, marginRight: 8 }}>
+                                    {endDate && endTime ? `${endDate} ${endTime}` : '선택'}
+                                </Text>
+                                {endTimeExpanded ? <ChevronUp size={16} color={COLORS.neutral400} /> : <ChevronDown size={16} color={COLORS.neutral400} />}
+                            </View>
+                        </TouchableOpacity>
 
-                {endTimeExpanded && (
-                    <View style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: COLORS.neutral100 }}>
-                        {renderScheduleCalendar(endDate, setEndDate, endMonth, (dir) => {
-                            const newDate = new Date(endMonth);
-                            newDate.setMonth(newDate.getMonth() + (dir === 'prev' ? -1 : 1));
-                            setEndMonth(newDate);
-                        })}
-                        {endDate && renderTimeButtons(endTime, setEndTime, endDate, endPeriod, setEndPeriod, startTime, startDate)}
-                    </View>
+                        {endTimeExpanded && (
+                            <View style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: COLORS.neutral100 }}>
+                                {renderScheduleCalendar(endDate, setEndDate, endMonth, (dir) => {
+                                    const newDate = new Date(endMonth);
+                                    newDate.setMonth(newDate.getMonth() + (dir === 'prev' ? -1 : 1));
+                                    setEndMonth(newDate);
+                                }, startDate)}
+                                {endDate && renderTimeButtons(endTime, setEndTime, endDate, endPeriod, setEndPeriod, startTime, startDate)}
+                            </View>
+                        )}
+                    </>
                 )}
             </View>
         );
@@ -733,7 +900,7 @@ const A2AScreen = () => {
     const handleSubmitReschedule = async () => {
         // [NEW] 튜토리얼 모드일 때는 API 호출 없이 UI만 처리
         if (isTutorialActive && currentStep === 'RESPOND_TO_REQUEST') {
-            console.log('[Tutorial] Intercepting reschedule submit - no API call');
+            if (__DEV__) console.log('[Tutorial] Intercepting reschedule submit - no API call');
             setIsRescheduling(false); // Close reschedule view
 
             // 하드코딩된 성공 처리
@@ -753,17 +920,43 @@ const A2AScreen = () => {
         }
 
         if (!selectedLog) return;
+
+        // [FIX] 유효성 검사 추가 (Custom Alert)
+        if (endDate && startDate && endDate < startDate) {
+            showAlert('오류', '종료 날짜가 시작 날짜보다 이전일 수 없습니다.');
+            return;
+        }
+        if (startDate === endDate && endTime && startTime && endTime <= startTime) {
+            showAlert('오류', '종료 시간이 시작 시간보다 이전이거나 같을 수 없습니다.');
+            return;
+        }
+
         try {
             setLoading(true);
             const token = await AsyncStorage.getItem('accessToken');
 
             // 시작시간/종료시간 기반으로 proposal 구성
+            // [FIX] durationNights > 0이면 endDate를 startDate + durationNights로 자동 계산
+            let finalEndDate = endDate;
+            let finalEndTime = endTime;
+            if (durationNights > 0 && startDate) {
+                const sDate = new Date(startDate + 'T00:00:00');
+                sDate.setDate(sDate.getDate() + durationNights);
+                const ey = sDate.getFullYear();
+                const em = String(sDate.getMonth() + 1).padStart(2, '0');
+                const ed = String(sDate.getDate()).padStart(2, '0');
+                finalEndDate = `${ey}-${em}-${ed}`;
+                finalEndTime = null; // 여행 모드는 종일 이벤트
+            }
             const proposalDetails = {
                 date: startDate,
-                time: startTime,
-                endDate: endDate,
-                endTime: endTime,
-                reason: `${startDate} ${startTime} 제안`  // 요청 시간을 사유에 표시
+                time: durationNights > 0 ? null : startTime,
+                endDate: finalEndDate,
+                endTime: finalEndTime,
+                duration_nights: durationNights,
+                reason: durationNights > 0
+                    ? `${startDate}부터 ${durationNights}박 ${durationNights + 1}일 제안`
+                    : `${startDate} ${startTime} 제안`
             };
 
             const response = await fetch(`${API_BASE}/a2a/session/${selectedLog.id}/reschedule`, {
@@ -812,6 +1005,7 @@ const A2AScreen = () => {
                 setEndTime(null);
                 setStartPeriod(null);
                 setEndPeriod(null);
+                setDurationNights(0);
 
                 fetchA2ALogs(false);
             } else {
@@ -869,12 +1063,14 @@ const A2AScreen = () => {
         nextSubStep,
         tutorialRequestSent,
         registerTarget,
-        isHighlighted
+        isHighlighted,
+        registerActionCallback,
+        unregisterActionCallback
     } = useTutorial();
 
     // Fetch logs (GET /a2a/sessions)
     const fetchA2ALogs = useCallback(async (showLoading = true, useCache = true) => {
-        const cacheKey = 'a2a:sessions';
+        const cacheKey = 'a2a:sessions:v2'; // [FIX] 캐시 키를 변경하여 이전 잘못된 summary가 저장된 캐시 무효화
         if (showLoading) setLoading(true);
         try {
             // 튜토리얼 모드일 경우 가짜 데이터 주입
@@ -989,28 +1185,14 @@ const A2AScreen = () => {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
-                    'Cache-Control': 'no-cache', // 서버 캐시 무시
                 },
             });
 
             if (response.ok) {
                 const data = await response.json();
 
-                // [DEBUG] 모든 세션의 날짜/시간 데이터 확인
-                console.log('[A2A DEBUG] 세션 수:', data.sessions?.length);
-                data.sessions?.forEach((session: any, index: number) => {
-                    const d = session.details || {};
-                    console.log(`[A2A DEBUG] 세션 ${index}:`, {
-                        id: session.id?.substring(0, 8),
-                        participant_names: session.participant_names,
-                        proposedDate: d.proposedDate,
-                        proposedTime: d.proposedTime,
-                        requestedDate: d.requestedDate,
-                        requestedTime: d.requestedTime,
-                        duration_nights: d.duration_nights,
-                        purpose: d.purpose,
-                    });
-                });
+
+
 
                 // 시간 형식 변환 함수 (MM월 DD일 오전/오후 HH시 → YYYY-MM-DD HH:MM)
                 const formatTimeRange = (date: string | undefined, time: string | undefined): string => {
@@ -1049,81 +1231,122 @@ const A2AScreen = () => {
                 const mappedLogs: A2ALog[] = data.sessions
                     .filter((session: any) => {
                         // left_participants에 현재 사용자가 포함되어 있으면 목록에서 제외
+                        // (거절한 사람은 left_participants에 추가되므로, 거절자 본인에게만 숨겨짐)
+                        // 주최자는 left_participants에 없으므로 '거절됨' 뱃지와 함께 카드가 노출됨
                         const leftParticipants = session.details?.left_participants || [];
-                        const isCurrentUserLeft = leftParticipants.includes(currentUserId);
-                        if (isCurrentUserLeft) {
-                            console.log(`[A2A] 사용자가 나간 세션 필터링: ${session.id}`);
-                        }
+                        const isCurrentUserLeft = leftParticipants.some((lp: any) => String(lp) === String(currentUserId));
                         return !isCurrentUserLeft;
                     })
-                    .map((session: any) => ({
-                        id: session.id,
-                        title: session.summary || session.title || session.details?.purpose || "일정 조율",
-                        status: session.status === 'completed' ? 'COMPLETED'
-                            : session.status === 'rejected' ? 'REJECTED'
-                                : 'IN_PROGRESS',
-                        // [✅ 수정] 요약에는 참여자 이름만 표시 (이모지 옆 텍스트)
-                        summary: session.participant_names?.join(', ') || "참여자 없음",
-                        // [✅ 수정] timeRange에 여러 fallback 소스 사용 + 시간 형식 변환
-                        timeRange: (() => {
-                            const d = session.details || {};
-                            const durationNights = d.duration_nights || 0;
-                            // [FIX] 더 많은 날짜 소스 추가 (agreedDate 포함)
-                            const date = d.proposedDate || d.agreedDate || d.requestedDate || d.date || '';
-
-                            // [DEBUG] 날짜가 비어있으면 로그 출력
-                            if (!date) {
-                                console.log(`[A2A DEBUG] 세션 ${session.id?.substring(0, 8)} - 날짜 없음:`, {
-                                    proposedDate: d.proposedDate,
-                                    agreedDate: d.agreedDate,
-                                    requestedDate: d.requestedDate,
-                                    date: d.date,
-                                    duration_nights: durationNights
-                                });
-                            }
-
-                            // 1박 이상이면 날짜 범위만 표시 (시간 제외)
-                            if (durationNights >= 1 && date) {
-                                try {
-                                    // 한글 날짜 형식 (MM월 DD일) 등의 처리를 위해 formatTimeRange의 날짜 파싱 로직 재사용
-                                    // 또는 간단히 YYYY-MM-DD로 변환 시도
-                                    let startDateStr = date;
-                                    const now = new Date();
-                                    const currentYear = now.getFullYear();
-
-                                    const koreanMatch = date.match(/(\d{1,2})월\s*(\d{1,2})일/);
-                                    if (koreanMatch) {
-                                        const month = String(koreanMatch[1]).padStart(2, '0');
-                                        const day = String(koreanMatch[2]).padStart(2, '0');
-                                        startDateStr = `${currentYear}-${month}-${day}`;
-                                    }
-
-                                    const startDateObj = new Date(startDateStr);
-                                    if (!isNaN(startDateObj.getTime())) {
-                                        const endDateObj = new Date(startDateObj);
-                                        endDateObj.setDate(startDateObj.getDate() + durationNights);
-
-                                        const formatDate = (dt: Date) => {
-                                            return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+                    .map((session: any) => {
+                        try {
+                            return {
+                                id: session.id,
+                                title: session.title || session.details?.purpose || session.summary || "일정 조율",
+                                status: session.status === 'completed' ? 'COMPLETED'
+                                    : session.status === 'rejected' ? 'REJECTED'
+                                        : 'IN_PROGRESS',
+                                summary: session.participant_names?.join(', ') || "참여자 없음",
+                                details: (() => {
+                                    try {
+                                        const d = session.details || {};
+                                        // Ensure fallback to empty strings for safety
+                                        const date = d.proposedDate || d.agreedDate || d.requestedDate || d.date || '';
+                                        const time = d.proposedTime || d.requestedTime || d.time || '';
+                                        const endDate = d.proposedEndDate || d.endDate || '';
+                                        const endTime = d.proposedEndTime || d.endTime || '';
+                                        return {
+                                            ...d,
+                                            proposedDate: String(date),
+                                            proposedTime: String(time),
+                                            proposedEndDate: String(endDate),
+                                            proposedEndTime: String(endTime),
+                                            // [OPTIMIZATION-AGGRESSIVE] 리스트 API에 attendees가 없거나 빈 배열이면 이름/이미지로 합성하여 즉시 표시
+                                            attendees: (d.attendees && d.attendees.length > 0) ? d.attendees : (() => {
+                                                const names = session.participant_names || [];
+                                                return names.map((name: string, idx: number) => ({
+                                                    id: `temp_${idx}`,
+                                                    name: name,
+                                                    avatar: null,
+                                                    // [FIX] 완료된 일정이면 전원 승인 상태로 표시
+                                                    is_approved: session.status === 'completed' ? true : undefined
+                                                }));
+                                            })(),
+                                            // [OPTIMIZATION-AGGRESSIVE] 완료된 일정의 경우 agreedDate가 없으면 proposedDate로 백필 (확정 시간 즉시 표시용)
+                                            agreedDate: d.agreedDate || (session.status === 'completed' ? d.proposedDate || d.date : undefined),
+                                            agreedTime: d.agreedTime || (session.status === 'completed' ? d.proposedTime || d.time : undefined),
+                                            agreedEndTime: d.agreedEndTime || (session.status === 'completed' ? d.proposedEndTime || d.endTime : undefined),
                                         };
+                                    } catch (e) { return session.details || {}; }
+                                })(),
+                                timeRange: (() => {
+                                    try {
+                                        const d = session.details || {};
+                                        const durationNights = d.duration_nights || 0;
+                                        const date = d.proposedDate || d.agreedDate || d.requestedDate || d.date || '';
 
-                                        return `${formatDate(startDateObj)} ~ ${formatDate(endDateObj)}`;
+                                        if (durationNights >= 1 && date) {
+                                            try {
+                                                const strDate = String(date);
+                                                const koreanMatch = strDate.match(/(\d{1,2})\uc6d4\s*(\d{1,2})\uc77c/);
+                                                let startDateStr = strDate;
+
+                                                if (koreanMatch) {
+                                                    const now = new Date();
+                                                    const month = String(koreanMatch[1]).padStart(2, '0');
+                                                    const day = String(koreanMatch[2]).padStart(2, '0');
+                                                    startDateStr = `${now.getFullYear()}-${month}-${day}`;
+                                                }
+
+                                                // Simple YYYY-MM-DD verify
+                                                if (startDateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                                                    const startDateObj = new Date(startDateStr);
+                                                    if (!isNaN(startDateObj.getTime())) {
+                                                        const endDateObj = new Date(startDateObj);
+                                                        endDateObj.setDate(startDateObj.getDate() + durationNights);
+                                                        const formatDate = (dt: Date) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+                                                        return `${formatDate(startDateObj)} ~ ${formatDate(endDateObj)}`;
+                                                    }
+                                                }
+                                                return strDate;
+                                            } catch (e) {
+                                                return String(date);
+                                            }
+                                        }
+
+                                        const time = d.proposedTime || d.requestedTime || d.time || '';
+                                        const endTime = d.proposedEndTime || d.endTime || '';
+
+                                        let timeStr = formatTimeRange(date, time); // This is safe as formatTimeRange handles errors? Let's hope.
+
+                                        // Append end time if available
+                                        if (endTime && timeStr !== "\ubbf8\uc815" && !timeStr.includes('~')) {
+                                            const strEndTime = String(endTime);
+                                            const endTimeMatch = strEndTime.match(/(\uc624\uc804|\uc624\ud6c4)\s*(\d{1,2})\uc2dc/);
+                                            if (endTimeMatch) {
+                                                let hour = parseInt(endTimeMatch[2]);
+                                                if (endTimeMatch[1] === '\uc624\ud6c4' && hour !== 12) hour += 12;
+                                                if (endTimeMatch[1] === '\uc624\uc804' && hour === 12) hour = 0;
+                                                timeStr = `${timeStr} ~ ${String(hour).padStart(2, '0')}:00`;
+                                            } else if (strEndTime.includes(':')) {
+                                                timeStr = `${timeStr} ~ ${strEndTime}`;
+                                            }
+                                        }
+                                        return timeStr;
+                                    } catch (e) {
+                                        return '\ubbf8\uc815';
                                     }
-                                } catch (e) {
-                                    console.error("Date parsing error for range:", e);
-                                    return date; // fallback
-                                }
-                            }
-
-                            const time = d.proposedTime || d.requestedTime || d.time || '';
-                            return formatTimeRange(date, time);
-                        })(),
-                        createdAt: session.created_at,
-                        details: session.details,
-                        initiator_user_id: session.initiator_user_id
-                    }));
+                                })(),
+                                createdAt: session.created_at,
+                                initiator_user_id: session.initiator_user_id
+                            };
+                        } catch (e) {
+                            console.error("[A2A] Error mapping session:", session.id, e);
+                            return null;
+                        }
+                    })
+                    .filter((item): item is A2ALog => item !== null);
                 setLogs(mappedLogs);
-                dataCache.set(cacheKey, mappedLogs, 5 * 60 * 1000); // 5분 캐시
+                dataCache.set(cacheKey, mappedLogs, 5 * 60 * 1000);
             } else {
                 console.error("Failed to fetch sessions:", response.status);
             }
@@ -1134,6 +1357,16 @@ const A2AScreen = () => {
             if (showLoading) setLoading(false);
         }
     }, [currentUserId, isTutorialActive, currentStep]);
+
+    // Pull-to-refresh handler (fetchA2ALogs 이후에 정의되어야 함)
+    const handleRefresh = useCallback(async () => {
+        setRefreshing(true);
+        try {
+            await fetchA2ALogs(false, false);
+        } finally {
+            setRefreshing(false);
+        }
+    }, [fetchA2ALogs]);
 
     // [NEW] 튜토리얼 단계 변경 시 로그 업데이트
     useEffect(() => {
@@ -1146,42 +1379,21 @@ const A2AScreen = () => {
         useCallback(() => {
             fetchCurrentUser();
 
-            // [NEW] forceRefresh가 true면 캐시 무효화하고 즉시 새로고침
+            // forceRefresh가 true면 캐시 무효화하고 즉시 새로고침
             if (forceRefresh) {
-                console.log('[A2A] forceRefresh 감지 - 캐시 무효화하고 새로고침');
-                // 1. 캐시 완전 무효화
-                dataCache.invalidate('a2a:sessions');
-                // 2. 파라미터 리셋 (먼저 리셋하여 중복 방지)
+                dataCache.invalidate('a2a:sessions:v2'); // [FIX] 캐시 키 v2로 통일
                 navigation.setParams({ forceRefresh: undefined });
-                // 3. 약간의 딜레이 후 로드 (백엔드에서 데이터가 준비될 시간 확보)
                 setTimeout(() => {
-                    fetchA2ALogs(true, false); // 로딩 표시 O, 캐시 무시
+                    fetchA2ALogs(true, false);
                 }, 500);
             } else {
                 fetchA2ALogs();
             }
-
-            // [NEW] 폴링 백업: WebSocket이 불안정한 경우를 대비하여 15초마다 자동 새로고침
-            const pollingInterval = setInterval(() => {
-                console.log('[A2A] 폴링 새로고침');
-                fetchA2ALogs(false, false); // 로딩 표시 없이, 캐시 무시
-            }, 15000); // 15초마다
-
-            return () => {
-                clearInterval(pollingInterval);
-            };
+            // [PERF] 15초 폴링 제거 - WebSocket이 실시간 업데이트를 담당함
         }, [fetchA2ALogs, forceRefresh, navigation])
     );
 
-    // currentUserId가 설정된 후에 로그 불러오기 (필터링에 필요)
-    // currentUserId가 설정된 후에 로그 불러오기 (필터링에 필요)
-    useFocusEffect(
-        useCallback(() => {
-            if (currentUserId) {
-                fetchA2ALogs();
-            }
-        }, [currentUserId, fetchA2ALogs])
-    );
+    // [PERF] 중복 useFocusEffect 제거됨 - 위의 useFocusEffect에서 통합 처리
 
     // WebSocket for real-time A2A updates (using singleton service)
     useEffect(() => {
@@ -1196,19 +1408,16 @@ const A2AScreen = () => {
             ['a2a_request', 'a2a_rejected', 'a2a_message', 'a2a_status_changed'],
             async (data) => {
                 if (data.type === "a2a_request") {
-                    console.log("[WS:A2A] 새 A2A 요청:", data.from_user);
                     fetchA2ALogs(false);
                 } else if (data.type === "a2a_rejected") {
-                    console.log("[WS:A2A] 거절 알림:", data.rejected_by_name);
                     fetchA2ALogs(false);
                 } else if (data.type === "a2a_message") {
-                    console.log("[WS:A2A] 새 협상 메시지:", data.sender_name, data.message);
                     fetchA2ALogs(false);
 
                     // [실시간 업데이트] 열린 모달의 세부 정보도 새로고침
                     const currentLog = selectedLogRef.current;
                     if (currentLog && data.session_id === currentLog.id) {
-                        console.log("[WS:A2A] 열린 모달 세부 정보 새로고침:", currentLog.id);
+
                         try {
                             const token = await AsyncStorage.getItem('accessToken');
                             const res = await fetch(`${API_BASE}/a2a/session/${currentLog.id}`, {
@@ -1229,7 +1438,6 @@ const A2AScreen = () => {
                         }
                     }
                 } else if (data.type === "a2a_status_changed") {
-                    console.log("[WS:A2A] 상태 변경:", data.new_status);
                     fetchA2ALogs(false);
                 }
             }
@@ -1333,6 +1541,8 @@ const A2AScreen = () => {
     const formatExactTime = (dateString: string) => {
         if (!dateString) return '';
         const date = new Date(dateString);
+        // [FIX] Invalid Date 방어 (NaN-NaN-NaN 표시 방지)
+        if (isNaN(date.getTime())) return '';
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, '0');
         const day = String(date.getDate()).padStart(2, '0');
@@ -1341,83 +1551,84 @@ const A2AScreen = () => {
         return `${year}.${month}.${day} ${hours}:${minutes}`;
     };
 
-    const handleLogClick = async (log: any) => {
+    // [NEW] 아바타 유효성 검사 (랜덤 이미지 필터링)
+    const isValidAvatar = (url: any) => {
+        if (!url || typeof url !== 'string') return false;
+        if (url.includes('picsum.photos')) return false;
+        if (url.includes('random')) return false;
+        if (url.includes('placeholder')) return false;
+        return true;
+    };
+
+    const handleLogClick = (log: any) => {
         // 모달 열기 전 닫힘 상태 리셋
         setIsModalClosing(false);
-        // 먼저 기본 정보로 모달을 즉시 열고, 로딩 상태 표시
-        setSelectedLog({ ...log, details: { ...log.details, _loading: true } } as any);
-        selectedLogRef.current = { ...log, details: { ...log.details, _loading: true } } as any;  // [FIX] ref 동기화
         setIsProcessExpanded(false);
         setIsConfirmed(false);
         setIsRescheduling(false);
 
+        // [OPTIMIZATION] 즉시 로컬 데이터로 모달 표시 (로딩 상태 없이)
+        // _loading 플래그를 제거하여 불필요한 로딩 인디케이터 표시 방지
+        const initialLog = { ...log, details: { ...log.details } };
+        setSelectedLog(initialLog);
+        selectedLogRef.current = initialLog;
+
         const startTime = Date.now();
-        console.log('⏱️ [Modal] API 호출 시작');
 
-        try {
-            // [FIX] 튜토리얼용 로그는 API 호출 건너뛰기
-            if (log.id?.startsWith('tutorial_')) {
-                console.log('🧪 튜토리얼 로그 상세 조회 시뮬레이션');
-                // 이미 로컬 데이터에 상세 정보가 있으므로 호출 없이 진행
-                // 필요한 경우 여기서 추가 데이터 병합 가능
-                return;
-            }
 
-            const token = await AsyncStorage.getItem('accessToken');
-            const res = await fetch(`${API_BASE}/a2a/session/${log.id}`, {
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-
-            const apiTime = Date.now() - startTime;
-            console.log(`⏱️ [Modal] API 응답 시간: ${apiTime}ms`);
-
-            if (res.ok) {
-                const data = await res.json();
-                const newDetails = data.details || {};
-                const newStatus = data.status;
-
-                if (newDetails.proposer === "알 수 없음" && log.details?.proposer) {
-                    newDetails.proposer = log.details.proposer;
-                }
-
-                // API 응답으로 완전한 데이터를 받은 후에 모달 표시
-                // [FIX] has_conflict, conflicting_sessions, process는 목록 API에서만 제공되므로 기존 값 유지
-                setSelectedLog({
-                    ...log,
-                    status: newStatus || log.status,
-                    details: {
-                        ...(log.details || {}),
-                        ...newDetails,
-                        has_conflict: (log.details as any)?.has_conflict,
-                        conflicting_sessions: (log.details as any)?.conflicting_sessions,
-                        process: newDetails.process?.length > 0 ? newDetails.process : (log.details as any)?.process || []
-                    }
-                });
-                selectedLogRef.current = {  // [FIX] ref 동기화
-                    ...log,
-                    status: newStatus || log.status,
-                    details: { ...(log.details || {}), ...newDetails }
-                };
-
-                const totalTime = Date.now() - startTime;
-                console.log(`[Modal] 전체 처리 시간: ${totalTime}ms`);
-                console.log('[DEBUG] Updated status:', newStatus, 'rescheduleRequestedBy:', newDetails.rescheduleRequestedBy);
-            } else {
-                // API 실패 시 기존 데이터로 표시
-                setSelectedLog(log);
-                selectedLogRef.current = log;  // [FIX] ref 동기화
-            }
-        } catch (e) {
-            console.error("Failed to fetch log details:", e);
-            setSelectedLog(log);
-            selectedLogRef.current = log;  // [FIX] ref 동기화
+        // [FIX] 튜토리얼용 로그는 API 호출 건너뛰기
+        if (log.id?.startsWith('tutorial_')) {
+            return;
         }
+
+        // 백그라운드에서 최신 정보 페치
+        (async () => {
+            try {
+                const token = await AsyncStorage.getItem('accessToken');
+                const res = await fetch(`${API_BASE}/a2a/session/${log.id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    const newDetails = data.details || {};
+                    const newStatus = data.status;
+
+                    if (newDetails.proposer === "알 수 없음" && log.details?.proposer) {
+                        newDetails.proposer = log.details.proposer;
+                    }
+
+                    // 현재 보고 있는 로그가 여전히 같은 로그일 때만 업데이트
+                    if (selectedLogRef.current?.id === log.id) {
+                        const updatedLog = {
+                            ...log,
+                            status: newStatus || log.status,
+                            details: {
+                                ...(log.details || {}),
+                                ...newDetails,
+                                has_conflict: (log.details as any)?.has_conflict,
+                                conflicting_sessions: (log.details as any)?.conflicting_sessions,
+                                process: newDetails.process?.length > 0 ? newDetails.process : (log.details as any)?.process || []
+                            }
+                        };
+                        setSelectedLog(updatedLog);
+                        selectedLogRef.current = updatedLog;
+
+                    }
+                } else {
+                    console.error("Failed to fetch sessions:", res.status);
+                }
+            } catch (e) {
+                console.error("Failed to fetch log details:", e);
+                // 에러 발생 시에도 기존 데이터 유지 (alert 불필요)
+            }
+        })();
     };
 
     const handleRescheduleClick = () => {
-        if (isTutorialActive && currentSubStep?.id === 'try_reschedule') {
-            // 튜토리얼에서는 재조율 화면으로 진입하지 않고 다음 설명으로 넘어감
-            nextSubStep();
+        if (isTutorialActive && currentSubStep?.id === 'explain_actions') {
+            setIsRescheduling(true);
+            setTimeout(() => nextSubStep(), 500);
             return;
         }
 
@@ -1441,7 +1652,7 @@ const A2AScreen = () => {
         }
 
         if (!selectedLog) return;
-        console.log('승인 버튼 클릭 - session_id:', selectedLog.id);
+
         try {
             const token = await AsyncStorage.getItem('accessToken');
             const res = await fetch(`${API_BASE}/a2a/session/${selectedLog.id}/approve`, {
@@ -1450,14 +1661,16 @@ const A2AScreen = () => {
                     'Authorization': `Bearer ${token}`,
                 }
             });
-            console.log('승인 API 응답 상태:', res.status);
+
             const data = await res.json();
-            console.log('승인 API 응답 데이터:', data);
 
             if (res.ok) {
+                // 승인 이후 홈 캘린더가 캐시로 남아있지 않도록 즉시 무효화
+                calendarService.invalidateEventsCache();
+
                 // 전원 승인 완료 시 일정 확정 화면 표시
                 if (data.all_approved) {
-                    console.log('� 전원 승인 완료 - 일정 확정 화면 표시');
+
                     setConfirmationType('official');
                     setIsConfirmed(true);
                 } else {
@@ -1483,10 +1696,11 @@ const A2AScreen = () => {
         // [FIX] 튜토리얼용 로그는 API 호출 차단
         if (isTutorialActive && selectedLog.id.startsWith('tutorial_')) {
             // 즉시 로컬 상태에서 해당 카드 제거 시늉
+            setRejectedLogTitle(selectedLog.title || '일정');
             setLogs(prevLogs => prevLogs.filter(log => log.id !== selectedLog.id));
             setShowRejectConfirm(false);
             handleClose();
-            Alert.alert("알림", "약속에서 나갔습니다. (테스트)");
+            setShowRejectSuccess(true);
             return;
         }
 
@@ -1518,15 +1732,18 @@ const A2AScreen = () => {
             });
 
             const data = await res.json();
-            console.log('🔴 거절 API 응답:', data);
+
 
             if (res.ok) {
-                // [수정] 즉시 로컬 상태에서 해당 카드 제거
+                // [수정] 즉시 로컬 상태에서 해당 카드 제거 (낙관적 업데이트)
+                setRejectedLogTitle(selectedLog.title || '일정');
                 setLogs(prevLogs => prevLogs.filter(log => log.id !== selectedLog.id));
+                // [FIX] 캐시도 즉시 무효화하여 다음 fetch 때 rejected 세션이 돌아오지 않도록
+                dataCache.invalidate('a2a:sessions:v2');
                 // 처리가 완료되면 모달 닫기
                 setShowRejectConfirm(false);
                 handleClose();
-                Alert.alert("알림", "약속에서 나갔습니다.");
+                setShowRejectSuccess(true);
             } else {
                 console.error("Reject failed:", data);
                 alert(data.detail || data.error || "거절 처리에 실패했습니다.");
@@ -1580,7 +1797,7 @@ const A2AScreen = () => {
     };
 
     const handleDeleteLog = (logId: string) => {
-        console.log("Delete triggered for:", logId);
+
         // [수정] 커스텀 모달로 변경
         setDeleteTargetLogId(logId);
         setShowDeleteConfirm(true);
@@ -1594,15 +1811,66 @@ const A2AScreen = () => {
         setDeleteTargetLogId(null);
     };
 
+    // ✅ [NEW] 튜토리얼 액션 콜백 등록
+    useEffect(() => {
+        if (!isTutorialActive) return;
+
+        // "받은 요청 카드 클릭" 콜백 - 튜토리얼 fake request 열기
+        registerActionCallback('card_tutorial_received_request', () => {
+            // logs에서 튜토리얼 받은 요청 찾아서 클릭
+            const fakeReceivedLog = logs.find(log => log.id === 'tutorial_received_request');
+            if (fakeReceivedLog) {
+                handleLogClick(fakeReceivedLog);
+                setTimeout(() => nextSubStep(), 500);
+            }
+        });
+
+        registerActionCallback('btn_reschedule', () => {
+            handleRescheduleClick();
+        });
+
+        registerActionCallback('btn_send_reschedule', () => {
+            handleSubmitReschedule();
+        });
+
+        registerActionCallback('btn_approve', () => {
+            // 승인 로직 실행 (내부에서 튜토리얼 다음 단계 이동 처리됨)
+            handleApproveClick();
+        });
+        // [추가됨] 홈 탭 이동 액션 처리 (go_to_home_final 단계)
+        registerActionCallback('tab_home', () => {
+            // 1. 열려있는 모달 닫기
+            handleClose();
+
+            // 2. 홈 화면으로 네비게이션
+            navigation.navigate('Home');
+
+            // 3. 튜토리얼 다음 단계(CHECK_HOME)로 진행
+            // 화면 전환 애니메이션 시간을 고려해 약간의 딜레이 후 실행
+            setTimeout(() => {
+                nextSubStep();
+            }, 500);
+        });
+
+        return () => {
+            unregisterActionCallback('card_tutorial_received_request');
+            unregisterActionCallback('btn_reschedule');
+            unregisterActionCallback('btn_send_reschedule');
+            unregisterActionCallback('tab_home');
+            // [추가됨] 클린업
+            unregisterActionCallback('btn_approve');
+        };
+    }, [isTutorialActive, logs, registerActionCallback, unregisterActionCallback, handleRescheduleClick, handleSubmitReschedule]);
+
     const renderLogItem = ({ item }: { item: A2ALog }) => {
         const isTutorialReceivedTarget = item.id === 'tutorial_received_request';
         const isTutorialSentTarget = item.id === 'tutorial_fake_request';  // FAKE_A2A_REQUEST.id와 일치
-        const highlighted = isTutorialReceivedTarget && isHighlighted('log_card_tutorial_received_request');
+        const highlighted = isTutorialReceivedTarget && isHighlighted('card_tutorial_received_request');
         const highlightedSent = isTutorialSentTarget && isHighlighted('card_a2a_request');
 
         // ref 등록 함수
         const getRef = () => {
-            if (isTutorialReceivedTarget) return (r: any) => { if (r) registerTarget('log_card_tutorial_received_request', r); };
+            if (isTutorialReceivedTarget) return (r: any) => { if (r) registerTarget('card_tutorial_received_request', r); };
             if (isTutorialSentTarget) return (r: any) => { if (r) registerTarget('card_a2a_request', r); };
             return undefined;
         };
@@ -1676,7 +1944,7 @@ const A2AScreen = () => {
                         {(item.status?.toLowerCase() === 'completed' || item.status?.toLowerCase() === 'rejected') && (
                             <TouchableOpacity
                                 onPress={(e) => {
-                                    console.log("Trash icon pressed");
+
                                     e.stopPropagation();
                                     handleDeleteLog(item.id);
                                 }}
@@ -1690,11 +1958,11 @@ const A2AScreen = () => {
                 </View>
 
                 <View style={styles.logSummary}>
-                    <Text style={styles.logSummaryText}>👥 {item.summary}</Text>
+                    <Text style={styles.logSummaryText}>👥 {(item.details?.attendees && item.details.attendees.length > 0) ? item.details.attendees.map((a: any) => a.name).filter(Boolean).join(', ') : item.summary}</Text>
                 </View>
 
                 <View style={styles.logFooter}>
-                    <Text style={styles.logTime}>{item.timeRange}</Text>
+                    <Text style={styles.logTime}>{normalizeTimeDisplay(item.details, item.timeRange)}</Text>
                     <ChevronRight size={16} color={COLORS.neutral300} />
                 </View>
             </TouchableOpacity>
@@ -1714,6 +1982,9 @@ const A2AScreen = () => {
                         renderItem={renderLogItem}
                         keyExtractor={item => item.id}
                         contentContainerStyle={styles.listContent}
+                        refreshControl={
+                            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+                        }
                         ListEmptyComponent={
                             <View style={styles.emptyContainer}>
                                 <Text style={styles.emptyText}>히스토리가 없습니다.</Text>
@@ -1800,6 +2071,76 @@ const A2AScreen = () => {
                                 <Text style={{ fontSize: 14, fontWeight: '600', color: 'white' }}>삭제</Text>
                             </TouchableOpacity>
                         </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* [NEW] Custom Alert Modal */}
+            <Modal
+                visible={customAlertVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setCustomAlertVisible(false)}
+            >
+                <View style={{
+                    flex: 1,
+                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    padding: 20,
+                    zIndex: 9999
+                }}>
+                    <View style={{
+                        backgroundColor: COLORS.white,
+                        borderRadius: 20,
+                        padding: 24,
+                        width: '80%',
+                        maxWidth: 320,
+                        alignItems: 'center',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 12,
+                        elevation: 5,
+                    }}>
+                        {/* Red Circle X Icon */}
+                        <View style={{
+                            width: 50,
+                            height: 50,
+                            borderRadius: 25,
+                            backgroundColor: '#FEE2E2', // Red-100
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginBottom: 16,
+                        }}>
+                            <X size={28} color="#EF4444" strokeWidth={3} />
+                        </View>
+
+                        <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#1E293B', marginBottom: 12 }}>
+                            {customAlertTitle}
+                        </Text>
+                        <Text style={{ fontSize: 15, color: '#64748B', textAlign: 'center', lineHeight: 22, marginBottom: 24 }}>
+                            {customAlertMessage}
+                        </Text>
+
+                        {/* Confirm Button */}
+                        <TouchableOpacity
+                            style={{
+                                width: '100%',
+                                paddingVertical: 14,
+                                borderRadius: 12,
+                                backgroundColor: '#F43F5E', // Rose-500
+                                alignItems: 'center',
+                                shadowColor: '#F43F5E',
+                                shadowOffset: { width: 0, height: 2 },
+                                shadowOpacity: 0.2,
+                                shadowRadius: 4,
+                                elevation: 2
+                            }}
+                            onPress={() => setCustomAlertVisible(false)}
+                        >
+                            <Text style={{ fontSize: 16, fontWeight: 'bold', color: 'white' }}>확인</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
             </Modal>
@@ -1985,26 +2326,9 @@ const A2AScreen = () => {
                                                 <Text style={styles.ticketValue}>
                                                     {(() => {
                                                         const d = (selectedLog?.details || {}) as any;
-                                                        const durationNights = d.duration_nights || 0;
-                                                        const dateStr = confirmationType === 'reschedule' && selectedDate
-                                                            ? selectedDate
+                                                        return confirmationType === 'reschedule' && startDate
+                                                            ? startDate
                                                             : (d.proposedDate || d.proposedTime?.split(' ')[0] || '날짜 미정');
-
-                                                        if (durationNights >= 1 && dateStr) {
-                                                            try {
-                                                                const [y, m, day] = dateStr.match(/^\d{4}-\d{2}-\d{2}$/) ? dateStr.split('-').map(Number) : [];
-                                                                if (y) {
-                                                                    const startDate = new Date(y, m - 1, day);
-                                                                    const endDate = new Date(startDate);
-                                                                    endDate.setDate(startDate.getDate() + durationNights);
-                                                                    const formatDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-                                                                    return `${formatDate(startDate)} ~ ${formatDate(endDate)}`;
-                                                                }
-                                                            } catch (e) {
-                                                                return dateStr;
-                                                            }
-                                                        }
-                                                        return dateStr;
                                                     })()}
                                                 </Text>
                                             </View>
@@ -2013,10 +2337,8 @@ const A2AScreen = () => {
                                                 <Text style={[styles.ticketValue, { color: COLORS.primaryMain }]}>
                                                     {(() => {
                                                         const d = (selectedLog?.details || {}) as any;
-                                                        if ((d.duration_nights || 0) >= 1) return '-';
-
                                                         return confirmationType === 'reschedule' && startTime
-                                                            ? `${startTime}${endTime ? `~${endTime}` : ''}`
+                                                            ? `${startTime}${endTime ? `~ ${endTime}` : ''}`
                                                             : (d.proposedTime?.match(/\d{1,2}:\d{2}/)?.[0] || d.proposedTime || '시간 미정');
                                                     })()}
                                                 </Text>
@@ -2036,12 +2358,18 @@ const A2AScreen = () => {
                                                 <View style={[styles.attendeeStack, { marginTop: 4 }]}>
                                                     {/* 참여자 프로필 이미지 (최대 3개) */}
                                                     {/* 참여자 프로필 이미지 (최대 3개) */}
-                                                    {((selectedLog?.details as any)?.attendees?.map((a: any) => a.avatar) || (selectedLog?.details as any)?.participantImages || ['https://picsum.photos/150']).slice(0, 3).map((uri: string, idx: number) => (
-                                                        <Image
-                                                            key={idx}
-                                                            source={{ uri: uri || 'https://picsum.photos/150' }}
-                                                            style={[styles.attendeeAvatar, { marginLeft: idx > 0 ? -8 : 0 }]}
-                                                        />
+                                                    {((selectedLog?.details as any)?.attendees?.map((a: any) => a.avatar) || (selectedLog?.details as any)?.participantImages || []).slice(0, 3).map((uri: string, idx: number) => (
+                                                        uri && uri !== 'https://picsum.photos/150' ? (
+                                                            <Image
+                                                                key={idx}
+                                                                source={{ uri: uri }}
+                                                                style={[styles.attendeeAvatar, { marginLeft: idx > 0 ? -8 : 0 }]}
+                                                            />
+                                                        ) : (
+                                                            <View key={idx} style={[styles.attendeeAvatar, { marginLeft: idx > 0 ? -8 : 0, backgroundColor: COLORS.neutral100, justifyContent: 'center', alignItems: 'center' }]}>
+                                                                <User size={16} color={COLORS.neutral400} />
+                                                            </View>
+                                                        )
                                                     ))}
                                                     {/* 본인 표시 */}
                                                     <View style={[styles.attendeeAvatar, styles.attendeeYou, { marginLeft: -8 }]}>
@@ -2055,7 +2383,7 @@ const A2AScreen = () => {
                                     {confirmationType !== 'reschedule' && (
                                         <TouchableOpacity style={styles.viewCalendarBtn} onPress={() => { handleClose(); navigation.navigate('Home'); }}>
                                             <Calendar size={18} color="rgba(255,255,255,0.8)" style={{ marginRight: 8 }} />
-                                            <Text style={styles.viewCalendarText}>View in Calendar</Text>
+                                            <Text style={styles.viewCalendarText}>캘린더에서 확인하기</Text>
                                         </TouchableOpacity>
                                     )}
                                 </View>
@@ -2083,12 +2411,13 @@ const A2AScreen = () => {
                                         </TouchableOpacity>
                                         <TouchableOpacity
                                             onPress={handleSubmitReschedule}
-                                            disabled={!startDate || !startTime || !endDate || !endTime}
+                                            disabled={durationNights > 0 ? !startDate : (!startDate || !startTime || !endDate || !endTime)}
                                             style={[
                                                 styles.confirmBtn,
-                                                (!startDate || !startTime || !endDate || !endTime) && styles.submitButtonDisabled
+                                                (durationNights > 0 ? !startDate : (!startDate || !startTime || !endDate || !endTime)) && styles.submitButtonDisabled
                                             ]}
                                             testID="btn_send_reschedule"
+                                            ref={(r) => registerTarget('btn_send_reschedule', r)}
                                         >
                                             <Text style={styles.confirmBtnText}>AI에게 재협상 요청</Text>
                                         </TouchableOpacity>
@@ -2128,10 +2457,16 @@ const A2AScreen = () => {
                                     <ScrollView style={styles.detailContent}>
                                         {selectedLog?.details && (
                                             <>
-                                                {console.log('🔍 [DEBUG] selectedLog.status:', selectedLog.status, 'toLowerCase:', selectedLog.status?.toLowerCase?.())}
+
                                                 {/* Proposer */}
                                                 <View style={styles.proposerCard}>
-                                                    <Image source={{ uri: selectedLog.details.proposerAvatar }} style={styles.proposerAvatar} />
+                                                    {isValidAvatar(selectedLog.details.proposerAvatar) ? (
+                                                        <Image source={{ uri: selectedLog.details.proposerAvatar }} style={styles.proposerAvatar} />
+                                                    ) : (
+                                                        <View style={[styles.proposerAvatar, { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' }]}>
+                                                            <User size={24} color={COLORS.primaryMain} />
+                                                        </View>
+                                                    )}
                                                     <View>
                                                         <Text style={styles.proposerLabel}>보낸 사람</Text>
                                                         <Text style={styles.proposerName}>{selectedLog.details.proposer}</Text>
@@ -2214,36 +2549,8 @@ const A2AScreen = () => {
                                                             <Text style={styles.infoLabel}>요청시간</Text>
                                                             <Text style={styles.infoValue}>
                                                                 {/* 요청시간: duration_nights >= 1이면 날짜 범위만, 아니면 시간 포함 */}
-                                                                {(() => {
-                                                                    const d = selectedLog.details as any;
-                                                                    const durationNights = d?.duration_nights || 0;
-                                                                    const startDate = d?.requestedDate || d?.proposedDate || '';
-
-                                                                    // 1박 이상이면 날짜 범위만 표시 (시간 제외)
-                                                                    if (durationNights >= 1 && startDate) {
-                                                                        // 종료 날짜 계산: 시작 날짜 + duration_nights
-                                                                        try {
-                                                                            const startDateObj = new Date(startDate);
-                                                                            const endDateObj = new Date(startDateObj);
-                                                                            endDateObj.setDate(startDateObj.getDate() + durationNights);
-
-                                                                            const formatDate = (date: Date) => {
-                                                                                return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-                                                                            };
-
-                                                                            return `${formatDate(startDateObj)} ~ ${formatDate(endDateObj)}`;
-                                                                        } catch {
-                                                                            return startDate;
-                                                                        }
-                                                                    }
-
-                                                                    // 당일 일정: 기존 로직 (시간 포함)
-                                                                    const startTime = d?.requestedTime || d?.proposedTime || '';
-                                                                    const endTime = d?.requestedEndTime || d?.proposedEndTime || d?.end_time || '';
-                                                                    if (!startDate && !startTime) return '미정';
-                                                                    const timeRange = endTime ? `${startTime}~${endTime}` : startTime;
-                                                                    return startDate ? `${startDate} ${timeRange}` : timeRange;
-                                                                })()}
+                                                                {/* [OPTIMIZATION] 복잡한 계산 없이 리스트의 timeRange 재사용 */}
+                                                                {(selectedLog as any).timeRange || '미정'}
                                                             </Text>
                                                         </View>
                                                     </View>
@@ -2267,6 +2574,10 @@ const A2AScreen = () => {
                                                                         if (durationNights >= 1 && startDate) {
                                                                             try {
                                                                                 const startDateObj = new Date(startDate);
+                                                                                // [FIX] Invalid Date 방어 (데이터 로딩 중 NaN-NaN-NaN 표시 방지)
+                                                                                if (isNaN(startDateObj.getTime())) {
+                                                                                    return (selectedLog as any).timeRange || '확정 중...';
+                                                                                }
                                                                                 const endDateObj = new Date(startDateObj);
                                                                                 endDateObj.setDate(startDateObj.getDate() + durationNights);
 
@@ -2276,15 +2587,19 @@ const A2AScreen = () => {
 
                                                                                 return `${formatDate(startDateObj)} ~ ${formatDate(endDateObj)}`;
                                                                             } catch {
-                                                                                return startDate;
+                                                                                return (selectedLog as any).timeRange || startDate;
                                                                             }
                                                                         }
 
                                                                         // 당일 일정: 기존 로직 (시간 포함)
                                                                         const startTime = d?.agreedTime || d?.proposedTime || '';
                                                                         const endTime = d?.agreedEndTime || d?.proposedEndTime || d?.end_time || '';
-                                                                        if (!startDate && !startTime) return '협상 중';
-                                                                        const timeRange = endTime ? `${startTime}~${endTime}` : startTime;
+                                                                        // [OPTIMIZATION] 날짜/시간 파싱 실패/로딩 중일 시 리스트에서 계산된 timeRange 사용
+                                                                        if (!startDate && !startTime) {
+                                                                            return (selectedLog as any).timeRange || '협상 중';
+                                                                        }
+
+                                                                        const timeRange = endTime ? `${startTime} ~ ${endTime}` : startTime;
                                                                         return startDate ? `${startDate} ${timeRange}` : timeRange;
                                                                     })()}
                                                                 </Text>
@@ -2313,8 +2628,10 @@ const A2AScreen = () => {
                                                     const activeAttendees = attendees.filter((a: any) => !leftParticipants.includes(a.id));
 
                                                     // 승인/미승인 분리
-                                                    const approvedAttendees = activeAttendees.filter((a: any) => a.is_approved);
-                                                    const pendingAttendees = activeAttendees.filter((a: any) => !a.is_approved);
+                                                    // [OPTIMIZATION] is_approved가 undefined인 경우(합성된 데이터)는 pending으로 취급하되, UI에서 구분 가능하면 좋음
+                                                    // 현재는 일단 pendingAttendees로 분류
+                                                    const approvedAttendees = activeAttendees.filter((a: any) => a.is_approved === true);
+                                                    const pendingAttendees = activeAttendees.filter((a: any) => a.is_approved !== true);
 
                                                     return (
                                                         <View style={styles.participantStatusSection}>
@@ -2332,11 +2649,17 @@ const A2AScreen = () => {
                                                                 <View style={styles.participantAvatarRow}>
                                                                     {approvedAttendees.length > 0 ? (
                                                                         approvedAttendees.map((attendee: any, idx: number) => (
-                                                                            <Image
-                                                                                key={idx}
-                                                                                source={{ uri: attendee.avatar || 'https://picsum.photos/150' }}
-                                                                                style={styles.approvedAvatar}
-                                                                            />
+                                                                            isValidAvatar(attendee.avatar) ? (
+                                                                                <Image
+                                                                                    key={idx}
+                                                                                    source={{ uri: attendee.avatar }}
+                                                                                    style={styles.approvedAvatar}
+                                                                                />
+                                                                            ) : (
+                                                                                <View key={idx} style={[styles.approvedAvatar, { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' }]}>
+                                                                                    <User size={20} color={COLORS.primaryMain} />
+                                                                                </View>
+                                                                            )
                                                                         ))
                                                                     ) : (
                                                                         <Text style={styles.noParticipantText}>아직 없음</Text>
@@ -2356,11 +2679,17 @@ const A2AScreen = () => {
                                                                 {pendingAttendees.length > 0 && (
                                                                     <View style={styles.participantAvatarRow}>
                                                                         {pendingAttendees.map((attendee: any, idx: number) => (
-                                                                            <Image
-                                                                                key={idx}
-                                                                                source={{ uri: attendee.avatar || 'https://picsum.photos/150' }}
-                                                                                style={styles.pendingAvatar}
-                                                                            />
+                                                                            isValidAvatar(attendee.avatar) ? (
+                                                                                <Image
+                                                                                    key={idx}
+                                                                                    source={{ uri: attendee.avatar }}
+                                                                                    style={styles.pendingAvatar}
+                                                                                />
+                                                                            ) : (
+                                                                                <View key={idx} style={[styles.pendingAvatar, { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' }]}>
+                                                                                    <User size={20} color={COLORS.primaryMain} />
+                                                                                </View>
+                                                                            )
                                                                         ))}
                                                                     </View>
                                                                 )}
@@ -2400,7 +2729,10 @@ const A2AScreen = () => {
                                                                             ]}>[{step.step}]</Text>
                                                                             {step.created_at && (
                                                                                 <Text style={{ fontSize: 10, color: COLORS.neutral400 }}>
-                                                                                    {new Date(step.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                                                                                    {(() => {
+                                                                                        const d = new Date(step.created_at);
+                                                                                        return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+                                                                                    })()}
                                                                                 </Text>
                                                                             )}
                                                                         </View>
@@ -2442,9 +2774,26 @@ const A2AScreen = () => {
                                             {/* 모달이 닫히는 중이 아닐 때만 버튼 표시 */}
                                             {!isModalClosing && (
                                                 <>
-                                                    <TouchableOpacity onPress={handleRescheduleClick} style={styles.rescheduleButton}>
-                                                        <Text style={styles.rescheduleButtonText}>재조율</Text>
-                                                    </TouchableOpacity>
+                                                    {/* [FIX] 재조율 버튼: 나 외 활성 참여자 1명 이상 + rejected 아닐 때만 표시 */}
+                                                    {(() => {
+                                                        const attendees = (selectedLog?.details as any)?.attendees || [];
+                                                        const leftParticipants = (selectedLog?.details as any)?.left_participants || [];
+                                                        const activeAttendees = attendees.filter((a: any) => !leftParticipants.includes(a.id));
+                                                        const otherActiveAttendees = activeAttendees.filter((a: any) => !a.isCurrentUser);
+                                                        const status = selectedLog?.status?.toLowerCase() || '';
+                                                        const showReschedule = otherActiveAttendees.length >= 1 && !['rejected'].includes(status);
+
+                                                        return showReschedule ? (
+                                                            <TouchableOpacity
+                                                                onPress={handleRescheduleClick}
+                                                                style={styles.rescheduleButton}
+                                                                ref={(r) => registerTarget('btn_reschedule', r)}
+                                                                testID="btn_reschedule"
+                                                            >
+                                                                <Text style={styles.rescheduleButtonText}>재조율</Text>
+                                                            </TouchableOpacity>
+                                                        ) : null;
+                                                    })()}
 
                                                     {/* 승인/거절 버튼: initiator_user_id는 리스트에서 이미 가져옴 (API 대기 불필요) */}
                                                     {selectedLog?.status?.toLowerCase() !== 'completed' && (() => {
@@ -2466,7 +2815,8 @@ const A2AScreen = () => {
                                                         const showButtons = !isRequester && !isApproved;
 
                                                         // 협상 완료 상태 여부 (pending_approval일 때만 버튼 활성화)
-                                                        const isNegotiationComplete = selectedLog?.status?.toLowerCase() === 'pending_approval';
+                                                        // 튜토리얼 모드에서는 항상 활성화
+                                                        const isNegotiationComplete = (isTutorialActive && currentStep === 'RESPOND_TO_REQUEST') || selectedLog?.status?.toLowerCase() === 'pending_approval';
 
                                                         const handleApproveWithCheck = () => {
                                                             // 튜토리얼 모드에서는 협상 완료 체크 건너뛰기
@@ -2497,6 +2847,8 @@ const A2AScreen = () => {
                                                                         styles.approveButton,
                                                                         !isNegotiationComplete && { opacity: 0.5 }
                                                                     ]}
+                                                                    ref={(r) => registerTarget('btn_approve', r)}
+                                                                    testID="btn_approve"
                                                                 >
                                                                     <CheckCircle2 size={16} color="white" style={{ marginRight: 6 }} />
                                                                     <Text style={styles.approveButtonText}>승인</Text>
@@ -2775,6 +3127,108 @@ const A2AScreen = () => {
                     </View>
                 </View>
             </Modal>
+
+
+            {/* 거절 완료 배너 모달 */}
+            <Modal
+                visible={showRejectSuccess}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowRejectSuccess(false)}
+            >
+                <View style={{
+                    flex: 1,
+                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    padding: 20,
+                }}>
+                    <View style={{
+                        backgroundColor: COLORS.white,
+                        borderRadius: 24,
+                        padding: 24,
+                        paddingTop: 40,
+                        width: '100%',
+                        maxWidth: 320,
+                        alignItems: 'center',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 12,
+                        elevation: 5,
+                        position: 'relative',
+                    }}>
+                        {/* X 닫기 버튼 */}
+                        <TouchableOpacity
+                            style={{
+                                position: 'absolute',
+                                top: 12,
+                                right: 12,
+                                width: 28,
+                                height: 28,
+                                borderRadius: 14,
+                                backgroundColor: '#F1F5F9',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                            }}
+                            onPress={() => setShowRejectSuccess(false)}
+                        >
+                            <X size={16} color="#64748B" />
+                        </TouchableOpacity>
+
+                        {/* 빨간 원 아이콘 */}
+                        <View style={{
+                            width: 64,
+                            height: 64,
+                            borderRadius: 32,
+                            backgroundColor: '#FEE2E2',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginBottom: 20,
+                        }}>
+                            <X size={32} color="#EF4444" strokeWidth={3} />
+                        </View>
+
+                        <Text style={{
+                            fontSize: 20,
+                            fontWeight: '700',
+                            color: '#1E293B',
+                            marginBottom: 8,
+                            textAlign: 'center',
+                        }}>약속 거절 완료</Text>
+
+                        <Text style={{
+                            fontSize: 14,
+                            color: '#64748B',
+                            textAlign: 'center',
+                            lineHeight: 22,
+                            marginBottom: 28,
+                        }}>
+                            "{rejectedLogTitle}" 약속에서 나갔습니다.{'\n'}상대방에게 알림이 전송되었습니다.
+                        </Text>
+
+                        {/* 확인 버튼 */}
+                        <TouchableOpacity
+                            style={{
+                                width: '100%',
+                                paddingVertical: 14,
+                                borderRadius: 16,
+                                backgroundColor: '#EF4444',
+                                alignItems: 'center',
+                                shadowColor: '#EF4444',
+                                shadowOffset: { width: 0, height: 2 },
+                                shadowOpacity: 0.2,
+                                shadowRadius: 4,
+                                elevation: 2,
+                            }}
+                            onPress={() => { setShowRejectSuccess(false); fetchA2ALogs(); }}
+                        >
+                            <Text style={{ fontSize: 16, fontWeight: 'bold', color: 'white' }}>확인</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
         </SafeAreaView >
     );
 };
@@ -2932,12 +3386,32 @@ const styles = StyleSheet.create({
         overflow: 'hidden'
     },
 
+
+
     // Confirmation View
-    confirmationContainer: { flex: 1, alignItems: 'center', padding: 24, backgroundColor: COLORS.neutralLight },
-    closeButtonAbsolute: { position: 'absolute', top: 24, right: 24, zIndex: 10 },
-    confirmIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.primaryBg, justifyContent: 'center', alignItems: 'center', marginBottom: 24, marginTop: 32 },
+    confirmationContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 32,
+        paddingBottom: 32,
+        backgroundColor: COLORS.white,
+    },
+    closeButtonAbsolute: {
+        position: 'absolute',
+        top: 16,
+        right: 16,
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: COLORS.neutral100,
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 10,
+    },
+    confirmIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.primaryBg, justifyContent: 'center', alignItems: 'center', alignSelf: 'center', marginBottom: 24, marginTop: 32 },
     confirmEmoji: { fontSize: 48, marginBottom: 16, marginTop: 32 },
-    confirmTitle: { fontSize: 24, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 8 },
+    confirmTitle: { fontSize: 24, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 8, textAlign: 'center' },
     confirmDesc: { fontSize: 14, color: COLORS.neutral500, textAlign: 'center', lineHeight: 20, marginBottom: 32 },
 
     ticketCard: {
@@ -2965,7 +3439,7 @@ const styles = StyleSheet.create({
     ticketLocationTitle: { fontSize: 14, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 2 },
     ticketLocationSub: { fontSize: 12, color: COLORS.neutral400 },
 
-    viewCalendarBtn: { width: '100%', paddingVertical: 16, borderRadius: 12, backgroundColor: COLORS.approveBtn, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', shadowColor: COLORS.primaryDark, shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
+    viewCalendarBtn: { width: '100%', paddingVertical: 16, borderRadius: 16, backgroundColor: COLORS.approveBtn, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', shadowColor: COLORS.primaryDark, shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
     viewCalendarText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
 
     // Reschedule View

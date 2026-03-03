@@ -159,7 +159,8 @@ const RegisterScreen = () => {
                         />
                     </View>
                     <Text style={styles.helperText}>
-                        친구들이 나를 검색할 때 사용됩니다.
+                        친구들이 나를 검색할 때 사용됩니다.{'\n'}{'\n'}
+                        <Text style={{ color: COLORS.primaryMain }}>*아이디는 한 번 설정하면 변경할 수 없습니다.</Text>
                     </Text>
                 </View>
 

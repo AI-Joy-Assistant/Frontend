@@ -3,10 +3,10 @@ export const Colors = {
     light: {
         text: '#11181C',
         background: '#fff',
-        tint: '#4F46E5',
+        tint: '#3730A3',
         icon: '#687076',
         tabIconDefault: '#687076',
-        tabIconSelected: '#4F46E5',
+        tabIconSelected: '#3730A3',
     },
     dark: {
         text: '#ECEDEE',
@@ -20,7 +20,7 @@ export const Colors = {
 
 export const COLORS = {
     // Primary
-    primaryMain: '#4F46E5', // Indigo 600
+    primaryMain: '#3730A3', // Indigo 800
     primaryLight: '#818CF8', // Indigo 400
     primaryDark: '#3730A3', // Indigo 800
     primaryBg: '#EEF2FF',   // Indigo 50

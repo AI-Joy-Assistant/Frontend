@@ -4,7 +4,7 @@ import { UserPlus, Check, X, Info, User } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useEffect, useState, useCallback, useSyncExternalStore } from 'react';
+import React, { useEffect, useState, useCallback, useSyncExternalStore, useRef } from 'react';
 import {
   Alert,
   FlatList,
@@ -20,7 +20,8 @@ import {
   TouchableWithoutFeedback,
   Pressable,
   Platform,
-  Animated
+  Animated,
+  RefreshControl
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -32,6 +33,7 @@ import WebSocketService from '../services/WebSocketService';
 import { useTutorial } from '../store/TutorialContext';
 import { friendsStore } from '../store/friendsStore';
 import { SkeletonListItem } from '../components/Skeleton';
+import { useRefresh } from '../hooks/useRefresh';
 
 // Colors
 const COLORS = {
@@ -91,6 +93,18 @@ const FriendsScreen = () => {
     route.params?.initialTab || 'friends'
   );
 
+  const getAvatarSource = (picture?: string) => {
+    if (!picture) return null;
+
+    // 1. 이미 require()로 불러온 이미지(숫자)인 경우 그대로 반환
+    if (typeof picture === 'number') {
+      return picture;
+    }
+
+    // 2. 일반 유저(원격 URL 문자열)인 경우 객체로 반환
+    return { uri: picture };
+  };
+
   // 튜토리얼 훅 사용
   const {
     isTutorialActive,
@@ -101,7 +115,9 @@ const FriendsScreen = () => {
     tutorialFriendAdded,
     ghostFriend,
     currentSubStep,
-    registerTarget
+    registerTarget,
+    registerActionCallback,
+    unregisterActionCallback
   } = useTutorial();
 
   // ✅ [NEW] 튜토리얼 탭 강조 애니메이션
@@ -130,6 +146,42 @@ const FriendsScreen = () => {
     }
   }, [isTutorialActive, currentStep, currentSubStep?.id]);
 
+  // ✅ [NEW] 튜토리얼: 탭이 'requests'로 바뀌면 자동으로 다음 단계 진행
+  // (콜백에서 nextSubStep을 호출하면 중복/경쟁 상태가 발생할 수 있어 상태 감지로 변경)
+  useEffect(() => {
+    if (isTutorialActive && currentStep === 'ACCEPT_FRIEND' && currentSubStep?.id === 'go_to_requests' && activeTab === 'requests') {
+      const timer = setTimeout(() => {
+        nextSubStep();
+      }, 500); // 탭 전환 애니메이션 등을 고려해 약간의 여유
+      return () => clearTimeout(timer);
+    }
+  }, [isTutorialActive, currentStep, currentSubStep, activeTab, nextSubStep]);
+
+
+
+  // ✅ [NEW] 튜토리얼 액션 콜백 등록
+  useEffect(() => {
+    if (!isTutorialActive) return;
+
+    // "받은 요청" 탭 클릭 콜백
+    registerActionCallback('tab_requests', () => {
+      setActiveTab('requests');
+      // nextSubStep은 위 useEffect에서 처리됨
+    });
+
+    // "친구 요청 수락" 버튼 클릭 콜백
+    registerActionCallback('btn_accept_friend', () => {
+      if (fakeFriendRequest) {
+        handleAcceptRequest(fakeFriendRequest.id);
+      }
+    });
+
+    return () => {
+      unregisterActionCallback('tab_requests');
+      unregisterActionCallback('btn_accept_friend');
+    };
+  }, [isTutorialActive, fakeFriendRequest, registerActionCallback, unregisterActionCallback]);
+
   const [emailInput, setEmailInput] = useState<string>('');
 
   // friendsStore에서 전역 상태 구독
@@ -144,6 +196,16 @@ const FriendsScreen = () => {
   const loadingFriends = storeState.loadingFriends;
   const loadingRequests = storeState.loadingRequests;
 
+  // 화면 포커스 때마다 WebSocket 연결 확인 (연결 끊김 방지)
+  useFocusEffect(
+    useCallback(() => {
+      if (userInfo?.id) {
+
+        WebSocketService.connect(userInfo.id);
+      }
+    }, [userInfo?.id])
+  );
+
   // Delete Modal State
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<{ id: string; name: string } | null>(null);
@@ -151,19 +213,38 @@ const FriendsScreen = () => {
   // 중복 클릭 방지를 위한 처리 중인 요청 ID 목록
   const [processingRequestIds, setProcessingRequestIds] = useState<Set<string>>(new Set());
 
+  // Pull-to-refresh
+  const { refreshing, onRefresh } = useRefresh(async () => {
+    await friendsStore.refresh();
+  });
+
   // Custom Alert Modal State
   const [customAlertVisible, setCustomAlertVisible] = useState(false);
   const [customAlertTitle, setCustomAlertTitle] = useState('');
   const [customAlertMessage, setCustomAlertMessage] = useState('');
-  const [customAlertType, setCustomAlertType] = useState<'success' | 'error' | 'info'>('info');
+  const [customAlertType, setCustomAlertType] = useState<'success' | 'error' | 'info' | 'reject'>('info');
+  const onAlertConfirmRef = useRef<(() => void) | null>(null);
 
   // Custom alert function (replaces window.alert)
-  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' = 'info') => {
+  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' | 'reject' = 'info', onConfirm?: () => void) => {
+    onAlertConfirmRef.current = onConfirm || null;
     setCustomAlertTitle(title);
     setCustomAlertMessage(message);
     setCustomAlertType(type);
     setCustomAlertVisible(true);
   };
+
+  // ✅ [NEW] 튜토리얼: 친구 추가 완료 후 모달이 닫히면 자동으로 다음 단계 진행
+  // (콜백 대신 상태 감지로 변경하여 안정성 확보)
+  useEffect(() => {
+    if (isTutorialActive && currentStep === 'ACCEPT_FRIEND' && currentSubStep?.id === 'accept_request' && tutorialFriendAdded && !customAlertVisible) {
+      // 친구가 추가되었고, 모달도 닫혔는데 여전히 수락 단계라면 다음 단계로
+      const timer = setTimeout(() => {
+        nextSubStep();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [isTutorialActive, currentStep, currentSubStep, tutorialFriendAdded, customAlertVisible, nextSubStep]);
 
   // [REMOVED] fetchUserInfo - friendsStore.fetchAll()로 대체됨
 
@@ -239,9 +320,20 @@ const FriendsScreen = () => {
     // FriendsScreen에서 필요한 메시지 구독
     const unsubscribe = WebSocketService.subscribe(
       'FriendsScreen',
-      ['friend_request', 'friend_accepted', 'friend_rejected'],
+      ['friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'user_info_updated'],
       (data) => {
-        console.log(`[WS:Friends] Event: ${data.type}`);
+
+
+        // [DEBUG] 친구 삭제 이벤트 수신 확인용 Alert
+        if (data.type === 'friend_deleted') {
+
+          Alert.alert('디버그', `친구 삭제 이벤트 수신: ${data.deleted_by}`);
+
+          if (data.deleted_by) {
+
+            friendsStore.removeFriend(data.deleted_by);
+          }
+        }
 
         // WebSocket 이벤트 시 캐시 무효화 후 새로고침
         friendsStore.invalidate();
@@ -273,14 +365,14 @@ const FriendsScreen = () => {
         body: JSON.stringify({ email: searchTerm.trim() }),
       });
 
-      console.log('친구 추가 응답 상태:', response.status);
+
 
       if (response.ok) {
         showAlert('성공', '친구 요청을 보냈습니다.', 'success');
         setSearchTerm('');
       } else {
         const errorData = await response.json();
-        console.log('친구 추가 에러 응답:', errorData);
+
         let errorMsg = errorData.detail || errorData.error || '친구 추가에 실패했습니다.';
         if (typeof errorMsg === 'string' && errorMsg.includes('해당 이메일 또는 아이디의 사용자를 찾을 수 없습니다.')) {
           errorMsg = '해당 이메일 또는 아이디의\n사용자를 찾을 수 없습니다.';
@@ -344,12 +436,9 @@ const FriendsScreen = () => {
       }
 
       markTutorialFriendAdded();
-      showAlert('성공', '친구 요청을 수락했습니다.', 'success');
 
-      // 다음 단계로 진행
-      setTimeout(() => {
-        nextSubStep();
-      }, 500);
+      // 모달만 띄우고, 진행은 위 useEffect에서 처리
+      showAlert('성공', '친구 요청을 수락했습니다.', 'success');
       return;
     }
 
@@ -412,7 +501,8 @@ const FriendsScreen = () => {
       });
 
       if (response.ok) {
-        showAlert('성공', '친구 요청을 거절했습니다.', 'success');
+        // [FIX] 거절 시 빨간색 X와 빨간 버튼 표시, 제목 '거절' 추가
+        showAlert('거절', '친구 요청을 거절했습니다.', 'reject');
       } else {
         // 실패 시 요청 목록 다시 불러오기
         friendsStore.refresh();
@@ -493,6 +583,7 @@ const FriendsScreen = () => {
             {/* Main Info */}
             <View style={styles.idCardMain}>
               <Text style={styles.idCardName}>{userInfo?.name || 'Loading...'}</Text>
+              <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.2)', marginTop: 4, marginBottom: 4 }} />
               <View style={styles.idCardHandleRow}>
                 <Text style={styles.idCardHandleSymbol}>@</Text>
                 <Text style={styles.idCardHandle}>{userInfo?.handle || ''}</Text>
@@ -503,12 +594,6 @@ const FriendsScreen = () => {
                   <Ionicons name="copy-outline" size={16} color="rgba(255,255,255,0.8)" />
                 </TouchableOpacity>
               </View>
-            </View>
-
-            {/* Email */}
-            <View style={styles.idCardEmailRow}>
-              <Ionicons name="mail" size={14} color="rgba(255,255,255,0.6)" />
-              <Text style={styles.idCardEmail}>{userInfo?.email || ''}</Text>
             </View>
           </LinearGradient>
         </View>
@@ -545,19 +630,21 @@ const FriendsScreen = () => {
                     justifyContent: 'center',
                     alignItems: 'center',
                     backgroundColor: customAlertType === 'success' ? '#E0E7FF' :
-                      customAlertType === 'error' ? '#FEE2E2' : '#E0E7FF'
+                      (customAlertType === 'error' || customAlertType === 'reject') ? '#FEE2E2' : '#E0E7FF'
                   }}>
                     {customAlertType === 'success' ? (
                       <Check size={28} color={COLORS.primaryMain} />
-                    ) : customAlertType === 'error' ? (
+                    ) : (customAlertType === 'error' || customAlertType === 'reject') ? (
                       <X size={28} color="#DC2626" />
                     ) : (
                       <Info size={28} color={COLORS.primaryMain} />
                     )}
                   </View>
-                  <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 12, textAlign: 'center' }}>
-                    {customAlertTitle}
-                  </Text>
+                  {customAlertTitle ? (
+                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 12, textAlign: 'center' }}>
+                      {customAlertTitle}
+                    </Text>
+                  ) : null}
                   <Text style={{ fontSize: 16, color: COLORS.neutral500, lineHeight: 24, marginBottom: 32, textAlign: 'center' }}>
                     {customAlertMessage}
                   </Text>
@@ -569,9 +656,12 @@ const FriendsScreen = () => {
                       alignItems: 'center',
                       borderRadius: 16,
                       backgroundColor: customAlertType === 'success' ? COLORS.primaryMain :
-                        customAlertType === 'error' ? '#EF4444' : COLORS.primaryMain
+                        (customAlertType === 'error' || customAlertType === 'reject') ? '#EF4444' : COLORS.primaryMain
                     }}
-                    onPress={() => setCustomAlertVisible(false)}
+                    onPress={() => {
+                      setCustomAlertVisible(false);
+                      if (onAlertConfirmRef.current) onAlertConfirmRef.current();
+                    }}
                   >
                     <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>확인</Text>
                   </TouchableOpacity>
@@ -622,7 +712,7 @@ const FriendsScreen = () => {
                   setActiveTab('requests');
                   // 튜토리얼 진행: 받은 요청 탭 클릭 시
                   if (isTutorialActive && currentStep === 'ACCEPT_FRIEND') {
-                    console.log('[FriendsScreen] Requests tab clicked in tutorial');
+
                     setTimeout(() => nextSubStep(), 300);
                   }
                 }}
@@ -693,18 +783,21 @@ const FriendsScreen = () => {
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingBottom: 100 }}
             ListHeaderComponent={null}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
             renderItem={({ item }) => (
               <View style={styles.friendItem}>
                 <View style={styles.friendInfo}>
                   <View style={styles.avatarContainer}>
-                    <View style={[styles.avatarRing, !item.friend.picture && { backgroundColor: COLORS.neutral100 }]}>
-                      {item.friend.picture ? (
+                    <View style={[styles.avatarRing, !item.friend.picture && { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0' }]}>
+                      {getAvatarSource(item.friend.picture) ? (
                         <Image
-                          source={{ uri: item.friend.picture }}
+                          source={getAvatarSource(item.friend.picture)!}
                           style={styles.avatarImage}
                         />
                       ) : (
-                        <User size={24} color={COLORS.neutral400} />
+                        <User size={24} color={COLORS.primaryMain} />
                       )}
                     </View>
                   </View>
@@ -731,18 +824,21 @@ const FriendsScreen = () => {
             data={displayedRequests}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingBottom: 100 }}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
             renderItem={({ item }) => (
               <View style={styles.requestItem}>
                 <View style={styles.friendInfo}>
                   <View style={styles.avatarContainer}>
-                    <View style={[styles.avatarRing, !item.from_user.picture && { backgroundColor: COLORS.neutral100 }]}>
-                      {item.from_user.picture ? (
+                    <View style={[styles.avatarRing, !item.from_user.picture && { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E8F0' }]}>
+                      {getAvatarSource(item.from_user.picture) ? (
                         <Image
-                          source={{ uri: item.from_user.picture }}
+                          source={getAvatarSource(item.from_user.picture)!}
                           style={styles.avatarImage}
                         />
                       ) : (
-                        <User size={24} color={COLORS.neutral400} />
+                        <User size={24} color={COLORS.primaryMain} />
                       )}
                     </View>
                   </View>
@@ -759,6 +855,11 @@ const FriendsScreen = () => {
                     onPress={() => handleAcceptRequest(item.id)}
                     disabled={processingRequestIds.has(item.id)}
                     testID={item.id === fakeFriendRequest.id ? 'btn_accept_friend' : undefined}
+                    ref={(r) => {
+                      if (item.id === fakeFriendRequest.id && r) {
+                        registerTarget('btn_accept_friend', r);
+                      }
+                    }}
                   >
                     <Check size={18} color={COLORS.white} />
                   </TouchableOpacity>
@@ -861,19 +962,21 @@ const FriendsScreen = () => {
                   justifyContent: 'center',
                   alignItems: 'center',
                   backgroundColor: customAlertType === 'success' ? '#E0E7FF' :
-                    customAlertType === 'error' ? '#FEE2E2' : '#E0E7FF'
+                    (customAlertType === 'error' || customAlertType === 'reject') ? '#FEE2E2' : '#E0E7FF'
                 }}>
                   {customAlertType === 'success' ? (
                     <Check size={28} color={COLORS.primaryMain} />
-                  ) : customAlertType === 'error' ? (
+                  ) : (customAlertType === 'error' || customAlertType === 'reject') ? (
                     <X size={28} color="#DC2626" />
                   ) : (
                     <Info size={28} color={COLORS.primaryMain} />
                   )}
                 </View>
-                <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 12, textAlign: 'center' }}>
-                  {customAlertTitle}
-                </Text>
+                {customAlertTitle ? (
+                  <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.neutralSlate, marginBottom: 12, textAlign: 'center' }}>
+                    {customAlertTitle}
+                  </Text>
+                ) : null}
                 <Text style={{ fontSize: 16, color: COLORS.neutral500, lineHeight: 24, marginBottom: 32, textAlign: 'center' }}>
                   {customAlertMessage}
                 </Text>
@@ -885,7 +988,7 @@ const FriendsScreen = () => {
                     alignItems: 'center',
                     borderRadius: 16,
                     backgroundColor: customAlertType === 'success' ? COLORS.primaryMain :
-                      customAlertType === 'error' ? '#EF4444' : COLORS.primaryMain
+                      (customAlertType === 'error' || customAlertType === 'reject') ? '#EF4444' : COLORS.primaryMain
                   }}
                   onPress={() => setCustomAlertVisible(false)}
                 >
@@ -980,8 +1083,10 @@ const styles = StyleSheet.create({
   },
   idCard: {
     borderRadius: 20,
-    padding: 20,
-    shadowColor: '#4F46E5',
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+    shadowColor: '#3730A3',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
     shadowRadius: 16,
