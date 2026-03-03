@@ -246,6 +246,30 @@ export const homeStore = {
     // 현재 사용자 ID 반환
     getCurrentUserId: (): string | null => state.currentUser?.id || null,
 
+    // 현재 알림 목록 반환
+    getNotifications: (): Notification[] => state.notifications,
+
+    // 알림 추가 (낙관적 업데이트용)
+    addNotification: (notification: Notification): void => {
+        state = {
+            ...state,
+            notifications: [notification, ...state.notifications],
+        };
+        emitChange();
+    },
+
+    // 현재 대기 중인 요청 반환
+    getPendingRequests: (): PendingRequest[] => state.pendingRequests,
+
+    // 대기 중인 요청 추가 (낙관적 업데이트용)
+    addPendingRequest: (request: PendingRequest): void => {
+        state = {
+            ...state,
+            pendingRequests: [request, ...state.pendingRequests],
+        };
+        emitChange();
+    },
+
     // 캐시 상태 확인 (디버그용)
     getCacheAge: (): number | null => {
         if (!state.lastFetchedAt) return null;

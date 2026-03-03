@@ -58,25 +58,30 @@ let state: FriendsState = {
     lastFetchedAt: null,
 };
 
-const listeners = new Set<Listener>();
-const CACHE_TTL = 5 * 60 * 1000; // 5분 (밀리초)
+let listeners: Listener[] = [];
 
-function emitChange() {
-    listeners.forEach(listener => listener());
-}
+const emitChange = () => {
+    for (let listener of listeners) {
+        listener();
+    }
+};
 
-function isCacheValid(): boolean {
+const CACHE_TTL = 3 * 60 * 1000;
+
+const isCacheValid = (): boolean => {
     if (!state.lastFetchedAt) return false;
     return Date.now() - state.lastFetchedAt < CACHE_TTL;
-}
+};
 
 export const friendsStore = {
     // React useSyncExternalStore 호환
     getSnapshot: (): FriendsState => state,
 
     subscribe: (listener: Listener) => {
-        listeners.add(listener);
-        return () => listeners.delete(listener);
+        listeners = [...listeners, listener];
+        return () => {
+            listeners = listeners.filter(l => l !== listener);
+        };
     },
 
     // 친구 목록 조회
@@ -233,6 +238,20 @@ export const friendsStore = {
         state = {
             ...state,
             friendRequests: state.friendRequests.filter(r => r.id !== requestId),
+        };
+        emitChange();
+    },
+
+    // 현재 친구 요청 목록 가져오기
+    getFriendRequests: (): FriendRequest[] => {
+        return state.friendRequests;
+    },
+
+    // 친구 요청 추가 (낙관적 업데이트용)
+    addFriendRequest: (request: FriendRequest): void => {
+        state = {
+            ...state,
+            friendRequests: [request, ...state.friendRequests],
         };
         emitChange();
     },

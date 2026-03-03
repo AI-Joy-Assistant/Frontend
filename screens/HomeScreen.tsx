@@ -377,6 +377,49 @@ export default function HomeScreen() {
         // [FIX] 친구 삭제 시 즉시 로컬 상태 업데이트
         if (data.type === 'friend_deleted' && data.deleted_by) {
           friendsStore.removeFriend(data.deleted_by);
+        } else if (data.type === 'friend_request' || data.type === 'notification' || data.type === 'a2a_status_changed' || data.type === 'a2a_request') {
+          // 홈 알림 종 모양 (NotificationPanel)에 즉시 추가용 (낙관적 UI)
+          // 참고: WebSocket 메시지의 정확한 속성은 백엔드 발송 형태(a2a_service, friends_service 등)에 따라 다릅니다.
+          const newNotification: Notification = {
+            id: `notif_${Date.now()}_${Math.random()}`,
+            type: data.type === 'friend_request' ? 'friend_request' :
+              data.type === 'a2a_request' ? 'general' :
+                data.type === 'a2a_status_changed' ? 'general' : 'general',
+            title: data.title || (data.type === 'friend_request' ? '새로운 친구 요청' : '새로운 알림'),
+            message: data.message || (data.type === 'friend_request' ? `${data.sender_name}님으로부터 친구 요청이 왔습니다.` : '알림이 도착했습니다.'),
+            created_at: new Date().toISOString(),
+            read: false,
+            metadata: data.metadata || {}
+          };
+
+          // 이미 같은 알림이 있는지 체크
+          const currentNotifs = homeStore.getNotifications();
+          if (!currentNotifs.some((n: any) => n.title === newNotification.title && n.message === newNotification.message)) {
+            homeStore.addNotification(newNotification);
+          }
+
+          // A2A 관련 (홈 메인 카드 화면) 낙관적 UI 업데이트
+          if (data.type === 'a2a_request') {
+            const newPendingAuthRequest: PendingRequest = {
+              id: data.session_id || `req_${Date.now()}`,
+              thread_id: data.thread_id || '',
+              title: data.title || '새로운 일정 제안',
+              summary: data.message || '',
+              initiator_id: data.sender_id || '',
+              initiator_name: data.sender_name || '알 수 없음',
+              initiator_avatar: data.sender_avatar || '',
+              participant_count: data.participant_count || 2,
+              proposed_date: data.proposed_date,
+              proposed_time: data.proposed_time,
+              status: 'pending_approval',
+              created_at: new Date().toISOString(),
+              type: 'new'
+            };
+            const currentReqs = homeStore.getPendingRequests();
+            if (!currentReqs.some((r: any) => r.id === newPendingAuthRequest.id)) {
+              homeStore.addPendingRequest(newPendingAuthRequest);
+            }
+          }
         }
 
         // WebSocket 이벤트 시 캐시 무효화 후 새로고침

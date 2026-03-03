@@ -324,18 +324,34 @@ const FriendsScreen = () => {
       (data) => {
         console.log(`[WS:Friends] Event: ${data.type}`);
 
-        // [DEBUG] 친구 삭제 이벤트 수신 확인용 Alert
         if (data.type === 'friend_deleted') {
           console.log(`[WS:Friends] ⚡ friend_deleted 수신! deleted_by=${data.deleted_by}`);
-          Alert.alert('디버그', `친구 삭제 이벤트 수신: ${data.deleted_by}`);
-
           if (data.deleted_by) {
-            console.log(`[WS:Friends] Removing friend locally: ${data.deleted_by}`);
             friendsStore.removeFriend(data.deleted_by);
+          }
+        } else if (data.type === 'friend_request') {
+          // 낙관적 UI: 웹소켓으로 받은 친구 요청 데이터를 즉각적으로 로컬 스토어에 추가
+          if (data.sender_id && data.sender_name) {
+            const newRequest: FriendRequest = {
+              id: `req_${Date.now()}_${data.sender_id}`, // 임시 ID
+              from_user: {
+                id: data.sender_id,
+                name: data.sender_name,
+                email: data.sender_email || '',
+                picture: data.sender_picture || null
+              },
+              status: 'pending',
+              created_at: data.timestamp || new Date().toISOString()
+            };
+            const currentRequests = friendsStore.getFriendRequests();
+            // 중복 방지 (같은 발신자의 요청이 이미 있는지 확인)
+            if (!currentRequests.some((r: any) => r.from_user.id === data.sender_id)) {
+              friendsStore.addFriendRequest(newRequest);
+            }
           }
         }
 
-        // WebSocket 이벤트 시 캐시 무효화 후 새로고침
+        // WebSocket 이벤트 시 데이터 동기화
         friendsStore.invalidate();
         friendsStore.refresh();
       }
@@ -445,7 +461,22 @@ const FriendsScreen = () => {
     // 처리 중 상태로 설정
     setProcessingRequestIds(prev => new Set(prev).add(requestId));
 
-    // UI에서 즉시 제거 (낙관적 업데이트)
+    // UI에서 즉시 제거 및 낙관적 업데이트 (친구 목록에 추가)
+    const requestItem = friendRequests.find(r => r.id === requestId);
+    if (requestItem) {
+      // 당장 친구 목록에 가짜 데이터로 추가 (API 완료 전이므로 ID는 임시값)
+      const optimisticFriend: Friend = {
+        id: `optimistic_${requestItem.from_user.id}`,
+        friend: {
+          id: requestItem.from_user.id,
+          name: requestItem.from_user.name,
+          email: requestItem.from_user.email,
+          picture: requestItem.from_user.picture
+        },
+        created_at: new Date().toISOString()
+      };
+      friendsStore.addFriend(optimisticFriend);
+    }
     friendsStore.removeRequest(requestId);
 
     try {

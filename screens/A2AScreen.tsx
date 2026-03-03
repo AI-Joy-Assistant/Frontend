@@ -146,6 +146,7 @@ const A2AScreen = () => {
     const [showRejectConfirm, setShowRejectConfirm] = useState(false);  // 거절 확인 팝업 상태
     const [showRejectSuccess, setShowRejectSuccess] = useState(false);  // 거절 완료 배너
     const [rejectedLogTitle, setRejectedLogTitle] = useState('');  // 거절된 일정 제목
+    const [showRescheduleBlocked, setShowRescheduleBlocked] = useState(false);  // 재조율 불가 배너
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);  // 삭제 확인 팝업 상태
     const [deleteTargetLogId, setDeleteTargetLogId] = useState<string | null>(null);  // 삭제 대상 로그 ID
     const [showNegotiationIncompleteAlert, setShowNegotiationIncompleteAlert] = useState(false);  // 협상 미완료 알림
@@ -1009,8 +1010,10 @@ const A2AScreen = () => {
 
                 fetchA2ALogs(false);
             } else {
-                const errorText = await response.text();
-                console.error("Reschedule failed:", response.status, errorText);
+                const errorData = await response.json().catch(() => ({}));
+                const errorMsg = errorData?.detail || '재조율 요청에 실패했습니다.';
+                console.error("Reschedule failed:", response.status, errorMsg);
+                setShowRescheduleBlocked(true);
             }
         } catch (error) {
             console.error("Error submitting reschedule:", error);
@@ -1359,7 +1362,7 @@ const A2AScreen = () => {
                             return null;
                         }
                     })
-                    .filter((item): item is A2ALog => item !== null);
+                    .filter((item: any): item is A2ALog => item !== null);
                 setLogs(mappedLogs);
                 dataCache.set(cacheKey, mappedLogs, 5 * 60 * 1000);
             } else {
@@ -1672,6 +1675,19 @@ const A2AScreen = () => {
             return;
         }
 
+        // [FIX] 상대방이 모두 거절한 경우 재조율 차단
+        if (selectedLog) {
+            const attendees = (selectedLog as any).attendees || [];
+            const leftParticipants: string[] = (selectedLog.details as any)?.left_participants || [];
+            // 나를 제외한 참여자 중 아직 남아있는 사람이 있는지 확인
+            const otherAttendees = attendees.filter((a: any) => a.id !== currentUserId);
+            const activeOthers = otherAttendees.filter((a: any) => !leftParticipants.includes(a.id));
+            if (activeOthers.length === 0) {
+                setShowRescheduleBlocked(true);
+                return;
+            }
+        }
+
         setIsRescheduling(true);
     };
 
@@ -1693,6 +1709,34 @@ const A2AScreen = () => {
 
         if (!selectedLog) return;
         console.log('승인 버튼 클릭 - session_id:', selectedLog.id);
+
+        // [NEW] 낙관적 업데이트: 현재 사용자의 상태를 승인됨(is_approved: true)으로 즉각 변경
+        if (currentUserId) {
+            setSelectedLog(prev => {
+                if (!prev) return prev;
+                const newLog = { ...prev };
+                if (newLog.details && Array.isArray(newLog.details.attendees)) {
+                    newLog.details.attendees = newLog.details.attendees.map(a =>
+                        a.id === currentUserId ? { ...a, is_approved: true } : a
+                    );
+                }
+                return newLog;
+            });
+            // 목록(Logs) 상태도 즉시 업데이트
+            setLogs(prevLogs => prevLogs.map(log => {
+                if (log.id === selectedLog.id) {
+                    const newLog = { ...log };
+                    if (newLog.details && Array.isArray(newLog.details.attendees)) {
+                        newLog.details.attendees = newLog.details.attendees.map(a =>
+                            a.id === currentUserId ? { ...a, is_approved: true } : a
+                        );
+                    }
+                    return newLog;
+                }
+                return log;
+            }));
+        }
+
         try {
             const token = await AsyncStorage.getItem('accessToken');
             const res = await fetch(`${API_BASE}/a2a/session/${selectedLog.id}/approve`, {
@@ -1708,6 +1752,8 @@ const A2AScreen = () => {
             if (res.ok) {
                 // 승인 이후 홈 캘린더가 캐시로 남아있지 않도록 즉시 무효화
                 calendarService.invalidateEventsCache();
+                // [NEW] A2A 목록 캐시를 무효화하여 상태 갱신이 곧바로 반영되도록 함
+                dataCache.invalidate('a2a:sessions');
 
                 // 전원 승인 완료 시 일정 확정 화면 표시
                 if (data.all_approved) {
@@ -1779,6 +1825,8 @@ const A2AScreen = () => {
                 // [수정] 즉시 로컬 상태에서 해당 카드 제거
                 setRejectedLogTitle(selectedLog.title || '일정');
                 setLogs(prevLogs => prevLogs.filter(log => log.id !== selectedLog.id));
+                // [NEW] A2A 목록 캐시를 무효화하여 리로드 시에도 다시 보이지 않도록 함
+                dataCache.invalidate('a2a:sessions');
                 // 처리가 완료되면 모달 닫기
                 setShowRejectConfirm(false);
                 handleClose();
@@ -2589,7 +2637,7 @@ const A2AScreen = () => {
                                                             <Text style={styles.infoValue}>
                                                                 {/* 요청시간: duration_nights >= 1이면 날짜 범위만, 아니면 시간 포함 */}
                                                                 {/* [OPTIMIZATION] 복잡한 계산 없이 리스트의 timeRange 재사용 */}
-                                                                {(selectedLog as any).timeRange || '미정'}
+                                                                {(selectedLog as any).timeRange || '확인 중...'}
                                                             </Text>
                                                         </View>
                                                     </View>
@@ -2605,41 +2653,67 @@ const A2AScreen = () => {
                                                                 <Text style={styles.infoValue}>
                                                                     {/* 협상 확정 시간: duration_nights >= 1이면 날짜 범위만, 아니면 시간 포함 */}
                                                                     {(() => {
-                                                                        const d = selectedLog.details as any;
-                                                                        const durationNights = d?.duration_nights || 0;
-                                                                        const startDate = d?.agreedDate || d?.proposedDate || '';
+                                                                        try {
+                                                                            const d = selectedLog.details as any;
+                                                                            const durationNights = d?.duration_nights || 0;
+                                                                            const startDate = d?.agreedDate || d?.proposedDate || '';
 
-                                                                        // 1박 이상이면 날짜 범위만 표시 (시간 제외)
-                                                                        if (durationNights >= 1 && startDate) {
-                                                                            try {
-                                                                                const startDateObj = new Date(startDate);
-                                                                                // [FIX] Invalid Date 방어 (데이터 로딩 중 NaN-NaN-NaN 표시 방지)
-                                                                                if (isNaN(startDateObj.getTime())) {
-                                                                                    return (selectedLog as any).timeRange || '확정 중...';
-                                                                                }
-                                                                                const endDateObj = new Date(startDateObj);
-                                                                                endDateObj.setDate(startDateObj.getDate() + durationNights);
-
-                                                                                const formatDate = (date: Date) => {
-                                                                                    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-                                                                                };
-
-                                                                                return `${formatDate(startDateObj)} ~ ${formatDate(endDateObj)}`;
-                                                                            } catch {
-                                                                                return (selectedLog as any).timeRange || startDate;
+                                                                            // 값이 아직 없으면 즉시 fallback
+                                                                            if (!startDate) {
+                                                                                return (selectedLog as any).timeRange || '확인 중...';
                                                                             }
-                                                                        }
 
-                                                                        // 당일 일정: 기존 로직 (시간 포함)
-                                                                        const startTime = d?.agreedTime || d?.proposedTime || '';
-                                                                        const endTime = d?.agreedEndTime || d?.proposedEndTime || d?.end_time || '';
-                                                                        // [OPTIMIZATION] 날짜/시간 파싱 실패/로딩 중일 시 리스트에서 계산된 timeRange 사용
-                                                                        if (!startDate && !startTime) {
-                                                                            return (selectedLog as any).timeRange || '협상 중';
-                                                                        }
+                                                                            // 1박 이상이면 날짜 범위만 표시 (시간 제외)
+                                                                            if (durationNights >= 1 && startDate) {
+                                                                                try {
+                                                                                    // YYYY-MM-DD 형식인지 먼저 검증
+                                                                                    const dateStr = String(startDate);
+                                                                                    if (!dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                                                                                        return (selectedLog as any).timeRange || dateStr;
+                                                                                    }
+                                                                                    const startDateObj = new Date(dateStr + 'T00:00:00');
+                                                                                    if (isNaN(startDateObj.getTime())) {
+                                                                                        return (selectedLog as any).timeRange || '확인 중...';
+                                                                                    }
+                                                                                    const endDateObj = new Date(startDateObj);
+                                                                                    endDateObj.setDate(startDateObj.getDate() + durationNights);
 
-                                                                        const timeRange = endTime ? `${startTime} ~ ${endTime}` : startTime;
-                                                                        return startDate ? `${startDate} ${timeRange}` : timeRange;
+                                                                                    const formatDate = (date: Date) => {
+                                                                                        const y = date.getFullYear();
+                                                                                        const m = date.getMonth() + 1;
+                                                                                        const dd = date.getDate();
+                                                                                        if (isNaN(y) || isNaN(m) || isNaN(dd)) return '';
+                                                                                        return `${y}-${String(m).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+                                                                                    };
+
+                                                                                    const result = `${formatDate(startDateObj)} ~ ${formatDate(endDateObj)}`;
+                                                                                    // NaN 포함 여부 최종 확인
+                                                                                    if (result.includes('NaN')) {
+                                                                                        return (selectedLog as any).timeRange || '확인 중...';
+                                                                                    }
+                                                                                    return result;
+                                                                                } catch {
+                                                                                    return (selectedLog as any).timeRange || String(startDate);
+                                                                                }
+                                                                            }
+
+                                                                            // 당일 일정: 기존 로직 (시간 포함)
+                                                                            const startTime = d?.agreedTime || d?.proposedTime || '';
+                                                                            const endTime = d?.agreedEndTime || d?.proposedEndTime || d?.end_time || '';
+                                                                            if (!startDate && !startTime) {
+                                                                                return (selectedLog as any).timeRange || '확인 중...';
+                                                                            }
+
+                                                                            const timeRange = endTime ? `${startTime} ~ ${endTime}` : startTime;
+                                                                            const result = startDate ? `${startDate} ${timeRange}` : timeRange;
+                                                                            // NaN 포함 여부 최종 확인
+                                                                            if (result.includes('NaN')) {
+                                                                                return (selectedLog as any).timeRange || '확인 중...';
+                                                                            }
+                                                                            return result || '확인 중...';
+                                                                        } catch {
+                                                                            return (selectedLog as any).timeRange || '확인 중...';
+                                                                        }
                                                                     })()}
                                                                 </Text>
                                                             </View>
@@ -3246,6 +3320,106 @@ const A2AScreen = () => {
                                 elevation: 2,
                             }}
                             onPress={() => { setShowRejectSuccess(false); fetchA2ALogs(); }}
+                        >
+                            <Text style={{ fontSize: 16, fontWeight: 'bold', color: 'white' }}>확인</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* 재조율 불가 배너 모달 */}
+            <Modal
+                visible={showRescheduleBlocked}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowRescheduleBlocked(false)}
+            >
+                <View style={{
+                    flex: 1,
+                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    padding: 20,
+                }}>
+                    <View style={{
+                        backgroundColor: COLORS.white,
+                        borderRadius: 24,
+                        padding: 24,
+                        paddingTop: 40,
+                        width: '100%',
+                        maxWidth: 320,
+                        alignItems: 'center',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 12,
+                        elevation: 5,
+                        position: 'relative',
+                    }}>
+                        {/* X 닫기 버튼 */}
+                        <TouchableOpacity
+                            style={{
+                                position: 'absolute',
+                                top: 12,
+                                right: 12,
+                                width: 28,
+                                height: 28,
+                                borderRadius: 14,
+                                backgroundColor: '#F1F5F9',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                            }}
+                            onPress={() => setShowRescheduleBlocked(false)}
+                        >
+                            <X size={16} color="#64748B" />
+                        </TouchableOpacity>
+
+                        {/* 주황 원 아이콘 */}
+                        <View style={{
+                            width: 64,
+                            height: 64,
+                            borderRadius: 32,
+                            backgroundColor: '#FFF3E0',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginBottom: 20,
+                        }}>
+                            <AlertCircle size={32} color="#F97316" strokeWidth={3} />
+                        </View>
+
+                        <Text style={{
+                            fontSize: 20,
+                            fontWeight: '700',
+                            color: '#1E293B',
+                            marginBottom: 8,
+                            textAlign: 'center',
+                        }}>재조율 불가</Text>
+
+                        <Text style={{
+                            fontSize: 14,
+                            color: '#64748B',
+                            textAlign: 'center',
+                            lineHeight: 22,
+                            marginBottom: 28,
+                        }}>
+                            모든 상대방이 일정을 거절하여{'\n'}재조율할 수 없습니다.
+                        </Text>
+
+                        {/* 확인 버튼 */}
+                        <TouchableOpacity
+                            style={{
+                                width: '100%',
+                                paddingVertical: 14,
+                                borderRadius: 16,
+                                backgroundColor: '#F97316',
+                                alignItems: 'center',
+                                shadowColor: '#F97316',
+                                shadowOffset: { width: 0, height: 2 },
+                                shadowOpacity: 0.2,
+                                shadowRadius: 4,
+                                elevation: 2,
+                            }}
+                            onPress={() => setShowRescheduleBlocked(false)}
                         >
                             <Text style={{ fontSize: 16, fontWeight: 'bold', color: 'white' }}>확인</Text>
                         </TouchableOpacity>

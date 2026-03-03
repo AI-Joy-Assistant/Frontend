@@ -21,6 +21,7 @@ class WebSocketService {
     private reconnectTimeout: NodeJS.Timeout | null = null;
     private isConnecting: boolean = false;
     private connectionPromise: Promise<void> | null = null;
+    private pingInterval: NodeJS.Timeout | null = null;
 
     private constructor() { }
 
@@ -84,6 +85,15 @@ class WebSocketService {
                 ws.onopen = () => {
                     console.log('[WS:Global] ✅ 연결 성공');
                     this.isConnecting = false;
+
+                    // heartbeat 시작 (30초마다)
+                    if (this.pingInterval) clearInterval(this.pingInterval);
+                    this.pingInterval = setInterval(() => {
+                        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                            this.ws.send('ping');
+                        }
+                    }, 30000);
+
                     resolve();
                 };
 
@@ -114,6 +124,10 @@ class WebSocketService {
 
                 ws.onclose = () => {
                     console.log('[WS:Global] 연결 종료');
+                    if (this.pingInterval) {
+                        clearInterval(this.pingInterval);
+                        this.pingInterval = null;
+                    }
                     this.ws = null;
                     this.isConnecting = false;
                     this.connectionPromise = null;
@@ -170,6 +184,11 @@ class WebSocketService {
         if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = null;
+        }
+
+        if (this.pingInterval) {
+            clearInterval(this.pingInterval);
+            this.pingInterval = null;
         }
 
         if (this.ws) {
