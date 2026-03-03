@@ -200,7 +200,7 @@ const FriendsScreen = () => {
   useFocusEffect(
     useCallback(() => {
       if (userInfo?.id) {
-        console.log('[FriendsScreen] Focus: Checking WS connection');
+
         WebSocketService.connect(userInfo.id);
       }
     }, [userInfo?.id])
@@ -322,15 +322,15 @@ const FriendsScreen = () => {
       'FriendsScreen',
       ['friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'user_info_updated'],
       (data) => {
-        console.log(`[WS:Friends] Event: ${data.type}`);
+
 
         // [DEBUG] 친구 삭제 이벤트 수신 확인용 Alert
         if (data.type === 'friend_deleted') {
-          console.log(`[WS:Friends] ⚡ friend_deleted 수신! deleted_by=${data.deleted_by}`);
+
           Alert.alert('디버그', `친구 삭제 이벤트 수신: ${data.deleted_by}`);
 
           if (data.deleted_by) {
-            console.log(`[WS:Friends] Removing friend locally: ${data.deleted_by}`);
+
             friendsStore.removeFriend(data.deleted_by);
           }
         }
@@ -365,14 +365,14 @@ const FriendsScreen = () => {
         body: JSON.stringify({ email: searchTerm.trim() }),
       });
 
-      console.log('친구 추가 응답 상태:', response.status);
+
 
       if (response.ok) {
         showAlert('성공', '친구 요청을 보냈습니다.', 'success');
         setSearchTerm('');
       } else {
         const errorData = await response.json();
-        console.log('친구 추가 에러 응답:', errorData);
+
         let errorMsg = errorData.detail || errorData.error || '친구 추가에 실패했습니다.';
         if (typeof errorMsg === 'string' && errorMsg.includes('해당 이메일 또는 아이디의 사용자를 찾을 수 없습니다.')) {
           errorMsg = '해당 이메일 또는 아이디의\n사용자를 찾을 수 없습니다.';
@@ -712,7 +712,7 @@ const FriendsScreen = () => {
                   setActiveTab('requests');
                   // 튜토리얼 진행: 받은 요청 탭 클릭 시
                   if (isTutorialActive && currentStep === 'ACCEPT_FRIEND') {
-                    console.log('[FriendsScreen] Requests tab clicked in tutorial');
+
                     setTimeout(() => nextSubStep(), 300);
                   }
                 }}

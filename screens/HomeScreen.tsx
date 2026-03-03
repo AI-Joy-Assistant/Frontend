@@ -252,11 +252,11 @@ export default function HomeScreen() {
 
   // 캘린더 연동 상태 확인
   const checkCalendarLinkStatus = async () => {
-    console.log('[DEBUG] checkCalendarLinkStatus 호출됨');
+
     try {
       const token = await AsyncStorage.getItem('accessToken');
       if (!token) {
-        console.log('[DEBUG] checkCalendarLinkStatus - 토큰 없음');
+
         return;
       }
 
@@ -264,18 +264,18 @@ export default function HomeScreen() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
-      console.log('[DEBUG] calendar/link-status 응답:', response.status);
+
 
       if (response.ok) {
         const data = await response.json();
-        console.log('[DEBUG] link-status 데이터:', data);
+
         const linked = data.is_linked || false;
         setIsCalendarLinked(linked);
         // 캐시에 저장 (다음 화면 진입 시 깜빡임 방지)
         await AsyncStorage.setItem('isCalendarLinked', linked ? 'true' : 'false');
       } else {
         // API 호출 실패 시 (연동 안 됨으로 처리)
-        console.log('[DEBUG] API 실패 - isCalendarLinked = false');
+
         setIsCalendarLinked(false);
         await AsyncStorage.setItem('isCalendarLinked', 'false');
       }
@@ -372,21 +372,25 @@ export default function HomeScreen() {
       'HomeScreen',
       ['a2a_request', 'friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'notification', 'a2a_status_changed', 'user_info_updated'],
       (data) => {
-        console.log("[WS:Home] WS Event:", data.type);
+
 
         // [FIX] 친구 삭제 시 즉시 로컬 상태 업데이트
         if (data.type === 'friend_deleted' && data.deleted_by) {
           friendsStore.removeFriend(data.deleted_by);
         }
 
-        // WebSocket 이벤트 시 캐시 무효화 후 새로고침
-        homeStore.invalidate();
-        homeStore.refresh();
-        friendsStore.invalidate();
-        friendsStore.refresh();
+        // [OPTIMIZATION] 이벤트 타입별 선택적 리페치 (불필요한 전체 재조회 방지)
+        if (['a2a_request', 'a2a_status_changed', 'notification'].includes(data.type)) {
+          homeStore.invalidate();
+          homeStore.refresh();
+        }
+        if (['friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'user_info_updated'].includes(data.type)) {
+          friendsStore.invalidate();
+          friendsStore.refresh();
+        }
 
-        // [FIX] A2A 상태 변경 시 캘린더 이벤트 캐시도 무효화 후 강제 갱신
-        if (data.type === 'a2a_status_changed' || data.type === 'a2a_request') {
+        // A2A 상태 변경 시 캘린더 이벤트 캐시도 무효화 후 강제 갱신
+        if (['a2a_status_changed', 'a2a_request'].includes(data.type)) {
           calendarService.invalidateEventsCache();
           fetchSchedules(true);
         }
@@ -426,8 +430,7 @@ export default function HomeScreen() {
   const visibleRequest = pendingRequests.find(req => !dismissedRequestIds.includes(req.id));
   const showRequest = !!visibleRequest;
 
-  console.log('📋 visibleRequest:', visibleRequest);
-  console.log('📋 showRequest:', showRequest);
+
 
   const [isCalendarExpanded, setIsCalendarExpanded] = useState(false);
 
@@ -609,14 +612,14 @@ export default function HomeScreen() {
       const token = await AsyncStorage.getItem('accessToken');
 
       // 1. 캘린더 연동 전용 URL 가져오기 (Apple 로그인 사용자용)
-      console.log('Token for calendar link:', token ? 'exists' : 'null');
-      console.log('Backend URL:', BACKEND_URL);
+
+
 
       const authUrlRes = await fetch(`${BACKEND_URL}/calendar/link-url`, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
 
-      console.log('Auth URL response status:', authUrlRes.status);
+
 
       if (!authUrlRes.ok) {
         const errorBody = await authUrlRes.text();
@@ -632,8 +635,8 @@ export default function HomeScreen() {
         'frontend://calendar-linked'
       );
 
-      console.log('OAuth result type:', result.type);
-      console.log('OAuth result:', JSON.stringify(result));
+
+
 
       if (result.type === 'success' && result.url) {
         // 3. URL에서 success 또는 error 파라미터 확인
@@ -642,7 +645,7 @@ export default function HomeScreen() {
         const errorParam = url.searchParams.get('error');
         const returnedToken = url.searchParams.get('token');
 
-        console.log('Success:', success, 'Error:', errorParam, 'Token:', returnedToken);
+
 
         if (success === 'true') {
           // 새 /calendar/link-callback 방식 - 백엔드에서 이미 토큰 저장됨
@@ -692,9 +695,9 @@ export default function HomeScreen() {
           await fetchSchedules();
         }
       } else if (result.type === 'cancel') {
-        console.log('User cancelled calendar auth');
+
       } else if (result.type === 'dismiss') {
-        console.log('Browser dismissed');
+
       }
     } catch (error) {
       console.error('Calendar link error:', error);
@@ -754,7 +757,7 @@ export default function HomeScreen() {
     // 1. 캐시에서 먼저 데이터 가져오기 (즉시 표시)
     const cached = calendarService.getCachedEvents(startOfMonth, endOfMonth);
     if (cached.exists && cached.data.length > 0) {
-      console.log('[HomeScreen] 캐시에서 일정 즉시 로드:', cached.data.length);
+
       const mappedSchedules = mapEventsToSchedules(
         cached.data.filter(e => !isRecentlyDeletedEventRaw(e))
       ).filter(s => !isRecentlyDeletedSchedule(s));
@@ -872,7 +875,7 @@ export default function HomeScreen() {
 
       // [FIX] 강제 새로고침 시 캐시 무효화
       if (forceRefresh) {
-        console.log('Force refreshing schedules...');
+
         calendarService.invalidateEventsCache();
         homeStore.invalidate();
         friendsStore.invalidate();
@@ -1043,15 +1046,15 @@ export default function HomeScreen() {
   // [FIX] Pull-to-refresh Hook (데이터 갱신 함수들 연결)
   const { refreshing: isRefreshing, onRefresh: handleRefresh } = useMultiRefresh([
     async () => {
-      console.log('PTR: fetchSchedules(true)');
+
       await fetchSchedules(true);
     },
     async () => {
-      console.log('PTR: fetchCurrentUser');
+
       await fetchCurrentUser(false);
     },
     async () => {
-      console.log('PTR: stores refresh');
+
       // homeStore, friendsStore는 내부적으로 캐시 무효화 후 API 호출
       homeStore.invalidate();
       friendsStore.invalidate();
