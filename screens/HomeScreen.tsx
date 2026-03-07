@@ -149,6 +149,7 @@ export default function HomeScreen() {
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState<string[]>([]);
   const [viewedRequestIds, setViewedRequestIds] = useState<string[]>([]);
   const [viewedNotificationIds, setViewedNotificationIds] = useState<string[]>([]);
+  const [hasRealtimeNotificationDot, setHasRealtimeNotificationDot] = useState<boolean>(false);
 
   // Load dismissed request IDs and viewed count from AsyncStorage on mount
   useEffect(() => {
@@ -372,15 +373,18 @@ export default function HomeScreen() {
       'HomeScreen',
       ['a2a_request', 'friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'notification', 'a2a_status_changed', 'user_info_updated'],
       (data) => {
-
+        // [FIX] WS 이벤트 수신 시 즉시 종 알림 빨간 점 표시 (비동기 데이터 로딩 전에 즉각 반영)
+        if (['a2a_request', 'a2a_rejected', 'a2a_status_changed', 'friend_request', 'friend_accepted', 'friend_rejected', 'notification'].includes(data.type)) {
+          setHasRealtimeNotificationDot(true);
+        }
 
         // [FIX] 친구 삭제 시 즉시 로컬 상태 업데이트
         if (data.type === 'friend_deleted' && data.deleted_by) {
           friendsStore.removeFriend(data.deleted_by);
         }
 
-        // [OPTIMIZATION] 이벤트 타입별 선택적 리페치 (불필요한 전체 재조회 방지)
-        if (['a2a_request', 'a2a_status_changed', 'notification'].includes(data.type)) {
+        // [FIX] 빨간 점이 뜨는 모든 이벤트에서 homeStore도 갱신 (알림 패널 내용 즉시 반영)
+        if (['a2a_request', 'a2a_rejected', 'a2a_status_changed', 'friend_request', 'friend_accepted', 'friend_rejected', 'notification'].includes(data.type)) {
           homeStore.invalidate();
           homeStore.refresh();
         }
@@ -1711,6 +1715,7 @@ export default function HomeScreen() {
                 <TouchableOpacity
                   onPress={() => {
                     setShowNotificationPanel(true);
+                    setHasRealtimeNotificationDot(false);
                     markNotificationsAsViewed();
                   }}
                   style={styles.iconButton}
@@ -1729,7 +1734,7 @@ export default function HomeScreen() {
                     });
                     const newNotificationCount = visibleNotifications.filter(n => !viewedNotificationIds.includes(n.id)).length;
 
-                    const hasNotifications = (newRequestCount + newNotificationCount) > 0;
+                    const hasNotifications = (newRequestCount + newNotificationCount) > 0 || hasRealtimeNotificationDot;
 
                     return (
                       <>
