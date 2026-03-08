@@ -90,11 +90,14 @@ class WebSocketService {
                 ws.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
-                        console.log('[WS:Global] 메시지 수신:', data.type);
+                        console.log(`[WS:Global] 메시지 수신: ${data.type}, 구독자 수: ${this.subscriptions.length}`);
+                        console.log(`[WS:Global] 현재 구독 목록: ${this.subscriptions.map(s => `${s.id}(${s.types.join(',')})`).join(' | ')}`);
 
                         // 모든 구독자에게 메시지 전달
                         this.subscriptions.forEach(sub => {
-                            if (sub.types.includes(data.type) || sub.types.includes('*')) {
+                            const isMatch = sub.types.includes(data.type) || sub.types.includes('*');
+                            console.log(`[WS:Global] 구독자 ${sub.id}: 타입 매치=${isMatch}`);
+                            if (isMatch) {
                                 try {
                                     sub.handler(data);
                                 } catch (e) {
