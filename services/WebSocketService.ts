@@ -19,6 +19,7 @@ class WebSocketService {
     private userId: string | null = null;
     private subscriptions: Subscription[] = [];
     private reconnectTimeout: NodeJS.Timeout | null = null;
+    private pingInterval: NodeJS.Timeout | null = null;
     private isConnecting: boolean = false;
     private connectionPromise: Promise<void> | null = null;
 
@@ -84,6 +85,19 @@ class WebSocketService {
                 ws.onopen = () => {
                     console.log('[WS:Global] ✅ 연결 성공');
                     this.isConnecting = false;
+
+                    // Keep-Alive: 25초마다 ping 전송하여 Idle Timeout 방지
+                    if (this.pingInterval) clearInterval(this.pingInterval);
+                    this.pingInterval = setInterval(() => {
+                        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                            try {
+                                this.ws.send(JSON.stringify({ type: 'ping' }));
+                            } catch (e) {
+                                console.warn('[WS:Global] ping 전송 실패:', e);
+                            }
+                        }
+                    }, 25000);
+
                     resolve();
                 };
 
@@ -120,6 +134,12 @@ class WebSocketService {
                     this.ws = null;
                     this.isConnecting = false;
                     this.connectionPromise = null;
+
+                    // ping 인터벌 정리
+                    if (this.pingInterval) {
+                        clearInterval(this.pingInterval);
+                        this.pingInterval = null;
+                    }
 
                     // 재연결 (5초 후) - 모바일 환경에서 더 빠른 복구
                     if (this.userId) {
@@ -173,6 +193,11 @@ class WebSocketService {
         if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = null;
+        }
+
+        if (this.pingInterval) {
+            clearInterval(this.pingInterval);
+            this.pingInterval = null;
         }
 
         if (this.ws) {
