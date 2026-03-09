@@ -65,6 +65,10 @@ let state: HomeState = {
 const listeners = new Set<Listener>();
 const CACHE_TTL = 5 * 60 * 1000; // 5분 (밀리초)
 
+// [FIX] 로컬에서 추가된 임시 카드 추적 (서버 refresh 시 보존용)
+const locallyAddedRequests = new Map<string, { request: PendingRequest; addedAt: number }>();
+const LOCAL_CARD_TTL = 30_000; // 30초 후 자동 만료
+
 function emitChange() {
     listeners.forEach(listener => listener());
 }
@@ -83,18 +87,20 @@ export const homeStore = {
         return () => listeners.delete(listener);
     },
 
-    // Pending 요청 조회
+    // [SWR] Pending 요청 조회 - 캐시된 데이터 즉시 반환, 백그라운드 갱신
     fetchPendingRequests: async (force = false): Promise<PendingRequest[]> => {
         if (!force && isCacheValid() && state.pendingRequests !== undefined && state.initialLoadDone) {
             console.log('[HomeStore] 캐시 히트 - pendingRequests');
             return state.pendingRequests;
         }
 
-        // 첫 로딩 시에만 skeleton 표시
-        if (!state.initialLoadDone) {
+        // [SWR] 첫 로딩(데이터 없음)일 때만 skeleton 표시, 이후에는 기존 데이터 유지
+        const isFirstLoad = !state.initialLoadDone && state.pendingRequests.length === 0;
+        if (isFirstLoad) {
             state = { ...state, loadingPending: true };
             emitChange();
         }
+        // 기존 데이터가 있으면 loadingPending을 false로 유지 → 빈 화면 방지
 
         try {
             const token = await AsyncStorage.getItem('accessToken');
@@ -112,13 +118,30 @@ export const homeStore = {
 
             if (response.ok) {
                 const data = await response.json();
-                // [FIX] 거절된 요청은 클라이언트에서도 즉시 필터링 (리로드 시 잠깐 노출 방지)
+                // [FIX] 거절된 요청은 클라이언트에서도 즉시 필터링
                 const filteredRequests = (data.requests || []).filter(
                     (r: PendingRequest) => r.status?.toLowerCase() !== 'rejected'
                 );
+
+                // [FIX] 로컬 임시 카드 보존: 서버에 아직 없으면 병합
+                const serverIds = new Set(filteredRequests.map((r: PendingRequest) => r.id));
+                const now = Date.now();
+                const survivingLocalCards: PendingRequest[] = [];
+                locallyAddedRequests.forEach((entry, id) => {
+                    if (!serverIds.has(id) && (now - entry.addedAt < LOCAL_CARD_TTL)) {
+                        survivingLocalCards.push(entry.request);
+                    } else {
+                        // 서버에 존재하거나 만료됨 → 추적 제거
+                        locallyAddedRequests.delete(id);
+                    }
+                });
+
+                const mergedRequests = [...survivingLocalCards, ...filteredRequests];
+                console.log(`[HomeStore] fetchPendingRequests 완료: 서버 ${filteredRequests.length}개 + 로컬 임시 ${survivingLocalCards.length}개`);
+
                 state = {
                     ...state,
-                    pendingRequests: filteredRequests,
+                    pendingRequests: mergedRequests,
                     loadingPending: false,
                     lastFetchedAt: Date.now(),
                 };
@@ -133,15 +156,16 @@ export const homeStore = {
         return state.pendingRequests;
     },
 
-    // 알림 조회
+    // [SWR] 알림 조회 - 캐시된 데이터 즉시 반환, 백그라운드 갱신
     fetchNotifications: async (force = false): Promise<Notification[]> => {
         if (!force && isCacheValid() && state.notifications !== undefined && state.initialLoadDone) {
             console.log('[HomeStore] 캐시 히트 - notifications');
             return state.notifications;
         }
 
-        // 첫 로딩 시에만 skeleton 표시
-        if (!state.initialLoadDone) {
+        // [SWR] 첫 로딩(데이터 없음)일 때만 skeleton 표시
+        const isFirstLoad = !state.initialLoadDone && state.notifications.length === 0;
+        if (isFirstLoad) {
             state = { ...state, loadingNotifications: true };
             emitChange();
         }
@@ -211,15 +235,19 @@ export const homeStore = {
         return state.currentUser;
     },
 
-    // 모든 데이터 한 번에 조회 (캐시 유효하면 스킵)
+    // [SWR] 모든 데이터 한 번에 조회 - 캐시 유효하면 스킵, stale이면 백그라운드 갱신
     fetchAll: async (force = false): Promise<void> => {
         if (!force && isCacheValid() && state.initialLoadDone) {
             console.log('[HomeStore] 캐시 유효 - fetchAll 스킵');
             return;
         }
 
-        state = { ...state, loading: true };
-        emitChange();
+        // [SWR] 최초 로딩일 때만 loading=true (기존 데이터 있으면 로딩 표시 안 함)
+        const isFirstLoad = !state.initialLoadDone;
+        if (isFirstLoad) {
+            state = { ...state, loading: true };
+            emitChange();
+        }
 
         await Promise.all([
             homeStore.fetchPendingRequests(force),
@@ -249,6 +277,56 @@ export const homeStore = {
 
     // 현재 사용자 ID 반환
     getCurrentUserId: (): string | null => state.currentUser?.id || null,
+
+    // [NEW] 단건 조회 - 상세 페이지 initialData용
+    getRequestById: (id: string): PendingRequest | undefined => {
+        return state.pendingRequests.find(r => r.id === id);
+    },
+
+    // [NEW] 부분 업데이트 - WebSocket 이벤트 시 개별 항목만 업데이트
+    addPendingRequest: (request: PendingRequest): void => {
+        // 중복 방지
+        if (state.pendingRequests.some(r => r.id === request.id)) return;
+        console.log('[HomeStore] 부분 추가 - pendingRequest:', request.id);
+        // [FIX] 로컬 추적에 등록 → 서버 refresh 시 보존
+        locallyAddedRequests.set(request.id, { request, addedAt: Date.now() });
+        state = {
+            ...state,
+            pendingRequests: [request, ...state.pendingRequests],
+        };
+        emitChange();
+    },
+
+    removePendingRequest: (id: string): void => {
+        const before = state.pendingRequests.length;
+        const filtered = state.pendingRequests.filter(r => r.id !== id);
+        if (filtered.length < before) {
+            console.log('[HomeStore] 부분 제거 - pendingRequest:', id);
+            state = { ...state, pendingRequests: filtered };
+            emitChange();
+        }
+    },
+
+    updatePendingRequest: (id: string, partial: Partial<PendingRequest>): void => {
+        const idx = state.pendingRequests.findIndex(r => r.id === id);
+        if (idx === -1) return;
+        console.log('[HomeStore] 부분 업데이트 - pendingRequest:', id);
+        const updated = [...state.pendingRequests];
+        updated[idx] = { ...updated[idx], ...partial };
+        state = { ...state, pendingRequests: updated };
+        emitChange();
+    },
+
+    addNotification: (notification: Notification): void => {
+        // 중복 방지
+        if (state.notifications.some(n => n.id === notification.id)) return;
+        console.log('[HomeStore] 부분 추가 - notification:', notification.id);
+        state = {
+            ...state,
+            notifications: [notification, ...state.notifications],
+        };
+        emitChange();
+    },
 
     // 캐시 상태 확인 (디버그용)
     getCacheAge: (): number | null => {

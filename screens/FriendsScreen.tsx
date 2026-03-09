@@ -289,26 +289,17 @@ const FriendsScreen = () => {
     }, [])
   );
 
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  // userInfo에서 userId 추출 (별도 API호출 없이 store에서 가져옴)
+  const currentUserId = userInfo?.id || null;
 
-  useEffect(() => {
-    const fetchUserId = async () => {
-      try {
-        const token = await AsyncStorage.getItem('accessToken');
-        if (!token) return;
-        const response = await fetch(`${getBackendUrl()}/auth/me`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setCurrentUserId(data.id);
-        }
-      } catch (e) {
-        console.error('User ID fetch error:', e);
+  // 화면 포커스 시 + userId 존재 시 WebSocket 연결 보장
+  useFocusEffect(
+    useCallback(() => {
+      if (currentUserId) {
+        WebSocketService.connect(currentUserId);
       }
-    };
-    fetchUserId();
-  }, []);
+    }, [currentUserId])
+  );
 
   // WebSocket for real-time friend request notifications (using singleton service)
   useEffect(() => {
@@ -322,22 +313,54 @@ const FriendsScreen = () => {
       'FriendsScreen',
       ['friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'user_info_updated'],
       (data) => {
+        console.log('🔔🔔🔔 [FriendsScreen:WS] 메시지 수신!', data.type, JSON.stringify(data));
 
+        // [실시간] 친구 요청 수신 → 즉시 받은요청 목록에 추가
+        if (data.type === 'friend_request' && data.request_id && data.from_user_id) {
+          friendsStore.addFriendRequest({
+            id: data.request_id,
+            from_user: {
+              id: data.from_user_id,
+              name: data.from_user_name || '사용자',
+              email: data.from_user_email || '',
+              picture: data.from_user_picture || undefined,
+            },
+            status: 'pending',
+            created_at: data.timestamp || new Date().toISOString(),
+          });
+        }
 
-        // [DEBUG] 친구 삭제 이벤트 수신 확인용 Alert
+        // [실시간] 친구 수락 → 즉시 친구목록에 추가 + 받은요청에서 제거
+        if (data.type === 'friend_accepted' && data.friend_id) {
+          // 해당 요청을 받은요청 목록에서 즉시 제거
+          if (data.request_id) {
+            friendsStore.removeRequest(data.request_id);
+          }
+          // 새 친구를 목록에 즉시 추가
+          friendsStore.addFriend({
+            id: `ws_${data.friend_id}_${Date.now()}`,
+            friend: {
+              id: data.friend_id,
+              name: data.friend_name || '사용자',
+              email: data.friend_email || '',
+              picture: data.friend_picture || undefined,
+            },
+            created_at: data.timestamp || new Date().toISOString(),
+          });
+        }
+
+        // [DEBUG] 친구 삭제 이벤트 수신 확인용
         if (data.type === 'friend_deleted') {
-
-          Alert.alert('디버그', `친구 삭제 이벤트 수신: ${data.deleted_by}`);
-
           if (data.deleted_by) {
-
             friendsStore.removeFriend(data.deleted_by);
           }
         }
 
-        // WebSocket 이벤트 시 캐시 무효화 후 새로고침
-        friendsStore.invalidate();
-        friendsStore.refresh();
+        // 백그라운드에서 API 정합성 보장 (3초 후 - 서버에 데이터 반영될 시간 확보)
+        setTimeout(() => {
+          friendsStore.invalidate();
+          friendsStore.refresh();
+        }, 3000);
       }
     );
 

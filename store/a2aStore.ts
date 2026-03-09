@@ -84,7 +84,7 @@ export const a2aStore = {
 
     getCurrentUserId: (): string | null => state.currentUserId,
 
-    // A2A 로그 조회
+    // [SWR] A2A 로그 조회 - 캐시된 데이터 즉시 반환, 백그라운드 갱신
     fetchLogs: async (force = false): Promise<A2ALog[]> => {
         if (!force && isCacheValid() && state.logs.length > 0) {
             console.log('[A2AStore] 캐시 히트 - logs');
@@ -96,8 +96,12 @@ export const a2aStore = {
             return state.logs;
         }
 
-        state = { ...state, loading: true };
-        emitChange();
+        // [SWR] 최초 로딩(데이터 없음)일 때만 loading 표시, 기존 데이터 있으면 유지
+        const isFirstLoad = state.logs.length === 0;
+        if (isFirstLoad) {
+            state = { ...state, loading: true };
+            emitChange();
+        }
 
         try {
             const token = await AsyncStorage.getItem('accessToken');
@@ -209,6 +213,43 @@ export const a2aStore = {
 
     // 로딩 상태
     isLoading: (): boolean => state.loading,
+
+    // [NEW] 단건 조회 - 상세 페이지 initialData용
+    getLogById: (id: string): A2ALog | undefined => {
+        return state.logs.find(l => l.id === id);
+    },
+
+    // [NEW] 부분 업데이트 - WebSocket 이벤트 시 개별 항목만 업데이트
+    updateLog: (id: string, partial: Partial<A2ALog>): void => {
+        const idx = state.logs.findIndex(l => l.id === id);
+        if (idx === -1) return;
+        console.log('[A2AStore] 부분 업데이트 - log:', id);
+        const updated = [...state.logs];
+        updated[idx] = { ...updated[idx], ...partial };
+        state = { ...state, logs: updated };
+        emitChange();
+    },
+
+    addLog: (log: A2ALog): void => {
+        // 중복 방지
+        if (state.logs.some(l => l.id === log.id)) return;
+        console.log('[A2AStore] 부분 추가 - log:', log.id);
+        state = {
+            ...state,
+            logs: [log, ...state.logs],
+        };
+        emitChange();
+    },
+
+    removeLog: (id: string): void => {
+        const before = state.logs.length;
+        const filtered = state.logs.filter(l => l.id !== id);
+        if (filtered.length < before) {
+            console.log('[A2AStore] 부분 제거 - log:', id);
+            state = { ...state, logs: filtered };
+            emitChange();
+        }
+    },
 
     // 캐시 상태 확인 (디버그용)
     getCacheAge: (): number | null => {

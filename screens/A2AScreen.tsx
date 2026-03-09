@@ -139,6 +139,7 @@ const A2AScreen = () => {
 
     // True A2A States
     const [showNegotiation, setShowNegotiation] = useState(false);
+    const [forceRenderCount, setForceRenderCount] = useState(0); // 강제 리렌더링 용도
     const [negotiatingSessionId, setNegotiatingSessionId] = useState<string | null>(null);
     const [showHumanDecision, setShowHumanDecision] = useState(false);
     const [lastProposalForDecision, setLastProposalForDecision] = useState<any>(null);
@@ -1407,11 +1408,57 @@ const A2AScreen = () => {
             'A2AScreen',
             ['a2a_request', 'a2a_rejected', 'a2a_message', 'a2a_status_changed'],
             async (data) => {
+                // [PERF] 부분 업데이트: 변경 항목만 즉시 로컬 반영 후, 백그라운드 전체 갱신
                 if (data.type === "a2a_request") {
-                    fetchA2ALogs(false);
+                    // [FIX] 즉시 로컬에 임시 카드 추가 → UI 즉시 반영
+                    const requestId = data.session_id || data.thread_id;
+                    if (requestId) {
+                        const proposal = data.proposal || {};
+                        const tempLog: A2ALog = {
+                            id: requestId,
+                            title: data.summary || '새 일정 요청',
+                            status: 'in_progress',
+                            summary: data.summary || '',
+                            timeRange: proposal.date && proposal.time
+                                ? `${proposal.date} ${proposal.time} ~ ${parseInt(proposal.time?.split(':')[0] || '0') + 1}:${proposal.time?.split(':')[1] || '00'}`
+                                : '',
+                            createdAt: data.timestamp || new Date().toISOString(),
+                            details: {
+                                proposer: data.from_user || '알 수 없음',
+                                proposerAvatar: '',
+                                purpose: data.summary || '',
+                                proposedDate: proposal.date || '',
+                                proposedTime: proposal.time || '',
+                                location: proposal.location || '',
+                                process: [],
+                                thread_id: data.thread_id,
+                            },
+                            initiator_user_id: data.from_user_id || '',
+                        };
+                        setLogs(prev => {
+                            // 중복 방지
+                            if (prev.some(l => l.id === requestId)) return prev;
+                            const newLogs = [tempLog, ...prev];
+                            console.log(`[A2AScreen] 임시 로그 추가됨. 추가 직후 logs.length: ${newLogs.length}`);
+                            return newLogs;
+                        });
+                        setForceRenderCount(prev => prev + 1); // 강제 리렌더링 트리거
+                    }
+                    // [FIX] 백그라운드 갱신을 5초 지연
+                    // 즉시 호출하면 캐시 데이터로 setLogs가 덮어써져 임시 카드가 사라짐
+                    // 5초 후면 협상 완료 → 서버 API에 세션이 포함됨
+                    setTimeout(() => fetchA2ALogs(false), 5000);
                 } else if (data.type === "a2a_rejected") {
+                    // 거절된 로그 즉시 상태 업데이트 → 깜빡임 없이 반영
+                    if (data.session_id) {
+                        setLogs(prev => prev.map(l =>
+                            l.id === data.session_id ? { ...l, status: 'REJECTED' as any } : l
+                        ));
+                    }
                     fetchA2ALogs(false);
                 } else if (data.type === "a2a_message") {
+                    // 메시지만 변경 → 전체 리로드 대신 열린 모달만 업데이트
+                    // 목록은 백그라운드에서 조용히 갱신
                     fetchA2ALogs(false);
 
                     // [실시간 업데이트] 열린 모달의 세부 정보도 새로고침
@@ -1438,6 +1485,15 @@ const A2AScreen = () => {
                         }
                     }
                 } else if (data.type === "a2a_status_changed") {
+                    // 상태만 변경 → 해당 항목만 즉시 로컬 업데이트 후 백그라운드 갱신
+                    if (data.session_id && data.new_status) {
+                        const mappedStatus = data.new_status === 'completed' ? 'COMPLETED'
+                            : data.new_status === 'rejected' ? 'REJECTED'
+                                : 'IN_PROGRESS';
+                        setLogs(prev => prev.map(l =>
+                            l.id === data.session_id ? { ...l, status: mappedStatus as any } : l
+                        ));
+                    }
                     fetchA2ALogs(false);
                 }
             }
@@ -1560,6 +1616,29 @@ const A2AScreen = () => {
         return true;
     };
 
+    // [PERF] 카드 pressIn 시 상세 데이터 prefetch (실제 클릭 전에 미리 로딩)
+    const handleLogPressIn = useCallback(async (log: A2ALog) => {
+        if (log.id?.startsWith('tutorial_')) return;
+        try {
+            const cacheKey = `a2a:detail:${log.id}`;
+            const cached = dataCache.get(cacheKey);
+            if (cached.exists && !cached.isStale) return; // 이미 캐시됨
+            if (dataCache.isPending(cacheKey)) return; // 이미 요청 중
+            dataCache.markPending(cacheKey);
+
+            const token = await AsyncStorage.getItem('accessToken');
+            const res = await fetch(`${API_BASE}/a2a/session/${log.id}`, {
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (res.ok) {
+                const data = await res.json();
+                dataCache.set(cacheKey, data, 3 * 60 * 1000); // 3분 캐시
+            }
+        } catch (e) {
+            // prefetch 실패는 무시 (정상 클릭 시 다시 fetch)
+        }
+    }, []);
+
     const handleLogClick = (log: any) => {
         // 모달 열기 전 닫힘 상태 리셋
         setIsModalClosing(false);
@@ -1570,6 +1649,25 @@ const A2AScreen = () => {
         // [OPTIMIZATION] 즉시 로컬 데이터로 모달 표시 (로딩 상태 없이)
         // _loading 플래그를 제거하여 불필요한 로딩 인디케이터 표시 방지
         const initialLog = { ...log, details: { ...log.details } };
+
+        // [PERF] pressIn 시점에 prefetch된 데이터가 있으면 즉시 반영
+        const prefetchKey = `a2a:detail:${log.id}`;
+        const prefetched = dataCache.get<any>(prefetchKey);
+        if (prefetched.exists && prefetched.data) {
+            const cachedDetails = prefetched.data.details || {};
+            if (cachedDetails.proposer === "알 수 없음" && log.details?.proposer) {
+                cachedDetails.proposer = log.details.proposer;
+            }
+            initialLog.status = prefetched.data.status || log.status;
+            initialLog.details = {
+                ...(log.details || {}),
+                ...cachedDetails,
+                has_conflict: (log.details as any)?.has_conflict,
+                conflicting_sessions: (log.details as any)?.conflicting_sessions,
+                process: cachedDetails.process?.length > 0 ? cachedDetails.process : (log.details as any)?.process || []
+            };
+        }
+
         setSelectedLog(initialLog);
         selectedLogRef.current = initialLog;
 
@@ -1581,9 +1679,15 @@ const A2AScreen = () => {
             return;
         }
 
-        // 백그라운드에서 최신 정보 페치
+        // 백그라운드에서 최신 정보 페치 (prefetch가 stale이거나 없으면 새로 요청)
         (async () => {
             try {
+                // prefetch 데이터가 fresh하면 API 호출 스킵
+                if (prefetched.exists && !prefetched.isStale) {
+                    console.log('[A2A] prefetch 캐시 히트 - 백그라운드 fetch 스킵');
+                    return;
+                }
+
                 const token = await AsyncStorage.getItem('accessToken');
                 const res = await fetch(`${API_BASE}/a2a/session/${log.id}`, {
                     headers: { 'Authorization': `Bearer ${token}` },
@@ -1593,6 +1697,9 @@ const A2AScreen = () => {
                     const data = await res.json();
                     const newDetails = data.details || {};
                     const newStatus = data.status;
+
+                    // 캐시에도 저장 (다음 접근 시 즉시 사용)
+                    dataCache.set(prefetchKey, data, 3 * 60 * 1000);
 
                     if (newDetails.proposer === "알 수 없음" && log.details?.proposer) {
                         newDetails.proposer = log.details.proposer;
@@ -1887,6 +1994,7 @@ const A2AScreen = () => {
                     }
                 ]}
                 onPress={() => handleLogClick(item)}
+                onPressIn={() => handleLogPressIn(item)}
                 activeOpacity={0.7}
                 testID={isTutorialReceivedTarget ? 'log_card_tutorial_received_request' : (isTutorialSentTarget ? 'card_a2a_request' : undefined)}
                 ref={getRef()}
@@ -1979,6 +2087,7 @@ const A2AScreen = () => {
                 ) : (
                     <FlatList
                         data={logs}  // 백엔드에서 이미 과거 일정 필터링됨
+                        extraData={forceRenderCount} // [FIX] 강제 리렌더링
                         renderItem={renderLogItem}
                         keyExtractor={item => item.id}
                         contentContainerStyle={styles.listContent}
