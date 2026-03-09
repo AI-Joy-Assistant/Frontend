@@ -149,6 +149,7 @@ export default function HomeScreen() {
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState<string[]>([]);
   const [viewedRequestIds, setViewedRequestIds] = useState<string[]>([]);
   const [viewedNotificationIds, setViewedNotificationIds] = useState<string[]>([]);
+  const [hasRealtimeNotificationDot, setHasRealtimeNotificationDot] = useState<boolean>(false);
 
   // Load dismissed request IDs and viewed count from AsyncStorage on mount
   useEffect(() => {
@@ -360,6 +361,115 @@ export default function HomeScreen() {
     }, [])
   );
 
+  // [FIX] useRef로 최신 핸들러 참조 유지 (stale closure 방지)
+  const wsHandlerRef = useRef<(data: any) => void>(() => { });
+  wsHandlerRef.current = (data: any) => {
+    console.log('🔔 [WS:HomeScreen] 핸들러 진입! type:', data.type, 'session_id:', data.session_id, 'thread_id:', data.thread_id);
+    // [FIX] WS 이벤트 수신 시 즉시 종 알림 빨간 점 표시
+    if (['a2a_request', 'a2a_rejected', 'a2a_status_changed', 'friend_request', 'friend_accepted', 'friend_rejected', 'notification'].includes(data.type)) {
+      setHasRealtimeNotificationDot(true);
+    }
+
+    // [FIX] 친구 삭제 시 즉시 로컬 상태 업데이트
+    if (data.type === 'friend_deleted' && data.deleted_by) {
+      friendsStore.removeFriend(data.deleted_by);
+    }
+
+    // [PERF] 부분 업데이트: 변경된 항목만 즉시 로컬에 반영 후, 백그라운드에서 정합성 보완
+    // [FIX] session_id가 없으면 thread_id를 fallback으로 사용
+    const requestId = data.session_id || data.thread_id;
+    if (data.type === 'a2a_request' && requestId) {
+      console.log('[WS:HomeScreen] a2a_request 수신:', JSON.stringify(data));
+      const tempRequest = {
+        id: requestId,
+        thread_id: data.thread_id || requestId,
+        title: data.summary || '새 일정 요청',
+        summary: data.summary,
+        initiator_id: data.from_user_id || '',
+        initiator_name: data.from_user || '알 수 없음',
+        initiator_avatar: 'https://picsum.photos/150',
+        participant_count: 2,
+        proposed_date: data.new_date,
+        proposed_time: data.new_time,
+        status: data.status || 'pending',
+        created_at: data.timestamp || new Date().toISOString(),
+        type: (data.is_reschedule ? 'reschedule' : 'new') as 'new' | 'reschedule',
+      };
+      homeStore.addPendingRequest(tempRequest);
+      console.log('[WS:HomeScreen] 임시 카드 추가 완료, pendingRequests 수:', homeStore.getSnapshot().pendingRequests.length);
+
+      // [FIX] a2a_request는 백그라운드 refresh를 지연 (5초)
+      // 즉시 refresh하면 서버 API가 in_progress를 제외하여 방금 추가한 카드가 사라짐
+      setTimeout(() => {
+        homeStore.invalidate();
+        homeStore.refresh();
+      }, 5000);
+    } else if (data.type === 'a2a_rejected' && (data.request_id || data.session_id)) {
+      console.log('[WS:HomeScreen] a2a_rejected 수신:', data.session_id || data.request_id);
+      homeStore.removePendingRequest(data.request_id || data.session_id);
+      homeStore.invalidate();
+      homeStore.refresh();
+    } else if (data.type === 'a2a_status_changed' && (data.request_id || data.session_id)) {
+      console.log('[WS:HomeScreen] a2a_status_changed 수신:', data.session_id || data.request_id, data.new_status);
+      homeStore.removePendingRequest(data.request_id || data.session_id);
+      homeStore.invalidate();
+      homeStore.refresh();
+    } else if (['friend_request', 'friend_accepted', 'friend_rejected', 'notification'].includes(data.type)) {
+      console.log('[WS:HomeScreen] 기타 이벤트 수신:', data.type);
+      homeStore.invalidate();
+      homeStore.refresh();
+    }
+
+    // [SWR] 친구 관련 이벤트: 즉시 로컬 업데이트 + 백그라운드 갱신
+    if (['friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'user_info_updated'].includes(data.type)) {
+      // [실시간] 친구 요청 수신 → 즉시 받은요청 목록에 추가
+      if (data.type === 'friend_request' && data.request_id && data.from_user_id) {
+        friendsStore.addFriendRequest({
+          id: data.request_id,
+          from_user: {
+            id: data.from_user_id,
+            name: data.from_user_name || '사용자',
+            email: data.from_user_email || '',
+            picture: data.from_user_picture || undefined,
+          },
+          status: 'pending',
+          created_at: data.timestamp || new Date().toISOString(),
+        });
+      }
+
+      // [실시간] 친구 수락 → 즉시 친구목록에 추가
+      if (data.type === 'friend_accepted' && data.friend_id) {
+        if (data.request_id) {
+          friendsStore.removeRequest(data.request_id);
+        }
+        friendsStore.addFriend({
+          id: `ws_${data.friend_id}_${Date.now()}`,
+          friend: {
+            id: data.friend_id,
+            name: data.friend_name || '사용자',
+            email: data.friend_email || '',
+            picture: data.friend_picture || undefined,
+          },
+          created_at: data.timestamp || new Date().toISOString(),
+        });
+      }
+
+      // 백그라운드에서 API 정합성 보장
+      setTimeout(() => {
+        friendsStore.invalidate();
+        friendsStore.refresh();
+      }, 1000);
+    }
+
+    // A2A 상태 변경 시 캘린더 이벤트 캐시도 무효화 후 갱신
+    // [FIX] fetchSchedules(false) 사용 — fetchSchedules(true)는 homeStore/friendsStore까지 invalidate해서
+    // 방금 addPendingRequest로 추가한 카드가 서버 데이터로 덮어써져 사라짐
+    if (['a2a_status_changed', 'a2a_request'].includes(data.type)) {
+      calendarService.invalidateEventsCache();
+      fetchSchedules(false);
+    }
+  };
+
   // WebSocket for real-time A2A notifications (using singleton service)
   useEffect(() => {
     if (!currentUserId) return;
@@ -367,33 +477,13 @@ export default function HomeScreen() {
     // 싱글톤 서비스 연결 (이미 연결되어 있으면 스킵)
     WebSocketService.connect(currentUserId);
 
-    // HomeScreen에서 필요한 메시지만 구독
+    // HomeScreen에서 필요한 메시지만 구독 (a2a_rejected 추가)
     const unsubscribe = WebSocketService.subscribe(
       'HomeScreen',
-      ['a2a_request', 'friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'notification', 'a2a_status_changed', 'user_info_updated'],
+      ['a2a_request', 'a2a_rejected', 'friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'notification', 'a2a_status_changed', 'user_info_updated'],
       (data) => {
-
-
-        // [FIX] 친구 삭제 시 즉시 로컬 상태 업데이트
-        if (data.type === 'friend_deleted' && data.deleted_by) {
-          friendsStore.removeFriend(data.deleted_by);
-        }
-
-        // [OPTIMIZATION] 이벤트 타입별 선택적 리페치 (불필요한 전체 재조회 방지)
-        if (['a2a_request', 'a2a_status_changed', 'notification'].includes(data.type)) {
-          homeStore.invalidate();
-          homeStore.refresh();
-        }
-        if (['friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'user_info_updated'].includes(data.type)) {
-          friendsStore.invalidate();
-          friendsStore.refresh();
-        }
-
-        // A2A 상태 변경 시 캘린더 이벤트 캐시도 무효화 후 강제 갱신
-        if (['a2a_status_changed', 'a2a_request'].includes(data.type)) {
-          calendarService.invalidateEventsCache();
-          fetchSchedules(true);
-        }
+        // useRef를 통해 항상 최신 핸들러 호출 (stale closure 방지)
+        wsHandlerRef.current(data);
       }
     );
 
@@ -1711,6 +1801,7 @@ export default function HomeScreen() {
                 <TouchableOpacity
                   onPress={() => {
                     setShowNotificationPanel(true);
+                    setHasRealtimeNotificationDot(false);
                     markNotificationsAsViewed();
                   }}
                   style={styles.iconButton}
@@ -1729,7 +1820,7 @@ export default function HomeScreen() {
                     });
                     const newNotificationCount = visibleNotifications.filter(n => !viewedNotificationIds.includes(n.id)).length;
 
-                    const hasNotifications = (newRequestCount + newNotificationCount) > 0;
+                    const hasNotifications = (newRequestCount + newNotificationCount) > 0 || hasRealtimeNotificationDot;
 
                     return (
                       <>
