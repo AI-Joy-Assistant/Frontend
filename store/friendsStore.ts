@@ -237,8 +237,21 @@ export const friendsStore = {
         emitChange();
     },
 
+    // 친구 요청 추가 (WS로 실시간 수신 시 즉시 UI 반영)
+    addFriendRequest: (request: FriendRequest): void => {
+        // 중복 방지
+        if (state.friendRequests.some(r => r.id === request.id)) return;
+        state = {
+            ...state,
+            friendRequests: [request, ...state.friendRequests],
+        };
+        emitChange();
+    },
+
     // 친구 목록에 추가 (수락 시)
     addFriend: (friend: Friend): void => {
+        // 중복 방지
+        if (state.friends.some(f => f.friend.id === friend.friend.id)) return;
         state = {
             ...state,
             friends: [friend, ...state.friends],

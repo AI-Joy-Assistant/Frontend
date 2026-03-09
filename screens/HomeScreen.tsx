@@ -420,10 +420,45 @@ export default function HomeScreen() {
       homeStore.refresh();
     }
 
-    // [SWR] 친구 관련 이벤트 백그라운드 갱신
+    // [SWR] 친구 관련 이벤트: 즉시 로컬 업데이트 + 백그라운드 갱신
     if (['friend_request', 'friend_accepted', 'friend_rejected', 'friend_deleted', 'user_info_updated'].includes(data.type)) {
-      friendsStore.invalidate();
-      friendsStore.refresh();
+      // [실시간] 친구 요청 수신 → 즉시 받은요청 목록에 추가
+      if (data.type === 'friend_request' && data.request_id && data.from_user_id) {
+        friendsStore.addFriendRequest({
+          id: data.request_id,
+          from_user: {
+            id: data.from_user_id,
+            name: data.from_user_name || '사용자',
+            email: data.from_user_email || '',
+            picture: data.from_user_picture || undefined,
+          },
+          status: 'pending',
+          created_at: data.timestamp || new Date().toISOString(),
+        });
+      }
+
+      // [실시간] 친구 수락 → 즉시 친구목록에 추가
+      if (data.type === 'friend_accepted' && data.friend_id) {
+        if (data.request_id) {
+          friendsStore.removeRequest(data.request_id);
+        }
+        friendsStore.addFriend({
+          id: `ws_${data.friend_id}_${Date.now()}`,
+          friend: {
+            id: data.friend_id,
+            name: data.friend_name || '사용자',
+            email: data.friend_email || '',
+            picture: data.friend_picture || undefined,
+          },
+          created_at: data.timestamp || new Date().toISOString(),
+        });
+      }
+
+      // 백그라운드에서 API 정합성 보장
+      setTimeout(() => {
+        friendsStore.invalidate();
+        friendsStore.refresh();
+      }, 1000);
     }
 
     // A2A 상태 변경 시 캘린더 이벤트 캐시도 무효화 후 갱신
